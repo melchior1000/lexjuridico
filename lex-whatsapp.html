@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lex Jurídico — Chat</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+  :root {
+    --wpp-bg: #0b141a;
+    --panel-bg: #111b21;
+    --header-bg: #202c33;
+    --input-bg: #2a3942;
+    --bubble-out: #005c4b;
+    --bubble-in: #202c33;
+    --text-primary: #e9edef;
+    --text-secondary: #8696a0;
+    --text-meta: #667781;
+    --accent: #00a884;
+    --accent-hover: #00cf9d;
+    --divider: #2a3942;
+    --scrollbar: #374045;
+    --danger: #f15c6d;
+    --warn: #f0c050;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%; width: 100%;
+    background: var(--wpp-bg);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--text-primary);
+    overflow: hidden;
+  }
+
+  /* ── Layout ── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--panel-bg);
+    position: relative;
+  }
+
+  /* ── Header ── */
+  #header {
+    background: var(--header-bg);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    z-index: 10;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  #avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #005c4b 0%, #00a884 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  #status-dot {
+    position: absolute;
+    bottom: 1px; right: 1px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--header-bg);
+  }
+
+  #header-info { flex: 1; min-width: 0; }
+  #header-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  #header-sub  { font-size: 12px; color: var(--text-secondary); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  #header-actions { display: flex; gap: 8px; }
+  .hbtn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-secondary); padding: 6px;
+    border-radius: 50%; transition: background .15s, color .15s;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .hbtn:hover { background: rgba(255,255,255,.06); color: var(--text-primary); }
+
+  /* ── Config panel ── */
+  #cfg-panel {
+    position: absolute; top: 61px; right: 8px;
+    background: #233138; border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    z-index: 100; width: 280px; padding: 16px;
+    display: none; flex-direction: column; gap: 10px;
+    border: 1px solid var(--divider);
+  }
+  #cfg-panel.open { display: flex; }
+  #cfg-panel label { font-size: 11px; color: var(--text-secondary); font-weight: 500; letter-spacing: .5px; text-transform: uppercase; }
+  #cfg-panel input {
+    background: var(--input-bg); border: 1px solid var(--divider);
+    color: var(--text-primary); border-radius: 6px; padding: 8px 10px;
+    font-size: 13px; width: 100%; outline: none;
+    transition: border-color .15s;
+  }
+  #cfg-panel input:focus { border-color: var(--accent); }
+  #cfg-save {
+    background: var(--accent); border: none; color: #fff;
+    padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;
+    font-size: 13px; transition: background .15s;
+  }
+  #cfg-save:hover { background: var(--accent-hover); }
+
+  /* ── Watermark ── */
+  #wallpaper {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: 16px 16px 8px;
+    display: flex; flex-direction: column; gap: 2px;
+    background:
+      radial-gradient(ellipse at 20% 80%, rgba(0,92,75,.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(0,168,132,.04) 0%, transparent 50%),
+      var(--wpp-bg);
+    scroll-behavior: smooth;
+  }
+
+  #wallpaper::-webkit-scrollbar { width: 6px; }
+  #wallpaper::-webkit-scrollbar-track { background: transparent; }
+  #wallpaper::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+  /* ── Date divider ── */
+  .date-div {
+    display: flex; align-items: center; justify-content: center;
+    margin: 10px 0 6px;
+  }
+  .date-div span {
+    background: rgba(17,27,33,.9);
+    border: 1px solid var(--divider);
+    color: var(--text-secondary);
+    font-size: 11.5px; padding: 4px 12px;
+    border-radius: 8px; font-weight: 500;
+  }
+
+  /* ── Bubbles ── */
+  .row { display: flex; margin-bottom: 2px; }
+  .row.out { justify-content: flex-end; }
+  .row.in  { justify-content: flex-start; }
+
+  .bubble {
+    max-width: 72%; padding: 8px 12px 6px;
+    border-radius: 8px; position: relative;
+    word-wrap: break-word; word-break: break-word;
+    line-height: 1.45;
+  }
+  .row.out .bubble {
+    background: var(--bubble-out);
+    border-bottom-right-radius: 2px;
+  }
+  .row.in .bubble {
+    background: var(--bubble-in);
+    border-bottom-left-radius: 2px;
+  }
+
+  /* Tail */
+  .row.out .bubble::after {
+    content: ''; position: absolute;
+    bottom: 0; right: -6px;
+    border: 6px solid transparent;
+    border-left: 6px solid var(--bubble-out);
+    border-bottom: 0;
+  }
+  .row.in .bubble::before {
+    content: ''; position: absolute;
+    bottom: 0; left: -6px;
+    border: 6px solid transparent;
+    border-right: 6px solid var(--bubble-in);
+    border-bottom: 0;
+  }
+
+  .bubble-text { font-size: 14px; color: var(--text-primary); white-space: pre-wrap; }
+  .bubble-meta {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 4px; margin-top: 2px;
+  }
+  .bubble-time { font-size: 11px; color: var(--text-meta); }
+  .tick { font-size: 13px; color: var(--accent); line-height: 1; }
+
+  /* Urgent highlight in messages */
+  .bubble-text .alerta-prazo { color: var(--danger); font-weight: 600; }
+  .bubble-text .alerta-aviso { color: var(--warn); font-weight: 600; }
+
+  /* ── Typing indicator ── */
+  #typing-row {
+    display: none; justify-content: flex-start;
+    margin-bottom: 2px; padding-left: 0;
+  }
+  #typing-row.visible { display: flex; }
+  .typing-bubble {
+    background: var(--bubble-in);
+    border-radius: 8px; border-bottom-left-radius: 2px;
+    padding: 10px 14px; position: relative;
+  }
+  .typing-bubble::before {
+    content: ''; position: absolute;
+    bottom: 0; left: -6px;
+    border: 6px solid transparent;
+    border-right: 6px solid var(--bubble-in);
+    border-bottom: 0;
+  }
+  .dots { display: flex; gap: 4px; align-items: center; }
+  .dots span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-secondary);
+    animation: bounce .9s infinite;
+  }
+  .dots span:nth-child(2) { animation-delay: .2s; }
+  .dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce {
+    0%,60%,100% { transform: translateY(0); }
+    30%          { transform: translateY(-6px); }
+  }
+
+  /* ── File preview bar ── */
+  #file-bar {
+    display: none; flex-shrink: 0;
+    background: var(--header-bg);
+    padding: 8px 16px; gap: 10px; align-items: center;
+    border-top: 1px solid var(--divider);
+    font-size: 13px; color: var(--text-secondary);
+  }
+  #file-bar.visible { display: flex; }
+  #file-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+  #file-cancel {
+    background: none; border: none; cursor: pointer;
+    color: var(--danger); font-size: 18px; padding: 2px;
+    line-height: 1; display: flex; align-items: center;
+  }
+
+  /* ── Input bar ── */
+  #input-bar {
+    background: var(--header-bg);
+    padding: 8px 12px;
+    display: flex; align-items: flex-end; gap: 8px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--divider);
+  }
+
+  .ibtn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-secondary); width: 38px; height: 38px;
+    border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; transition: color .15s, background .15s;
+  }
+  .ibtn:hover { color: var(--text-primary); background: rgba(255,255,255,.06); }
+
+  #msg-input {
+    flex: 1; background: var(--input-bg);
+    border: none; border-radius: 8px;
+    color: var(--text-primary); font-size: 15px;
+    padding: 9px 14px; outline: none; resize: none;
+    max-height: 120px; line-height: 1.4;
+    font-family: inherit;
+  }
+  #msg-input::placeholder { color: var(--text-meta); }
+  #msg-input::-webkit-scrollbar { width: 4px; }
+  #msg-input::-webkit-scrollbar-thumb { background: var(--scrollbar); }
+
+  #send-btn {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: var(--accent); border: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background .15s, transform .1s;
+  }
+  #send-btn:hover { background: var(--accent-hover); }
+  #send-btn:active { transform: scale(.92); }
+  #send-btn svg { fill: #fff; width: 20px; height: 20px; }
+
+  /* ── Setup overlay ── */
+  #setup-overlay {
+    position: absolute; inset: 0;
+    background: var(--panel-bg);
+    z-index: 200; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 32px 24px; gap: 20px;
+  }
+  #setup-overlay.hidden { display: none; }
+  .setup-logo { font-size: 48px; }
+  .setup-title { font-size: 22px; font-weight: 700; color: var(--text-primary); text-align: center; }
+  .setup-sub   { font-size: 14px; color: var(--text-secondary); text-align: center; max-width: 320px; line-height: 1.5; }
+  .setup-field { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 360px; }
+  .setup-field label { font-size: 12px; color: var(--text-secondary); font-weight: 500; letter-spacing: .5px; text-transform: uppercase; }
+  .setup-field input {
+    background: var(--input-bg); border: 1px solid var(--divider);
+    color: var(--text-primary); border-radius: 8px; padding: 12px 14px;
+    font-size: 14px; outline: none; width: 100%; transition: border-color .15s;
+    font-family: monospace;
+  }
+  .setup-field input:focus { border-color: var(--accent); }
+  #setup-btn {
+    background: var(--accent); border: none; color: #fff;
+    padding: 14px 32px; border-radius: 24px; cursor: pointer;
+    font-size: 15px; font-weight: 600; transition: background .15s;
+    width: 100%; max-width: 360px;
+  }
+  #setup-btn:hover { background: var(--accent-hover); }
+  .setup-note { font-size: 12px; color: var(--text-meta); text-align: center; max-width: 320px; }
+
+  /* ── Empty state ── */
+  #empty-state {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    flex: 1; gap: 8px; pointer-events: none;
+    opacity: .4;
+  }
+  #empty-state span:first-child { font-size: 36px; }
+  #empty-state span:last-child  { font-size: 13px; color: var(--text-secondary); }
+
+  /* ── Responsive ── */
+  @media (min-width: 600px) {
+    #app { box-shadow: 0 0 40px rgba(0,0,0,.6); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Setup overlay -->
+  <div id="setup-overlay">
+    <div class="setup-logo">⚖️</div>
+    <div class="setup-title">Lex Jurídico — Chat</div>
+    <div class="setup-sub">Faça login para acessar o sistema</div>
+    <div class="setup-field">
+      <label>URL do Servidor</label>
+      <input id="setup-url" type="url" placeholder="https://lex-juridico.onrender.com" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="setup-field">
+      <label>Seu nome</label>
+      <input id="setup-nome" type="text" placeholder="Kleuber" autocomplete="off">
+    </div>
+    <div class="setup-field">
+      <label>Perfil</label>
+      <select id="setup-perfil" style="background:var(--input-bg);border:1px solid var(--divider);color:var(--text-primary);border-radius:8px;padding:12px 14px;font-size:14px;width:100%;outline:none;font-family:inherit;">
+        <option value="admin">Administrador</option>
+        <option value="secretaria">Secretária</option>
+      </select>
+    </div>
+    <div class="setup-field">
+      <label>Senha</label>
+      <input id="setup-senha" type="password" placeholder="Digite sua senha" autocomplete="off" onkeydown="if(event.key==='Enter')fazerLoginWpp()">
+    </div>
+    <div id="setup-erro" style="display:none;color:#f15c6d;font-size:13px;text-align:center;max-width:320px;"></div>
+    <button id="setup-btn" onclick="fazerLoginWpp()">Entrar</button>
+    <div class="setup-note">Credenciais são validadas no servidor. Nunca ficam expostas no código.</div>
+  </div>
+
+  <!-- Header -->
+  <div id="header">
+    <div id="avatar">
+      ⚖️
+      <div id="status-dot"></div>
+    </div>
+    <div id="header-info">
+      <div id="header-name">Lex Jurídico</div>
+      <div id="header-sub" id="header-sub">Assessor Jurídico IA</div>
+    </div>
+    <div id="header-actions">
+      <button class="hbtn" onclick="abrirCfg()" title="Configurações">⚙️</button>
+      <button class="hbtn" onclick="limparChat()" title="Limpar conversa">🗑️</button>
+      <button class="hbtn" onclick="sairWpp()" title="Sair">↩</button>
+    </div>
+  </div>
+
+  <!-- Config panel -->
+  <div id="cfg-panel">
+    <label>URL do Servidor</label>
+    <input id="cfg-url" type="url" placeholder="https://lex-juridico.onrender.com">
+    <label>Seu nome</label>
+    <input id="cfg-nome" type="text" placeholder="Kleuber">
+    <button id="cfg-save" onclick="salvarCfg()">Salvar configuração</button>
+  </div>
+
+  <!-- Messages -->
+  <div id="wallpaper" onclick="fecharCfg()">
+    <div id="empty-state">
+      <span>⚖️</span>
+      <span>Nenhuma mensagem ainda</span>
+    </div>
+  </div>
+
+  <!-- Typing indicator -->
+  <div id="typing-row" class="row in">
+    <div class="typing-bubble">
+      <div class="dots">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- File preview bar -->
+  <div id="file-bar">
+    <span>📎</span>
+    <span id="file-name"></span>
+    <button id="file-cancel" onclick="cancelarArquivo()">✕</button>
+  </div>
+
+  <!-- Input bar -->
+  <div id="input-bar">
+    <button class="ibtn" onclick="abrirArquivo()" title="Anexar documento">📎</button>
+    <textarea id="msg-input"
+      placeholder="Mensagem"
+      rows="1"
+      onkeydown="handleKey(event)"
+      oninput="autoResize(this)"></textarea>
+    <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="arquivoSelecionado(this)">
+    <button id="send-btn" onclick="enviar()" title="Enviar">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let SERVER_URL = '';
+let MEU_NOME   = 'Você';
+let historico  = []; // {role, content}[]
+let arquivoAtual = null;
+let enviando = false;
+let _authToken = null;
+let _authPerfil = null;
+
+// ── Auth ──
+const _AUTH_KEY = 'lex_sessao_v2';
+
+function _loadSessWpp(){
+  try{
+    const s=JSON.parse(localStorage.getItem(_AUTH_KEY)||'null');
+    if(!s)return null;
+    if(new Date(s.e)<new Date()){localStorage.removeItem(_AUTH_KEY);return null;}
+    return s;
+  }catch(e){return null;}
+}
+
+function _saveSessWpp(token,perfil,perms){
+  const e=new Date();e.setDate(e.getDate()+30);
+  localStorage.setItem(_AUTH_KEY,JSON.stringify({token,perfil,perms,e:e.toISOString()}));
+}
+
+async function fazerLoginWpp(){
+  const url   = document.getElementById('setup-url').value.trim().replace(/\/$/,'');
+  const nome  = document.getElementById('setup-nome').value.trim();
+  const perfil= document.getElementById('setup-perfil').value;
+  const senha = document.getElementById('setup-senha').value.trim();
+  const erroEl= document.getElementById('setup-erro');
+  erroEl.style.display='none';
+  if(!url){erroEl.textContent='Informe a URL do servidor.';erroEl.style.display='block';return;}
+  if(!senha){erroEl.textContent='Informe a senha.';erroEl.style.display='block';return;}
+  document.getElementById('setup-btn').textContent='Conectando...';
+  try{
+    const r=await fetch(url+'/api/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({perfil,senha})
+    });
+    const d=await r.json();
+    if(!r.ok||d.error){
+      erroEl.textContent=d.error||'Senha incorreta.';
+      erroEl.style.display='block';
+      document.getElementById('setup-btn').textContent='Entrar';
+      return;
+    }
+    SERVER_URL  = url;
+    MEU_NOME    = nome||perfil;
+    _authToken  = d.token;
+    _authPerfil = d.perfil;
+    localStorage.setItem('lex_url',  SERVER_URL);
+    localStorage.setItem('lex_nome', MEU_NOME);
+    _saveSessWpp(d.token, d.perfil, d);
+    document.getElementById('setup-overlay').classList.add('hidden');
+    atualizarStatus('online');
+    renderizarTudo();
+    if(historico.length===0) boasVindas();
+  }catch(e){
+    erroEl.textContent='Servidor indisponível. Verifique a URL.';
+    erroEl.style.display='block';
+    document.getElementById('setup-btn').textContent='Entrar';
+  }
+}
+
+// ── Persistência ──
+function carregar() {
+  SERVER_URL = localStorage.getItem('lex_url') || '';
+  MEU_NOME   = localStorage.getItem('lex_nome') || 'Você';
+  try { historico = JSON.parse(localStorage.getItem('lex_hist') || '[]'); } catch(e) { historico = []; }
+  // Restaura sessão autenticada
+  const sess = _loadSessWpp();
+  if(sess){ _authToken = sess.token; _authPerfil = sess.perfil; }
+}
+
+function salvarHist() {
+  // Guarda só últimas 40 mensagens
+  const h = historico.slice(-40);
+  localStorage.setItem('lex_hist', JSON.stringify(h));
+}
+
+// ── Setup ──
+function iniciarSetup() {
+  const url  = document.getElementById('setup-url').value.trim();
+  const nome = document.getElementById('setup-nome').value.trim();
+  if (!url) { alert('Informe a URL do servidor'); return; }
+  SERVER_URL = url.replace(/\/$/, '');
+  MEU_NOME   = nome || 'Você';
+  localStorage.setItem('lex_url',  SERVER_URL);
+  localStorage.setItem('lex_nome', MEU_NOME);
+  document.getElementById('setup-overlay').classList.add('hidden');
+  atualizarStatus('online');
+  renderizarTudo();
+  if (historico.length === 0) boasVindas();
+}
+
+function boasVindas() {
+  const hora = new Date().getHours();
+  const periodo = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+  adicionarBubble('in', `${periodo}! Sou o Lex Jurídico. Como posso ajudar?`);
+}
+
+// ── Config panel ──
+function abrirCfg() {
+  const p = document.getElementById('cfg-panel');
+  document.getElementById('cfg-url').value  = SERVER_URL;
+  document.getElementById('cfg-nome').value = MEU_NOME;
+  p.classList.toggle('open');
+}
+function fecharCfg() { document.getElementById('cfg-panel').classList.remove('open'); }
+function salvarCfg() {
+  const url  = document.getElementById('cfg-url').value.trim();
+  const nome = document.getElementById('cfg-nome').value.trim();
+  if (url) { SERVER_URL = url.replace(/\/$/, ''); localStorage.setItem('lex_url', SERVER_URL); }
+  if (nome) { MEU_NOME = nome; localStorage.setItem('lex_nome', MEU_NOME); }
+  fecharCfg();
+}
+
+// ── Status ──
+function atualizarStatus(status) {
+  const sub = document.getElementById('header-sub');
+  const dot = document.getElementById('status-dot');
+  if (status === 'online') {
+    sub.textContent = 'online';
+    dot.style.background = 'var(--accent)';
+  } else if (status === 'digitando') {
+    sub.textContent = 'digitando...';
+    dot.style.background = 'var(--warn)';
+  } else {
+    sub.textContent = 'Assessor Jurídico IA';
+    dot.style.background = 'var(--text-meta)';
+  }
+}
+
+// ── Render ──
+function renderizarTudo() {
+  const wall = document.getElementById('wallpaper');
+  // Remove tudo exceto empty-state
+  const es = document.getElementById('empty-state');
+  wall.innerHTML = '';
+  wall.appendChild(es);
+
+  if (historico.length === 0) {
+    es.style.display = 'flex';
+    return;
+  }
+  es.style.display = 'none';
+
+  // Agrupar por dia
+  let ultimaData = '';
+  historico.forEach(msg => {
+    const data = msg.data || '';
+    if (data && data !== ultimaData) {
+      ultimaData = data;
+      const div = document.createElement('div');
+      div.className = 'date-div';
+      div.innerHTML = `<span>${data}</span>`;
+      wall.appendChild(div);
+    }
+    const row = criarBubbleEl(msg.role === 'user' ? 'out' : 'in', msg.content, msg.hora || '');
+    wall.appendChild(row);
+  });
+  scrollFim();
+}
+
+function criarBubbleEl(dir, texto, hora) {
+  const row = document.createElement('div');
+  row.className = `row ${dir}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  // Formata texto (alerts)
+  const html = formatarTexto(texto);
+  bubble.innerHTML = `
+    <div class="bubble-text">${html}</div>
+    <div class="bubble-meta">
+      <span class="bubble-time">${hora}</span>
+      ${dir === 'out' ? '<span class="tick">✓✓</span>' : ''}
+    </div>`;
+  row.appendChild(bubble);
+  return row;
+}
+
+function formatarTexto(txt) {
+  // Escapa HTML
+  const esc = txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Destaca alertas de prazo
+  return esc
+    .replace(/(🚨[^\n]*)/g, '<span class="alerta-prazo">$1</span>')
+    .replace(/(⚠️[^\n]*)/g, '<span class="alerta-aviso">$1</span>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function adicionarBubble(dir, texto) {
+  const wall = document.getElementById('wallpaper');
+  document.getElementById('empty-state').style.display = 'none';
+
+  const agora = new Date();
+  const hora  = agora.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+  const data  = agora.toLocaleDateString('pt-BR', {weekday:'long', day:'2-digit', month:'long'});
+  const role  = dir === 'out' ? 'user' : 'assistant';
+
+  // Data divider se novo dia
+  const ultima = historico[historico.length - 1];
+  if (!ultima || ultima.data !== data) {
+    const div = document.createElement('div');
+    div.className = 'date-div';
+    div.innerHTML = `<span>${data}</span>`;
+    wall.appendChild(div);
+  }
+
+  historico.push({ role, content: texto, hora, data });
+  salvarHist();
+
+  const row = criarBubbleEl(dir, texto, hora);
+  wall.appendChild(row);
+  scrollFim();
+}
+
+function scrollFim() {
+  const wall = document.getElementById('wallpaper');
+  setTimeout(() => { wall.scrollTop = wall.scrollHeight; }, 50);
+}
+
+// ── Typing ──
+function mostrarTyping(show) {
+  const t = document.getElementById('typing-row');
+  t.classList.toggle('visible', show);
+  if (show) scrollFim();
+}
+
+// ── Input ──
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    enviar();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// ── Arquivo ──
+function abrirArquivo() { document.getElementById('file-input').click(); }
+function cancelarArquivo() {
+  arquivoAtual = null;
+  document.getElementById('file-bar').classList.remove('visible');
+  document.getElementById('file-input').value = '';
+}
+function arquivoSelecionado(input) {
+  const f = input.files[0];
+  if (!f) return;
+  document.getElementById('file-name').textContent = f.name;
+  document.getElementById('file-bar').classList.add('visible');
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1];
+    arquivoAtual = { base64, nome: f.name, mimeType: f.type };
+  };
+  reader.readAsDataURL(f);
+}
+
+// ── Enviar ──
+async function enviar() {
+  if (enviando) return;
+  if (!SERVER_URL || !_authToken) {
+    document.getElementById('setup-overlay').classList.remove('hidden');
+    return;
+  }
+
+  const input = document.getElementById('msg-input');
+  const texto = input.value.trim();
+  const temArquivo = !!arquivoAtual;
+
+  if (!texto && !temArquivo) return;
+
+  enviando = true;
+  input.value = '';
+  input.style.height = 'auto';
+
+  if (temArquivo) {
+    adicionarBubble('out', texto ? `📎 ${arquivoAtual.nome}\n\n${texto}` : `📎 ${arquivoAtual.nome}`);
+  } else {
+    adicionarBubble('out', texto);
+  }
+
+  atualizarStatus('digitando');
+  mostrarTyping(true);
+  cancelarArquivo();
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + _authToken
+  };
+
+  try {
+    let resposta;
+
+    if (temArquivo) {
+      const payload = {
+        base64: arquivoAtual.base64,
+        mimeType: arquivoAtual.mimeType,
+        nome: arquivoAtual.nome
+      };
+      if (texto) payload.instrucoes = texto;
+
+      const r = await fetch(`${SERVER_URL}/api/analisar`, { method:'POST', headers, body: JSON.stringify(payload) });
+      if(r.status===401){ _authToken=null; _loadSessWpp(); mostrarTyping(false); adicionarBubble('in','🔒 Sessão expirada. Faça login novamente.'); document.getElementById('setup-overlay').classList.remove('hidden'); enviando=false; return; }
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      const a = d;
+      resposta = [
+        a.resumo || 'Documento analisado.',
+        a.numero_processo ? `📋 Processo: ${a.numero_processo}` : '',
+        a.partes          ? `👤 Partes: ${a.partes}` : '',
+        a.prazo           ? `📅 Prazo: ${a.prazo}` : '',
+        a.proxima_acao    ? `▶️ Próxima ação: ${a.proxima_acao}` : ''
+      ].filter(Boolean).join('\n');
+
+    } else {
+      const msgs = historico
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .slice(-20)
+        .map(m => ({ role: m.role, content: m.content }));
+
+      const r = await fetch(`${SERVER_URL}/api/chat`, { method:'POST', headers, body: JSON.stringify({ messages: msgs, maxTokens: 1500 }) });
+      if(r.status===401){ _authToken=null; localStorage.removeItem('lex_sessao_v2'); mostrarTyping(false); adicionarBubble('in','🔒 Sessão expirada. Faça login novamente.'); document.getElementById('setup-overlay').classList.remove('hidden'); enviando=false; return; }
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      resposta = d.text || '...';
+    }
+
+    mostrarTyping(false);
+    atualizarStatus('online');
+    adicionarBubble('in', resposta);
+
+  } catch(e) {
+    mostrarTyping(false);
+    atualizarStatus('offline');
+    adicionarBubble('in', `⚠️ Erro de conexão: ${e.message}\n\nVerifique a URL do servidor nas configurações.`);
+  }
+
+  enviando = false;
+}
+
+// ── Sair ──
+function sairWpp() {
+  if(!confirm('Sair do sistema?')) return;
+  localStorage.removeItem('lex_sessao_v2');
+  _authToken = null; _authPerfil = null;
+  historico = [];
+  localStorage.removeItem('lex_hist');
+  document.getElementById('setup-overlay').classList.remove('hidden');
+  document.getElementById('setup-senha').value = '';
+  document.getElementById('setup-erro').style.display = 'none';
+  document.getElementById('setup-btn').textContent = 'Entrar';
+}
+function limparChat() {
+  if (!confirm('Limpar todo o histórico de conversa?')) return;
+  historico = [];
+  localStorage.removeItem('lex_hist');
+  renderizarTudo();
+}
+
+// ── Init ──
+carregar();
+
+if (!SERVER_URL || !_authToken) {
+  // Pré-preenche URL se já salva
+  const _u = localStorage.getItem('lex_url')||'';
+  const _n = localStorage.getItem('lex_nome')||'';
+  if(_u) document.getElementById('setup-url').value = _u;
+  if(_n) document.getElementById('setup-nome').value = _n;
+} else {
+  document.getElementById('setup-overlay').classList.add('hidden');
+  atualizarStatus('online');
+  renderizarTudo();
+  if (historico.length === 0) boasVindas();
+}
+
+setTimeout(() => { document.getElementById('msg-input')?.focus(); }, 300);
+</script>
+</body>
+</html>
