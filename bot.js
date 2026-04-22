@@ -9123,9 +9123,17 @@ async function _gracefulShutdown(signal) {
 
 function _toIsoDataBr(dataBr) {
   if(!dataBr) return '';
-  const m = String(dataBr).match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  if(!m) return '';
-  return `${m[3]}-${m[2]}-${m[1]}`;
+  const s = String(dataBr).trim();
+  // Formato BR: dd/mm/yyyy
+  const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  // Formato ISO: yyyy-mm-dd (já está correto)
+  const iso = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // Formato ISO com T: 2026-04-22T20:00:00Z
+  const isoT = s.match(/(\d{4})-(\d{2})-(\d{2})T/);
+  if(isoT) return `${isoT[1]}-${isoT[2]}-${isoT[3]}`;
+  return '';
 }
 
 function _coletarEventosCalendario() {
