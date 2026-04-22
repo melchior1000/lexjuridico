@@ -8227,6 +8227,127 @@ if(url==='/api/memoria' && req.method==='GET') {
     return;
   }
 
+  // POST /api/revogar — Revogar token/sessão
+  if(url==='/api/revogar' && req.method==='POST') {
+    try {
+      const tk = getToken(req);
+      if(!tk || !validarToken(tk)) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Token invalido'})); return; }
+      if(!global._tokensRevogados) global._tokensRevogados = new Set();
+      global._tokensRevogados.add(tk);
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Sessao revogada'}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/refresh-token — Renovar token JWT
+  if(url==='/api/refresh-token' && req.method==='POST') {
+    try {
+      const tk = getToken(req);
+      const perfil = validarToken(tk);
+      if(!perfil) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Token invalido ou expirado'})); return; }
+      const novoToken = gerarToken(perfil);
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, token:novoToken, perfil}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/tempo-uso/login — Registrar momento de login
+  if(url==='/api/tempo-uso/login' && req.method==='POST') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
+      global._tempoUsoRegistros.push({perfil:pf, tipo:'login', ts:Date.now(), data:new Date().toISOString().slice(0,10)});
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/tempo-uso — Registrar heartbeat de tempo de uso
+  if(url==='/api/tempo-uso' && req.method==='POST') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
+      global._tempoUsoRegistros.push({perfil:pf, tipo:'heartbeat', ts:Date.now(), data:new Date().toISOString().slice(0,10), minutos:b.minutos||1});
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // GET /api/tempo-uso/relatorio — Relatório de tempo de uso
+  if(url.startsWith('/api/tempo-uso/relatorio') && req.method==='GET') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const u2 = new URL(req.url, 'http://localhost');
+      const perfilFiltro = u2.searchParams.get('perfil') || pf;
+      const regs = (global._tempoUsoRegistros||[]).filter(r=>r.perfil===perfilFiltro);
+      const porDia = {};
+      for(const r of regs) {
+        if(!porDia[r.data]) porDia[r.data] = {logins:0, minutos:0};
+        if(r.tipo==='login') porDia[r.data].logins++;
+        if(r.tipo==='heartbeat') porDia[r.data].minutos += (r.minutos||1);
+      }
+      const dias = Object.keys(porDia).sort().map(d=>({data:d,...porDia[d]}));
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, perfil:perfilFiltro, total:regs.length, dias}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/jurisprudencia — Buscar jurisprudência via IA
+  if(url==='/api/jurisprudencia' && req.method==='POST') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!b.tema && !b.area) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'tema ou area obrigatorio'})); return; }
+      const sysJuris = 'Você é um pesquisador jurídico expert. Busque jurisprudência REAL e VERIFICÁVEL sobre o tema solicitado. NUNCA invente decisões, números de processo ou ementas. Se não tiver certeza, diga que não encontrou. Formate: Tribunal, Número, Relator, Data, Ementa resumida, e como se aplica ao caso. Foque em STJ, STF, TST e TRFs. Priorize decisões recentes (últimos 5 anos).';
+      const msgs = [{role:'user', content:`Busque jurisprudência sobre: ${b.tema||''} | Área: ${b.area||'geral'} | Tribunal preferencial: ${b.tribunal||'todos'} | Contexto adicional: ${b.contexto||'nenhum'}`}];
+      const txt = await ia(msgs, sysJuris, 4096);
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, resposta:txt, tema:b.tema, area:b.area}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/gestor/chat — Chat do gestor com Opus 4.7 e contexto de processos
+  if(url==='/api/gestor/chat' && req.method==='POST') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!b.messages || !Array.isArray(b.messages)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'messages obrigatorio'})); return; }
+      const resumoProcs = processos.slice(0,30).map(p=>`[${p.id}] ${p.titulo||p.nome||'?'} (${p.area||'?'}) - ${p.status||'?'} - Cliente: ${p.cliente||'?'}`).join('\n');
+      const sysGestor = sysAssessor(null, null) + '\n\n## Processos ativos no escritório:\n' + (resumoProcs || '(nenhum processo cadastrado)') + '\n\nVocê tem acesso direto aos dados acima. Responda como gestor do escritório.';
+      const txt = await ia(b.messages, sysGestor, b.maxTokens||4096);
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, resposta:txt, text:txt}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/processo/atualizar — Atualizar campos de um processo individual
+  if(url==='/api/processo/atualizar' && req.method==='POST') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!b.processo_id) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_id obrigatorio'})); return; }
+      const idx = processos.findIndex(p=>String(p.id)===String(b.processo_id));
+      if(idx===-1) { res.writeHead(404,CORS); res.end(JSON.stringify({error:'Processo nao encontrado'})); return; }
+      const camposPermitidos = ['titulo','area','status','cliente','descricao','numero','valor_causa','juiz','vara','proxacao','prazo','prazoReal','observacoes'];
+      const atualizados = [];
+      for(const campo of camposPermitidos) {
+        if(b[campo] !== undefined) { processos[idx][campo] = b[campo]; atualizados.push(campo); }
+      }
+      if(b.prazos && Array.isArray(b.prazos)) { processos[idx].prazos = b.prazos; atualizados.push('prazos'); }
+      if(b.andamentos && Array.isArray(b.andamentos)) { processos[idx].andamentos = b.andamentos; atualizados.push('andamentos'); }
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, processo_id:b.processo_id, atualizados, msg:'Processo atualizado com sucesso'}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
   res.writeHead(404, CORS);
   res.end(JSON.stringify({error:'Not found'}));
 });
