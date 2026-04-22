@@ -7310,16 +7310,14 @@ const server = http.createServer(async (req, res) => {
   // MEMÓRIA POR CASO — CRUD e EXPORT pra Obsidian
   // ════════════════════════════════════════════════════════════════════════
   
-  // PATCH BOT FINAL: rota delegada para agente vivo
-  if((url==='/api/agente-vivo' || url==='/api/vivo/conversar') && req.method==='POST') {
+  // PATCH BOT FINAL: rota delegada para agente vivo (todas as sub-rotas /api/vivo/*)
+  if((url==='/api/agente-vivo' || url.startsWith('/api/vivo')) && lex_agente_vivo && typeof lex_agente_vivo.tratarRota === 'function') {
     try {
       const pfAgv = validarToken(getToken(req));
       if(!pfAgv) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
-      const bodyAgv = await lerBody(req);
-      if(!lex_agente_vivo || typeof lex_agente_vivo.tratarRota !== 'function') {
-        res.writeHead(503,CORS); res.end(JSON.stringify({error:'lex_agente_vivo indisponivel'})); return;
-      }
-      const out = await lex_agente_vivo.tratarRota(req, res, '/api/vivo/conversar', {
+      const bodyAgv = req.method === 'POST' ? await lerBody(req) : {};
+      const vivoUrl = url === '/api/agente-vivo' ? '/api/vivo/conversar' : url;
+      const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
         req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
         ANTHROPIC_KEY: AK, https, lerBody, sbGet: (t,q)=>sbReq('GET',t,null,q), sbReq,
         helpers: { validarToken, getToken, lerBody, notificarTodosSSE }
