@@ -108,8 +108,8 @@ try {
 }
 
 
-const TK = process.env.TELEGRAM_TOKEN || '8319651078:AAEuDlNaukp3sLUsk123UJ-0PgT4USsP7bU';
-const CHAT_ID = process.env.TELEGRAM_ADMIN || '696337324';
+const TK = process.env.TELEGRAM_TOKEN || '';
+const CHAT_ID = process.env.TELEGRAM_ADMIN || '';
 const AK = process.env.ANTHROPIC_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
@@ -7742,8 +7742,16 @@ if(url==='/api/memoria' && req.method==='GET') {
       const pfP = validarToken(getToken(req));
       if(!pfP) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
-      const processo_numero = u.searchParams.get('processo_numero') || u.searchParams.get('processo') || '';
-      if(!processo_numero) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_numero obrigatorio'})); return; }
+      let processo_numero = u.searchParams.get('processo_numero') || u.searchParams.get('processo') || '';
+      // Fallback: se recebeu processo_id sem numero, buscar no array processos
+      if(!processo_numero) {
+        const pid = u.searchParams.get('processo_id');
+        if(pid) {
+          const proc = processos.find(p => String(p.id) === String(pid));
+          if(proc && proc.numero) processo_numero = proc.numero;
+        }
+      }
+      if(!processo_numero) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_numero obrigatorio (ou processo_id de processo com numero cadastrado)'})); return; }
       const trib = u.searchParams.get('tribunal') || _extrairTribunalDoProcesso(processo_numero);
       const r = await _buscarAndamentosDatajud(processo_numero, trib);
       const ultima = r.movimentacoes[0] || null;
@@ -8200,6 +8208,22 @@ if(url==='/api/memoria' && req.method==='GET') {
     } catch(e) {
       res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message}));
     }
+    return;
+  }
+
+  // POST /api/notificar-telegram — envia mensagem customizada pro Telegram admin
+  if(url==='/api/notificar-telegram' && req.method==='POST') {
+    try {
+      const pfTg = validarToken(getToken(req));
+      if(!pfTg || pfTg !== 'admin') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Somente admin pode enviar notificacoes'})); return; }
+      const b = await lerBody(req);
+      if(!b.mensagem || typeof b.mensagem !== 'string' || !b.mensagem.trim()) {
+        res.writeHead(400,CORS); res.end(JSON.stringify({error:'mensagem obrigatoria'})); return;
+      }
+      if(!TK) { res.writeHead(503,CORS); res.end(JSON.stringify({error:'TELEGRAM_TOKEN nao configurado no servidor'})); return; }
+      await envTelegram(b.mensagem.trim(), null, b.chat_id || CHAT_ID);
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Notificacao enviada via Telegram'}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
