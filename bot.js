@@ -9135,7 +9135,7 @@ function _coletarEventosCalendario() {
       eventos.push({
         tipo: 'prazo',
         data: _toIsoDataBr(p.prazo),
-        titulo: p.nome,
+        titulo: p.nome || p.titulo,
         descricao: 'Prazo processual',
         processo_id: p.id
       });
@@ -9144,7 +9144,7 @@ function _coletarEventosCalendario() {
       eventos.push({
         tipo: 'prazo_real',
         data: _toIsoDataBr(p.prazoReal),
-        titulo: p.nome,
+        titulo: p.nome || p.titulo,
         descricao: 'Prazo real',
         processo_id: p.id
       });
@@ -9153,20 +9153,34 @@ function _coletarEventosCalendario() {
       eventos.push({
         tipo: 'tarefa',
         data: _toIsoDataBr(p.prazo) || new Date().toISOString().slice(0,10),
-        titulo: p.nome,
+        titulo: p.nome || p.titulo,
         descricao: String(p.proxacao),
         processo_id: p.id
       });
     }
+    // Coletar prazos do array p.prazos (integração calendário ↔ prazos do processo)
+    const prazosArr = Array.isArray(p.prazos) ? p.prazos : [];
+    for(const pz of prazosArr) {
+      if(!pz || !pz.data) continue;
+      eventos.push({
+        tipo: pz.tipo || 'prazo',
+        data: _toIsoDataBr(pz.data),
+        titulo: (p.nome || p.titulo) + ' — ' + (pz.descricao || 'Prazo'),
+        descricao: pz.descricao || 'Prazo do processo',
+        status_prazo: pz.status || 'pendente',
+        processo_id: p.id,
+        prazo_id: pz.id || null
+      });
+    }
     const ands = Array.isArray(p.andamentos) ? p.andamentos : [];
     for(const a of ands.slice(0,20)) {
-      const txt = String(a?.txt||'');
+      const txt = String(a?.txt||a?.descricao||'');
       const low = txt.toLowerCase();
-      if(low.includes('lembrete') || low.includes('audi') || low.includes('sessão') || low.includes('sessao')) {
+      if(low.includes('lembrete') || low.includes('audi') || low.includes('sessão') || low.includes('sessao') || low.includes('pericia') || low.includes('perícia')) {
         eventos.push({
           tipo: 'lembrete',
           data: _toIsoDataBr(a?.data) || new Date().toISOString().slice(0,10),
-          titulo: p.nome,
+          titulo: p.nome || p.titulo,
           descricao: txt.substring(0,220),
           processo_id: p.id
         });
