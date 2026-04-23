@@ -2003,7 +2003,7 @@ async function chamarIA(messages, system, maxTokens) {
           'anthropic-dangerous-direct-browser-access':'true'
         },
         body: JSON.stringify({
-          model:'claude-sonnet-4-5',
+          model:'claude-sonnet-4-20250514',
           max_tokens: maxTokens||1500,
           messages, system
         })

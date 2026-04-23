@@ -1141,7 +1141,7 @@ async function envArq(buf, nome, ctx, mimetype) {
 // FIX-03: verificação de API key + retry automático em sobrecarga + erro claro
 async function ia(messages, system, maxTok) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada. Defina a variável de ambiente.');
-const pay={model:'claude-opus-4-7', max_tokens:maxTok||2000, messages};
+const pay={model: LEX_CONFIG.modelo_ia || 'claude-sonnet-4-20250514', max_tokens:maxTok||2000, messages};
   if(system) pay.system=system;
   try {
     const r=await httpsPost('api.anthropic.com','/v1/messages',pay,
