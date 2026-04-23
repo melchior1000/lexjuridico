@@ -4293,19 +4293,118 @@ async function processarMensagem(ctx, dados) {
   }
 
   if(low==='/prep'||low==='/preparacao') {
-    const prep=processos.filter(p=>p.status==='EM_PREP');
+    const prep=processos.filter(p=>p.status==='EM_PREP'||p.status==='AGUARDANDO_APROVACAO');
     if(!prep.length){await env('Nenhum processo em preparação.', ctx);return;}
-    let m='EM PREPARAÇÃO ('+prep.length+')\n\n';
+    let m='📋 EM PREPARAÇÃO ('+prep.length+')\n\n';
     prep.forEach(p=>{
-      m+='📋 '+p.nome+'\nPartes: '+p.partes;
+      const status = p.status==='AGUARDANDO_APROVACAO' ? '⏳ AGUARDANDO APROVAÇÃO' : '📝 Em preparação';
+      m+='• '+p.nome+' ['+status+']\nPartes: '+p.partes;
       if(p.prevDist){
         const dias=calcDias(p.prevDist);
         m+='\nPrevisão: '+p.prevDist+(dias!==null?' ('+(dias<=0?'VENCIDA':dias+' dias')+')':'');
       }
-      if(p.docsFaltantes) m+='\nFalta: '+p.docsFaltantes;
+      if(p.docsFaltantes) m+='\n⚠ Falta: '+p.docsFaltantes;
       m+='\n\n';
     });
     await env(m, ctx);
+    return;
+  }
+
+  // ── NOVO CASO via Telegram — comando /novocaso ──
+  if(low.startsWith('/novocaso')) {
+    const descricao = txt.replace(/^\/novocaso\s*/i, '').trim();
+    if(!descricao) {
+      await env('📋 *NOVO CASO — Fluxo Rápido*\n\nDescreva o caso do cliente após o comando.\n\nExemplos:\n• /novocaso João Silva, 62 anos, BPC/LOAS, deficiente visual, renda zero\n• /novocaso Maria, rescisão indireta, assédio moral, 3 anos na empresa\n• /novocaso Empresa XYZ, execução fiscal federal, CDA INSS R$ 50 mil\n\nO agente vai interpretar, classificar e cadastrar automaticamente. Você receberá a confirmação para aprovar.', ctx);
+      return;
+    }
+    
+    // Agente interpreta a descrição
+    try {
+      const system = `Você é o Agente de Intake do escritório Camargos Advocacia.
+Interprete a descrição do caso e retorne JSON puro:
+{"nome":"nome do cliente","tipo":"tipo de ação","area":"área do direito","partes":"autor vs réu","resumo":"resumo breve","docs_necessarios":["doc1","doc2"]}
+Áreas: Previdenciário, Cível, Trabalhista, Tributário, Família, Criminal, Administrativo`;
+      
+      const iaResp = await chamarClaudeTexto(descricao, system, 600);
+      let dados = null;
+      try {
+        const jsonMatch = iaResp.match(/\{[\s\S]*\}/);
+        if (jsonMatch) dados = JSON.parse(jsonMatch[0]);
+      } catch(e) {}
+      
+      if (!dados) {
+        await env('❌ Não consegui interpretar o caso. Tente ser mais específico:\n/novocaso [nome], [idade], [tipo de ação], [detalhes]', ctx);
+        return;
+      }
+      
+      // Salva no Supabase como EM_PREP + AGUARDANDO_APROVACAO
+      const novoCaso = {
+        nome: dados.nome || 'Caso sem nome',
+        tipo: dados.tipo || '',
+        area: dados.area || 'Cível',
+        partes: dados.partes || '',
+        status: 'AGUARDANDO_APROVACAO',
+        resumo: dados.resumo || descricao,
+        docsFaltantes: (dados.docs_necessarios || []).join(', '),
+        criadoPor: 'telegram_' + ctx.chatId,
+        criadoEm: new Date().toISOString()
+      };
+      
+      const salvo = await sbReq('POST', 'processos', novoCaso, {}, {'Prefer':'return=representation'});
+      
+      if (salvo.ok) {
+        const casoId = salvo.body && salvo.body[0] ? salvo.body[0].id : '?';
+        
+        // Confirma para quem criou
+        let confirmMsg = '✅ *Caso cadastrado com sucesso!*\n\n';
+        confirmMsg += '📋 ' + novoCaso.nome + '\n';
+        confirmMsg += '⚖ Tipo: ' + novoCaso.tipo + '\n';
+        confirmMsg += '📁 Área: ' + novoCaso.area + '\n';
+        confirmMsg += '👥 Partes: ' + novoCaso.partes + '\n';
+        if (novoCaso.docsFaltantes) confirmMsg += '⚠ Docs necessários: ' + novoCaso.docsFaltantes + '\n';
+        confirmMsg += '\n⏳ Status: AGUARDANDO APROVAÇÃO DO CEO';
+        await env(confirmMsg, ctx);
+        
+        // Notifica o CEO (Kleuber) para aprovar
+        const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || ctx.chatId;
+        if (adminChatId && adminChatId !== String(ctx.chatId)) {
+          let notif = '🔔 *NOVO CASO PARA APROVAR*\n\n';
+          notif += '📋 ' + novoCaso.nome + '\n';
+          notif += '⚖ ' + novoCaso.tipo + ' (' + novoCaso.area + ')\n';
+          notif += '👥 ' + novoCaso.partes + '\n';
+          notif += '📝 ' + novoCaso.resumo + '\n';
+          notif += '\nCriado por: Telegram\n';
+          notif += '\n/aprovar_' + casoId + ' — Aprovar caso';
+          notif += '\n/rejeitar_' + casoId + ' — Rejeitar caso';
+          try { await enviarMsgTelegram(adminChatId, notif); } catch(e) { console.warn('[Lex] Erro notificando CEO:', e.message); }
+        }
+      } else {
+        await env('❌ Erro ao salvar: ' + (salvo.erro || 'erro desconhecido'), ctx);
+      }
+    } catch(e) {
+      await env('❌ Erro no agente: ' + (e.message || e), ctx);
+    }
+    return;
+  }
+  
+  // ── APROVAR/REJEITAR caso — /aprovar_ID e /rejeitar_ID ──
+  if(low.startsWith('/aprovar_') || low.startsWith('/rejeitar_')) {
+    if(!isAdvogado(ctx.chatId)) {
+      await env('🔒 Apenas o advogado pode aprovar/rejeitar casos.', ctx);
+      return;
+    }
+    const casoId = low.replace(/^\/(aprovar|rejeitar)_/, '').trim();
+    const aprovar = low.startsWith('/aprovar_');
+    const novoStatus = aprovar ? 'EM_PREP' : 'ARQUIVADO';
+    
+    const r = await sbReq('PATCH', 'processos', {status: novoStatus}, {id: 'eq.' + casoId});
+    if (r.ok) {
+      await env(aprovar 
+        ? '✅ Caso #' + casoId + ' APROVADO — movido para Em Preparação.' 
+        : '❌ Caso #' + casoId + ' REJEITADO — arquivado.', ctx);
+    } else {
+      await env('⚠ Erro ao atualizar caso: ' + (r.erro || 'erro'), ctx);
+    }
     return;
   }
 

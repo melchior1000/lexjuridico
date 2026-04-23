@@ -5224,6 +5224,25 @@ async function abrirModalPrep(id){
     <div id="_pIASp" style="display:none;text-align:center;padding:8px;font-size:13px;color:var(--accent)">⏳ Analisando...</div>
     <div id="_pIARe" style="display:none;background:var(--green-soft);border:1px solid var(--green)33;border-radius:8px;padding:9px;margin-bottom:10px;font-size:12px;line-height:1.6"></div>
     <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:8px">📁 DADOS</div>
+    
+    <!-- AGENTE DE INTAKE — preenche dados automaticamente -->
+    <div style="background:var(--green)11;border:1px solid var(--green)33;border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:600;color:var(--green);font-size:12px;margin-bottom:8px">🤖 Agente de Intake — Descreva o caso</div>
+      <div id="_pIntakeChat" style="max-height:180px;overflow-y:auto;margin-bottom:8px;font-size:12px;line-height:1.5">
+        <div style="background:var(--green);color:#fff;padding:8px 12px;border-radius:10px 10px 10px 4px;margin-bottom:6px;max-width:85%">🤖 Descreva o caso do cliente em texto livre. Eu preencho tudo automaticamente.</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <input id="_pIntakeInput" class="fi" style="flex:1;font-size:12px" placeholder="Ex: Cliente João, 62 anos, quer BPC/LOAS, renda zero, deficiente visual..." onkeydown="if(event.key==='Enter'){event.preventDefault();_pIntakeSend();}">
+        <button class="btn-save" style="padding:6px 14px;font-size:11px" onclick="_pIntakeSend()">Enviar</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn-outline" style="font-size:9px;padding:3px 8px" onclick="document.getElementById('_pIntakeInput').value='Cliente quer entrar com ação trabalhista por rescisão indireta';_pIntakeSend()">Trabalhista</button>
+        <button class="btn-outline" style="font-size:9px;padding:3px 8px" onclick="document.getElementById('_pIntakeInput').value='Cliente idoso precisa de BPC/LOAS, sem renda';_pIntakeSend()">BPC/LOAS</button>
+        <button class="btn-outline" style="font-size:9px;padding:3px 8px" onclick="document.getElementById('_pIntakeInput').value='Cliente quer revisar contrato bancário com juros abusivos';_pIntakeSend()">Bancário</button>
+        <button class="btn-outline" style="font-size:9px;padding:3px 8px" onclick="document.getElementById('_pIntakeInput').value='Execução fiscal federal, CDA do INSS';_pIntakeSend()">Tributário</button>
+      </div>
+    </div>
+    
     <div class="fg"><label class="fl">Nome / Identificação</label><input class="fi" id="pn" value="${caso?.nome||''}" placeholder="Ex: João Silva — BPC/LOAS"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="fg"><label class="fl">Tipo de Ação</label><input class="fi" id="pt" value="${caso?.tipo||''}" placeholder="Ex: BPC, Revisional..."></div>
@@ -5279,6 +5298,121 @@ function _pCapIA(orig){
   if(orig==='cam'){inp.accept='image/*';inp.capture='environment';}else if(orig==='pdf'){inp.accept='application/pdf';}else{inp.accept='image/*,application/pdf';}
   inp.onchange=()=>{if(inp.files[0])_pAnal(inp.files[0]);document.body.removeChild(inp);};
   document.body.appendChild(inp);inp.click();
+}
+
+// ═══ AGENTE DE INTAKE — preenche modal automaticamente ═══
+const _CHECKLIST_DOCS = {
+  'Previdenciário': ['RG/CPF','Comprovante de residência','CNIS (extrato previdenciário)','Laudo médico atualizado','Comprovante de renda (ou declaração de hipossuficiência)','CTPS','Certidão de nascimento dos filhos','Receitas médicas','Exames complementares'],
+  'Trabalhista': ['RG/CPF','CTPS (todas as páginas)','Contracheques (últimos 12 meses)','Termo de rescisão (TRCT)','Extrato FGTS','PPP (Perfil Profissional Preisográfico)','LTCAT','Acordo/Convenção coletiva','Carta de preposto'],
+  'Cível': ['RG/CPF','Comprovante de residência','Contrato (se houver)','Comprovantes de pagamento','Notificação extrajudicial','Fotos/provas do dano','Orçamentos (para danos materiais)','Correspondências trocadas'],
+  'Família': ['RG/CPF de ambas as partes','Certidão de casamento','Certidão de nascimento dos filhos','Declaração de IR (últimos 2 anos)','Comprovante de renda','Escritura de imóveis','Extratos bancários','Acordo pré-nupcial (se houver)'],
+  'Tributário': ['CNPJ/CPF','CDA (Certidão de Dívida Ativa)','Notificação fiscal','DARFs pagos','DCTF/EFD','Contrato social','Procuração ECAC','Relatório contábil','Declaração de IR/CSLL'],
+  'Criminal': ['RG/CPF','Boletim de ocorrência','Inquérito policial','Provas materiais','Laudos periciais','Testemunhas (nomes e contatos)'],
+  'Administrativo': ['RG/CPF','Notificação/auto de infração','Defesa administrativa (se já apresentou)','Documentos de posse/propriedade','Fotos do local','Alvará/licenças']
+};
+
+async function _pIntakeSend() {
+  const input = document.getElementById('_pIntakeInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  
+  const chat = document.getElementById('_pIntakeChat');
+  chat.innerHTML += '<div style="background:var(--accent);color:#fff;padding:8px 12px;border-radius:10px 10px 4px 10px;margin-bottom:6px;max-width:85%;margin-left:auto;text-align:right">' + msg.replace(/</g,'&lt;') + '</div>';
+  chat.innerHTML += '<div id="_pIntakeLoad" style="color:var(--text3);font-size:11px;padding:4px">⏳ Analisando e preenchendo...</div>';
+  chat.scrollTop = chat.scrollHeight;
+  
+  try {
+    const system = `Você é o Agente de Intake do escritório Camargos Advocacia.
+O advogado ou secretária está descrevendo um caso de cliente. Sua função:
+1. Interpretar a descrição e extrair: nome do cliente, tipo de ação, área do direito, partes (autor vs réu), tribunal provável
+2. Responder em JSON puro (sem markdown): {"nome":"...","tipo":"...","area":"...","partes":"...","tribunal":"...","resumo":"breve resumo do caso","docs_sugeridos":["doc1","doc2"]}
+3. Se faltar informação, preencha o que puder e indique o que falta no resumo
+Áreas válidas: Previdenciário, Cível, Trabalhista, Tributário, Família, Criminal, Administrativo, Outro`;
+    
+    const resposta = await chamarIA([{role:'user',content:msg}], system, 800);
+    
+    // Remove loading
+    const loadEl = document.getElementById('_pIntakeLoad');
+    if (loadEl) loadEl.remove();
+    
+    // Tenta parsear JSON
+    let dados = null;
+    try {
+      const jsonMatch = resposta.match(/\{[\s\S]*\}/);
+      if (jsonMatch) dados = JSON.parse(jsonMatch[0]);
+    } catch(e) {}
+    
+    if (dados) {
+      // Preenche campos automaticamente
+      if (dados.nome) document.getElementById('pn').value = dados.nome;
+      if (dados.tipo) document.getElementById('pt').value = dados.tipo;
+      if (dados.area) {
+        const sel = document.getElementById('pa');
+        for (let i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].text === dados.area) { sel.selectedIndex = i; break; }
+        }
+      }
+      if (dados.partes) document.getElementById('pp').value = dados.partes;
+      if (dados.tribunal) document.getElementById('ptr').value = dados.tribunal;
+      
+      // Monta resposta visual
+      let html = '<div style="background:var(--green);color:#fff;padding:8px 12px;border-radius:10px 10px 10px 4px;margin-bottom:6px;max-width:85%">';
+      html += '<strong>🤖 Dados preenchidos:</strong><br>';
+      html += '• Nome: ' + (dados.nome || '—') + '<br>';
+      html += '• Tipo: ' + (dados.tipo || '—') + '<br>';
+      html += '• Área: ' + (dados.area || '—') + '<br>';
+      html += '• Partes: ' + (dados.partes || '—') + '<br>';
+      html += '• Tribunal: ' + (dados.tribunal || '—') + '<br>';
+      if (dados.resumo) html += '<br><em>' + dados.resumo + '</em>';
+      html += '</div>';
+      chat.innerHTML += html;
+      
+      // Mostra checklist de documentos
+      const area = dados.area || 'Cível';
+      const docs = _CHECKLIST_DOCS[area] || _CHECKLIST_DOCS['Cível'];
+      _renderChecklistPrep(area, docs, dados.docs_sugeridos || []);
+      
+      chat.innerHTML += '<div style="background:var(--accent)22;color:var(--accent);padding:8px 12px;border-radius:8px;margin-top:4px;font-size:11px;font-weight:600">✅ Confira os dados acima e ajuste se necessário. Depois clique em SALVAR.</div>';
+    } else {
+      chat.innerHTML += '<div style="background:var(--green);color:#fff;padding:8px 12px;border-radius:10px 10px 10px 4px;margin-bottom:6px;max-width:85%">🤖 ' + resposta.replace(/\n/g,'<br>').substring(0,500) + '</div>';
+    }
+    chat.scrollTop = chat.scrollHeight;
+  } catch(e) {
+    const loadEl = document.getElementById('_pIntakeLoad');
+    if (loadEl) loadEl.innerHTML = '<span style="color:var(--red)">❌ Erro: ' + (e.message||e) + '</span>';
+  }
+}
+
+function _renderChecklistPrep(area, docs, sugeridos) {
+  // Renderiza checklist no modal logo antes dos documentos
+  let checkHtml = '<div id="_pChecklistArea" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">';
+  checkHtml += '<div style="font-weight:700;color:var(--accent);font-size:12px;margin-bottom:8px">📋 Checklist — ' + area + ' (documentos necessários)</div>';
+  checkHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">';
+  docs.forEach((doc, i) => {
+    const sugerido = sugeridos.includes(doc);
+    checkHtml += '<label style="display:flex;align-items:center;gap:6px;font-size:11px;padding:4px 6px;background:' + (sugerido ? 'var(--orange-soft)' : 'transparent') + ';border-radius:4px;cursor:pointer">';
+    checkHtml += '<input type="checkbox" class="_pCheckDoc" value="' + doc + '"' + (sugerido ? ' checked' : '') + '>';
+    checkHtml += '<span>' + (sugerido ? '<strong style="color:var(--orange)">⚠ ' + doc + '</strong>' : doc) + '</span>';
+    checkHtml += '</label>';
+  });
+  checkHtml += '</div>';
+  checkHtml += '<div style="font-size:10px;color:var(--text3);margin-top:6px">⚠ Documentos em laranja foram sugeridos pela IA como prioritários</div>';
+  checkHtml += '</div>';
+  
+  // Remove checklist anterior se existir
+  const old = document.getElementById('_pChecklistArea');
+  if (old) old.remove();
+  
+  // Insere logo antes da seção de documentos (slots)
+  const slotsLabel = document.querySelector('#_pMOv .fg label.fl');
+  if (slotsLabel) {
+    slotsLabel.closest('.fg')?.insertAdjacentHTML('beforebegin', checkHtml);
+  } else {
+    // Fallback: insere no final do chat
+    const chat = document.getElementById('_pIntakeChat');
+    if (chat) chat.insertAdjacentHTML('afterend', checkHtml);
+  }
 }
 
 async function _pAnal(file){
