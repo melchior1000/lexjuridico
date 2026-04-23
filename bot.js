@@ -110,7 +110,7 @@ try {
 
 
 const TK = process.env.TELEGRAM_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_ADMIN || '';
+const CHAT_ID = process.env.TELEGRAM_ADMIN || '696337324';
 const AK = process.env.ANTHROPIC_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
@@ -522,7 +522,7 @@ function _gerarDocxBufferPeca(titulo, conteudo, tipo) {
 }
 
 const USUARIOS = {
-  '696337324': { nome:'Admin', perfil:'admin', ok:true, historico:[] }
+  '696337324': { nome:'Kleuber Melchior', perfil:'admin', ok:true, historico:[] }
 };
 const AUTORIZADOS = USUARIOS;
 
