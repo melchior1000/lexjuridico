@@ -5495,7 +5495,9 @@ async function _comandosControle(ctx, mem, txt, low) {
 
 async function _conversaInteligente(ctx, mem, txt, low) {
   // ── INTERCEPTOR INTELIGENTE: detecta intenção de atualizar processo em linguagem natural ──
-  if(!mem.aguardando && isAdmin(ctx.chatId)) {
+  // Funciona em TODOS os canais: Telegram, WhatsApp, Painel
+  const ehAdmin = isAdmin(ctx.chatId) || _isOperadorWhatsApp(_numeroPlanoWhats(ctx.chatId));
+  if(!mem.aguardando && ehAdmin) {
     const intentResult = await _detectarIntencaoProcesso(txt, ctx, mem);
     if(intentResult) return;
   }
@@ -8539,7 +8541,17 @@ const server = http.createServer(async (req, res) => {
       const vivoUrl = url === '/api/agente-vivo' ? '/api/vivo/conversar' : url;
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
         req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
-        ANTHROPIC_KEY: AK, https, lerBody, sbGet: (t,q)=>sbReq('GET',t,null,q), sbReq,
+        ANTHROPIC_KEY: AK, https, lerBody,
+        sbGet: (t,q)=>sbReq('GET',t,null,q),
+        sbReq,
+        sbUpsert: async (tabela, dados, conflito) => {
+          return sbReq('POST', tabela, dados, {}, { onConflict: conflito || 'id', merge: Object.keys(dados).join(',') });
+        },
+        sbPatch: async (tabela, dados, filtro) => {
+          return sbReq('PATCH', tabela, dados, filtro);
+        },
+        _processarMarcadoresChat,
+        _notificarEquipe,
         helpers: { validarToken, getToken, lerBody, notificarTodosSSE }
       });
       if(typeof out !== 'undefined' && !res.writableEnded) {

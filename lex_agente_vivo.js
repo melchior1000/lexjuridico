@@ -497,18 +497,33 @@ async function buscarDocumentosIndexados(processoId, nomeProcesso, deps) {
 }
 
 async function persistirProcesso(deps, processo_atualizado) {
-  try {
-    if (deps.sbUpsert) {
-      const r = await deps.sbUpsert('processos_cache', processo_atualizado, 'id');
-      if (r && r.ok) return { ok: true, via: 'supabase' };
-    }
-  } catch (e) {
-    console.error('[VIVO] Falha sbUpsert:', e.message);
-  }
+  // 1. Atualiza na memória (sempre)
   const arr = deps.processos || [];
   const idx = arr.findIndex(p => String(p.id) === String(processo_atualizado.id));
   if (idx >= 0) arr[idx] = processo_atualizado;
   else arr.push(processo_atualizado);
+  
+  // 2. Persiste no Supabase (tabela processos)
+  try {
+    if (deps.sbPatch) {
+      const updateData = {};
+      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero'];
+      for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
+      if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
+      await deps.sbPatch('processos', updateData, { id: 'eq.' + processo_atualizado.id });
+      console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via PATCH');
+      return { ok: true, via: 'supabase' };
+    } else if (deps.sbReq) {
+      const updateData = {};
+      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo'];
+      for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
+      await deps.sbReq('PATCH', 'processos', updateData, { id: 'eq.' + processo_atualizado.id });
+      console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via sbReq');
+      return { ok: true, via: 'supabase' };
+    }
+  } catch (e) {
+    console.error('[VIVO] Falha ao persistir no Supabase (não-fatal):', e.message);
+  }
   return { ok: true, via: 'memoria' };
 }
 
@@ -792,6 +807,17 @@ async function handlerAplicar(req, res, body, deps) {
     }
 
     const resultado = await persistirProcesso(deps, processo);
+    
+    // Notifica equipe sobre atualização (se disponível)
+    if (deps._notificarEquipe) {
+      const nomeProc = processo.nome || 'Processo #'+processo_id;
+      let resumo = '✅ *Processo atualizado via Gestor IA*\n📁 '+nomeProc+'\n';
+      if(proposta.novo_andamento) resumo += '📝 '+proposta.novo_andamento+'\n';
+      if(proposta.status) resumo += '🔄 Status: '+proposta.status+'\n';
+      if(proposta.prazo) resumo += '📅 Prazo: '+proposta.prazo+'\n';
+      if(proposta.proxima_acao) resumo += '▶️ Próxima: '+proposta.proxima_acao+'\n';
+      deps._notificarEquipe(resumo).catch(()=>{});
+    }
 
     if (typeof deps.sbPost === 'function') {
       try {
