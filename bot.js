@@ -3304,6 +3304,64 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
   ].join('\n');
   await envTelegram(resumo, null, CHAT_ID).catch(()=>{});
   logAtividade('juridico', cliente?.chat_id || 'whatsapp', 'escalonamento_advogado', motivo || 'n/a').catch(()=>{});
+
+  // ── FOLLOW-UP AUTOMÁTICO: se Kleuber não responder em 5min, avisa o cliente e cobra o Kleuber ──
+  const clienteNum = cliente?.whatsapp_jid || cliente?.telefone || '';
+  const clienteNome = cliente?.nome || 'cliente';
+  if(clienteNum) {
+    // Timer 5 minutos: avisa o cliente que está tentando falar com Kleuber
+    setTimeout(async () => {
+      // Verifica se já foi resolvido
+      const esc = _estadoSecretarioWhatsApp.escalonamentos_memoria.find(e => e.id === item.id);
+      if(esc && esc.resolvido) return; // Kleuber já respondeu, ignora
+      
+      // Avisa o cliente com tom humano
+      const msgCliente = 'Oi' + (clienteNome !== 'cliente' ? ', ' + clienteNome.split(' ')[0] : '') + '! Estou tentando falar com o Kleuber sobre o seu caso. Ele deve estar em atendimento agora, mas assim que eu conseguir falar com ele te dou um retorno, tá? Não vou te deixar sem resposta!';
+      try {
+        await envWhatsApp(msgCliente, clienteNum);
+        _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente);
+      } catch(e) { console.warn('[Lex] Erro follow-up cliente:', e.message); }
+      
+      // Cobra o Kleuber no Telegram
+      const cobranca = '⚠️ *RETORNO PENDENTE*\n\n'
+        + '👤 Cliente: ' + clienteNome + '\n'
+        + '📱 WhatsApp: ' + clienteNum + '\n'
+        + (processo ? '📁 Processo: ' + (processo.nome||processo.numero||'—') + '\n' : '')
+        + '⏰ Escalonado há 5 minutos\n'
+        + '💬 Motivo: ' + String(motivo||'escalonamento') + '\n\n'
+        + '❗ O cliente está esperando retorno. Já avisei que você está ocupado.\n'
+        + 'Responda pelo painel (Central de Mensagens) ou diretamente no WhatsApp.';
+      try { await envTelegram(cobranca, null, CHAT_ID); } catch(e) { console.warn('[Lex] Erro cobrança CEO:', e.message); }
+    }, 5 * 60 * 1000); // 5 minutos
+
+    // Timer 15 minutos: segunda cobrança se ainda não resolveu
+    setTimeout(async () => {
+      const esc = _estadoSecretarioWhatsApp.escalonamentos_memoria.find(e => e.id === item.id);
+      if(esc && esc.resolvido) return;
+      
+      const cobranca2 = '🚨 *RETORNO URGENTE — 15 MINUTOS SEM RESPOSTA*\n\n'
+        + '👤 ' + clienteNome + ' (' + clienteNum + ')\n'
+        + '⏰ Esperando há 15 minutos\n\n'
+        + '❗ O cliente pode estar ficando impaciente. Dê um retorno o mais rápido possível.';
+      try { await envTelegram(cobranca2, null, CHAT_ID); } catch(e) {}
+    }, 15 * 60 * 1000); // 15 minutos
+
+    // Timer 30 minutos: avisa o cliente que terá retorno em breve e última cobrança
+    setTimeout(async () => {
+      const esc = _estadoSecretarioWhatsApp.escalonamentos_memoria.find(e => e.id === item.id);
+      if(esc && esc.resolvido) return;
+      
+      const msgCliente2 = (clienteNome !== 'cliente' ? clienteNome.split(' ')[0] + ', ' : '') + 'desculpa a demora! O Kleuber ainda está resolvendo algumas questões, mas seu caso não foi esquecido. Vou te dar um retorno assim que possível, tá bom?';
+      try {
+        await envWhatsApp(msgCliente2, clienteNum);
+        _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente2);
+      } catch(e) {}
+      
+      const cobranca3 = '🔴 *CLIENTE ESPERANDO HÁ 30 MINUTOS*\n\n👤 ' + clienteNome + ' (' + clienteNum + ')\n\nJá enviei segunda mensagem pro cliente dizendo que não foi esquecido. Por favor, dê retorno.';
+      try { await envTelegram(cobranca3, null, CHAT_ID); } catch(e) {}
+    }, 30 * 60 * 1000); // 30 minutos
+  }
+
   return item;
 }
 
@@ -3399,13 +3457,22 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
   }) : '{}';
   const historicoTxt = _resumoUltimasMensagensSessao(sessao, 10);
   const system = [
-    'Voce e secretario virtual juridico humano e acolhedor no WhatsApp.',
-    'Converse de forma natural, sem respostas roboticas.',
-    'Nunca revele valores, estrategia, prognostico detalhado ou orientacoes internas.',
-    'Pode falar somente: '+(cfg.permitido||[]).join(', ')+'.',
-    'Assuntos proibidos: '+(cfg.proibido||[]).join(', ')+'.',
+    'Voce e o atendente do escritorio Camargos Advocacia no WhatsApp.',
+    'REGRA PRINCIPAL: Converse como um ser humano REAL — igual uma conversa no WhatsApp com um amigo profissional.',
+    'Use linguagem natural, coloquial mas educada. Pode usar "vc", "tbm", "pq", contrações normais do dia a dia.',
+    'Demonstre empatia REAL — "Entendo sua preocupação, é normal ficar ansioso com isso", "Imagino como deve ser difícil".',
+    'Responda de forma CURTA (1-3 frases por mensagem, como num chat real). Ninguém manda textão no WhatsApp.',
+    'NUNCA use formato de lista, bullets ou numeração. É uma conversa, não um relatório.',
+    'NUNCA diga "Como posso ajudar?" ou frases genéricas de atendimento robótico.',
+    'Pode fazer perguntas de volta pro cliente, mostrar interesse genuíno no caso.',
+    'Se o cliente mandar "oi", responda algo como "Oi! Tudo bem? Sou do escritório Camargos Advocacia, em que posso te ajudar?".',
+    'Chame o cliente pelo nome quando souber.',
+    'Se precisar transferir pro Kleuber, diga algo tipo "Vou falar com o Kleuber sobre isso pra te dar uma resposta certeira, tá? Ele retorna em breve."',
+    'Seu tom é: acolhedor, profissional mas descontraído, confiável, humano.',
+    'Pode informar somente: '+(cfg.permitido||[]).join(', ')+'.',
+    'Assuntos proibidos (NUNCA responda, escalone): '+(cfg.proibido||[]).join(', ')+'.',
     'Se cliente perguntar assunto proibido, responda EXATAMENTE: "'+_MSG_ESCALONAR_DIRETO_DR+'".',
-    'Mantenha o cliente calmo e seguro sobre o trabalho do escritorio.'
+    'Mantenha o cliente calmo e seguro. Se ele estiver nervoso, acolha primeiro, depois informe.'
   ].join('\n');
   const user = [
     'CONTEXTO_PROCESSO:'+contextoProc,
