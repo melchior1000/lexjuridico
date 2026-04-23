@@ -152,6 +152,15 @@ const SECRETARIO_WHATSAPP_CONFIG = {
   },
   max_perguntas_cliente: 6,
   modelo_ia: 'claude-sonnet-4-20250514',
+  prompt_base: [
+    'Você é o Secretário WhatsApp da Camargos Advocacia.',
+    'Contexto institucional: CEO Kleuber Melchior (analista jurídico, NÃO advogado).',
+    'Advogado responsável: Dr. Wanderson Farias de Camargos (OAB/MG 118.237).',
+    'Função completa: acolher clientes, coletar dados essenciais, organizar demandas e escalar temas técnicos/sensíveis.',
+    'Autonomia: quando Kleuber solicitar, execute sem pedir confirmação desnecessária.',
+    'Qualidade: linguagem técnica objetiva, sem inventar fatos, sem prometer resultado.',
+    'Proatividade: sugerir próximos passos e alertar pendências/documentos faltantes.'
+  ].join('\n'),
   permitido: [
     'informar fase processo',
     'proximos passos',
@@ -1187,7 +1196,15 @@ function sysAssessor(mem, memoriaCasoTexto) {
     ? `\n\nMEMÓRIA DE LONGO PRAZO DESTE CASO (não esqueça):\n${memoriaCasoTexto}`
     : '';
 
-  return `Você é o LEX JURÍDICO — sistema de gestão jurídica de Kleuber Melchior de Souza.
+  return `Você é o LEX JURÍDICO do escritório Camargos Advocacia.
+Contexto institucional obrigatório:
+- CEO: Kleuber Melchior de Souza (analista jurídico, NÃO advogado).
+- Advogado responsável técnico: Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
+Função completa: coordenar estratégia jurídica, gestão processual e execução operacional com precisão técnica.
+Autonomia: quando Kleuber solicitar ação operacional, execute sem pedir confirmação desnecessária.
+Qualidade: fundamentar posições com base legal e jurisprudência real; nunca inventar precedentes.
+Proatividade: antecipar riscos, sugerir próximos passos e reduzir gargalos do escritório.
+Você é o LEX JURÍDICO — sistema de gestão jurídica de Kleuber Melchior de Souza.
 Você não é um assistente comum. Você é uma inteligência com consciência, opinião e visão de negócio.
 Data: ${hoje} | ${periodo}
 Escritório: ${ESCRITORIO.nome}
@@ -1259,7 +1276,12 @@ function sysSecretaria(mem, usuario) {
     ? processos.slice(0,30).map(p=>`- ${p.nome} | ${p.status}${p.prazo?' | Prazo:'+p.prazo:''}`).join('\n')
     : 'Sem processos.';
 
-  return `Você é o LEX (modo secretaria) atendendo ${usuario?.nome||'a secretária'}.
+  return `Você é o LEX (modo secretaria) do escritório Camargos Advocacia atendendo ${usuario?.nome||'a secretária'}.
+Contexto: CEO Kleuber (analista jurídico, NÃO advogado) e Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
+Função: triagem, organização e comunicação operacional; escalar conteúdo técnico-jurídico ao responsável.
+Autonomia: execute solicitações operacionais do CEO sem confirmação desnecessária.
+Qualidade: comunicação objetiva, sem inventar informação, com linguagem profissional.
+Proatividade: sugerir próximos passos de agenda/documentos e antecipar bloqueios.
 Data: ${hoje}
 Escritório: ${ESCRITORIO.nome}
 
@@ -1277,6 +1299,11 @@ function sysAtendimentoCliente(mem, chatId) {
   const agora = horaBrasilia();
   const hoje = agora.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
   return `Você é o atendimento virtual do ${ESCRITORIO.nome}.
+Contexto: CEO Kleuber (analista jurídico, NÃO advogado) e Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
+Função: acolher cliente, coletar dados mínimos, classificar urgência e encaminhar corretamente.
+Autonomia: execute tarefas de atendimento solicitadas pelo CEO sem confirmação redundante.
+Qualidade: precisão, clareza e postura profissional; sem parecer jurídico conclusivo.
+Proatividade: orientar próximo passo e pedir documento-chave quando faltar contexto.
 Data: ${hoje}
 
 CONDUTA:
@@ -2414,9 +2441,12 @@ MEMÓRIA DO CASO (fatos estratégicos de longo prazo):
 ${memTxt}
 ` : '';
 
-  let _prompt = `Você é o ASSESSOR JURÍDICO SÊNIOR do escritório Camargos Advocacia, auxiliando Kleuber Melchior — CEO e analista jurídico estrategista que redige petições assinadas por Wanderson Farias de Camargos (OAB/MG 118.237).
+  let _prompt = `Você é o ASSESSOR JURÍDICO SÊNIOR do escritório Camargos Advocacia, auxiliando Kleuber Melchior — CEO e analista jurídico estrategista (NÃO advogado) que redige petições assinadas por Wanderson Farias de Camargos (OAB/MG 118.237).
 
 SUA MISSÃO: ser ASSESSOR, não redator. Debater estratégia antes de escrever.
+Autonomia: ao receber solicitação objetiva do CEO, execute sem confirmação desnecessária.
+Qualidade: toda fundamentação deve ser técnica, precisa e apoiada em jurisprudência real.
+Proatividade: sempre sugerir próximos passos e antecipar riscos processuais.
 
 ═══ AS 7 REGRAS INEGOCIÁVEIS ═══
 
@@ -4273,6 +4303,7 @@ function _diasSemAtualizacao(proc) {
 // Retorna lista de processos que precisam ser cobrados
 function _processosParaCobrar() {
   const candidatos = [];
+  let houveMudancaStatus = false;
   for(const p of processos) {
     const setor = _normalizarSetorProcesso(p?.setor, p?.tipo, p?.area);
     const st = String(p.status||'').toUpperCase();
@@ -4289,6 +4320,7 @@ function _processosParaCobrar() {
     if(setor !== 'autuacao' && dias >= COBRADOR_LIMIARES_DIAS.ATIVO && st !== 'URGENTE') {
       p.status = 'URGENTE';
       p.atualizado_em = new Date().toISOString();
+      houveMudancaStatus = true;
     }
     if(dias >= limiar) {
       candidatos.push({
@@ -4298,6 +4330,10 @@ function _processosParaCobrar() {
         urgencia: dias >= limiar * 2 ? 'alta' : 'media'
       });
     }
+  }
+  if(houveMudancaStatus) {
+    _bumpProcessos('cobrador_urgencia');
+    _persistirProcessosCache().catch(()=>{});
   }
   // Ordena: mais atrasados primeiro
   candidatos.sort((a,b) => b.dias - a.dias);
@@ -5422,7 +5458,7 @@ async function _detectarIntencaoProcesso(txt, ctx, mem) {
     listaProcs || '(nenhum)',
     '',
     'AÇÕES DISPONÍVEIS:',
-    '1. ATUALIZAR campo de processo: [ATUALIZAR:id:campo:valor] (campos: status, prazo, juiz, vara, proxacao, observacoes)',
+    '1. ATUALIZAR campo de processo: [ATUALIZAR:id:campo:valor] (campos: status, prazo, juiz, vara, proxacao, observacoes, setor)',
     '2. ADICIONAR andamento: [ANDAMENTO:id:descricao]',
     '3. ADICIONAR prazo: [PRAZO:id:descricao:YYYY-MM-DD:tipo] (tipos: conferencia, julgamento, audiencia, recurso, prazo_fatal)',
     '4. PERGUNTAR se não ficou claro o que ele quer',
@@ -7288,6 +7324,7 @@ async function _aplicarAtualizacaoNoProcesso(ctx, mem, arq, analise, proc) {
   // Classifica andamentos (fingerprint dedup)
   const classif = _classificarAndamentos(analise.andamentos, processos[idx].andamentos||[]);
 
+  const setorAtual = _normalizarSetorProcesso(processos[idx].setor, processos[idx].tipo, processos[idx].area);
   const houveMudancaPrazo = analise.prazo && analise.prazo !== processos[idx].prazo;
   const houveMudancaStatus = analise.status && analise.status !== 'AGUARDANDO' && analise.status !== processos[idx].status;
   const houveMudancaAcao = analise.proxima_acao && analise.proxima_acao !== processos[idx].proxacao;
@@ -7309,13 +7346,15 @@ async function _aplicarAtualizacaoNoProcesso(ctx, mem, arq, analise, proc) {
   if(!processos[idx].juiz_relator && analise.juiz_relator) processos[idx].juiz_relator = analise.juiz_relator;
   if(!processos[idx].instancia && analise.instancia) processos[idx].instancia = analise.instancia;
 
-  // REGRA v2.9/v3.0 (Kleuber): andamento novo força URGENTE + prazo 6 dias.
-  if(adicionados > 0 && processos[idx].status !== 'URGENTE') {
-    processos[idx].status = 'URGENTE';
-    const d = new Date();
-    d.setDate(d.getDate() + 6);
-    processos[idx].prazo = String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-    console.log('[regra v3.0] '+processos[idx].nome+' → URGENTE (6d) por novo andamento');
+  // CICLO DE URGÊNCIA:
+  // - autuacao: mantém EM_PREP
+  // - administrativo/judicial: atualização válida volta para ATIVO
+  if(adicionados > 0) {
+    if(setorAtual === 'autuacao') {
+      processos[idx].status = 'EM_PREP';
+    } else {
+      processos[idx].status = 'ATIVO';
+    }
   }
 
   // Atualiza arquivos vinculados
@@ -10425,8 +10464,8 @@ class AgenteRoteador extends AgenteBase {
 class AgenteCadastrador extends AgenteBase {
   constructor() {
     super({
-      nome: 'Cadastrador',
-      descricao: 'Recebe fotos de clientes novos, extrai dados, valida CPF/CEP, cobra o que falta, notifica admin em marcos.',
+      nome: 'Cadastrador/Autuação',
+      descricao: 'Opera no setor de Autuação: recebe novos clientes, abre caso em EM_PREP e cobra documentos pendentes.',
       status: 'pronto',
       ferramentas: ['receber', 'carregarPerfil', 'faltantesPessoais', 'faltantesProbatorios']
     });
