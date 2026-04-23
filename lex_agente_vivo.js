@@ -745,12 +745,15 @@ async function handlerConversar(req, res, body, deps) {
 
   } catch (e) {
     console.error('[VIVO] conversar erro COMPLETO:', e);
+    console.error('[VIVO] conversar stack:', e.stack);
+    console.error('[VIVO] deps.ANTHROPIC_KEY presente:', !!deps.ANTHROPIC_KEY);
+    console.error('[VIVO] deps.https presente:', !!deps.https);
     const msgErro = String(e.message || e || 'erro desconhecido');
     // Se é erro de modelo inválido, tenta com fallback
     if(msgErro.includes('model') || msgErro.includes('not_found') || msgErro.includes('404')) {
       console.error('[VIVO] Modelo inválido detectado, verifique MODELO_GESTOR:', MODELO_GESTOR);
     }
-    return jsonResponse(res, 500, { error: 'Erro no Gestor IA: ' + msgErro.substring(0, 200) }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Erro no Gestor IA: ' + msgErro.substring(0, 300) }, deps.CORS);
   }
 }
 

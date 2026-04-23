@@ -8205,6 +8205,7 @@ Objetivos:
 
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
+  const CORS = corsHeaders(req);
   if(req.method==='OPTIONS') { res.writeHead(204, corsHeaders(req)); res.end(); return; }
   if(url==='/' || url==='/health' || url==='/api/ping') {
     res.writeHead(200, {
@@ -9284,7 +9285,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': _corsOrigin(req),
       'Access-Control-Allow-Headers': 'Authorization,Content-Type'
     });
     const clientId = Date.now() + '_' + Math.random().toString(36).slice(2);
