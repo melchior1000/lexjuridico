@@ -8521,6 +8521,27 @@ const server = http.createServer(async (req, res) => {
   // ════════════════════════════════════════════════════════════════════════
   // CHAT / ANÁLISE / GERAÇÃO via web (autenticado)
   // ════════════════════════════════════════════════════════════════════════
+  // ═══ TESTE VIVO (temporário) — simula /api/vivo/conversar sem auth ═══
+  if(url==='/api/teste-vivo' && req.method==='GET') {
+    try {
+      if(!lex_agente_vivo) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({erro:'lex_agente_vivo NAO CARREGADO'})); return; }
+      const fakeBody = { mensagem: 'Diga apenas OK FUNCIONANDO', historico: [] };
+      const fakeDeps = {
+        req, res, body: fakeBody, perfil: {p:'admin'}, processos, CORS: corsHeaders(req),
+        ANTHROPIC_KEY: AK, https, lerBody,
+        sbGet: (t,q)=>sbReq('GET',t,null,q), sbReq,
+        sbUpsert: async (tabela, dados, conflito) => { return sbReq('POST', tabela, dados, {}, { onConflict: conflito || 'id', merge: Object.keys(dados).join(',') }); },
+        sbPatch: async (tabela, dados, filtro) => { return sbReq('PATCH', tabela, dados, filtro); },
+        _processarMarcadoresChat, _notificarEquipe,
+        helpers: { validarToken, getToken, lerBody, notificarTodosSSE }
+      };
+      await lex_agente_vivo.tratarRota(req, res, '/api/vivo/conversar', fakeDeps);
+    } catch(e) {
+      if(!res.writableEnded) { res.writeHead(500, corsHeaders(req)); res.end(JSON.stringify({erro:e.message, stack:(e.stack||'').substring(0,500)})); }
+    }
+    return;
+  }
+
   // ═══ TESTE CHAT PÚBLICO (temporário) ═══
   if(url==='/api/teste-ia' && req.method==='GET') {
     try {
