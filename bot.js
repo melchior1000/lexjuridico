@@ -4519,7 +4519,7 @@ REGRAS:
             notif += '📝 ' + (dados.resumo_caso||'').substring(0,200) + '\n';
             notif += '\nCriado por: ' + ctx.canal + ' (' + (ctx.nomeUsuario||chatId) + ')\n';
             notif += '\n/aprovar\\_' + casoId + ' — Aprovar\n/rejeitar\\_' + casoId + ' — Rejeitar\n/detalhes\\_' + casoId + ' — Ver completo';
-            try { await enviarMsgTelegram(adminChatId, notif); } catch(e) { console.warn('[Lex] Erro notificando CEO:', e.message); }
+            try { await envTelegram(notif, null, adminChatId); } catch(e) { console.warn('[Lex] Erro notificando CEO:', e.message); }
           }
         }
 
@@ -8352,7 +8352,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       let enviado = false;
       if(canal === 'telegram') {
         try {
-          await enviarMsgTelegram(destino, texto);
+          await envTelegram(texto, null, destino);
           enviado = true;
           _registrarMsgCentral('telegram', 'saida', destino, 'Kleuber (Lex)', texto);
         } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro Telegram: '+e.message})); return; }
