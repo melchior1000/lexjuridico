@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <!-- LEX v2 - Build 2026-04-22 21:20 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lex — Sistema Jurídico v14</title>
@@ -3538,7 +3539,8 @@ function imprimirProcesso(id){
   const d = diasRestantes(p.prazo);
   const statusCor = {URGENTE:'#e84545',ATIVO:'#2ec97e',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',GANHO:'#2ec97e',PERDIDO:'#e84545'}[p.status]||'#888';
   const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  w.document.write(`<!DOCTYPE html><html><head>
+  <!-- LEX v2 - Build 2026-04-22 21:20 --><meta charset="UTF-8">
   <title>${p.nome}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -4288,7 +4290,8 @@ Redija a peça completa:`}],null,3000);
   }catch(e){el.innerHTML='<div style="font-size:13px;color:var(--red)">Erro. Erro de conexão com o servidor LEX.</div>';}
 }
 function abrirGerador(id){ir('peticao',document.querySelector('.nav-btn[onclick*="peticao"]'));setTimeout(()=>{const el=document.getElementById('pet-proc2');if(el)el.value=id;},100);}
-function imprimirTexto(txt,titulo){const w=window.open('','_blank');w.document.write(`<html><head><title>${titulo}</title><style>body{font-family:'Times New Roman',serif;max-width:800px;margin:40px auto;line-height:2;font-size:13px;}@media print{body{margin:20px;}}</style></head><body><pre style="white-space:pre-wrap;font-family:'Times New Roman',serif">${txt}</pre></body></html>`);w.document.close();setTimeout(()=>w.print(),600);}
+function imprimirTexto(txt,titulo){const w=window.open('','_blank');w.document.write(`<html><head>
+  <!-- LEX v2 - Build 2026-04-22 21:20 --><title>${titulo}</title><style>body{font-family:'Times New Roman',serif;max-width:800px;margin:40px auto;line-height:2;font-size:13px;}@media print{body{margin:20px;}}</style></head><body><pre style="white-space:pre-wrap;font-family:'Times New Roman',serif">${txt}</pre></body></html>`);w.document.close();setTimeout(()=>w.print(),600);}
 
 // ═══════════════ JUÍZES ═══════════════
 function renderJuizes(){
