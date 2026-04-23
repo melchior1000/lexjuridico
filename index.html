@@ -7316,7 +7316,34 @@ function _addMsgGestor(role, txt) {
   const labelColor = role === 'user' ? 'var(--accent)' : 'var(--gold)';
   const div = document.createElement('div');
   div.style.cssText = `background:${bg};border-left:3px solid ${border};padding:10px 14px;border-radius:8px;font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:10px;white-space:pre-wrap`;
-  div.innerHTML = `<b style="color:${labelColor}">${label}:</b> ${String(txt||'').replace(/</g,'&lt;').replace(/\n/g,'<br>')}`;
+  const txtSafe = String(txt||'').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+  div.innerHTML = `<b style="color:${labelColor}">${label}:</b> ${txtSafe}`;
+  // Botão DOCX para respostas longas do assistente (petições, análises, laudos)
+  if(role === 'assistant' && String(txt||'').length > 500) {
+    const btnDocx = document.createElement('button');
+    btnDocx.textContent = '📥 Baixar DOCX';
+    btnDocx.style.cssText = 'margin-top:8px;background:var(--gold);color:#000;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;font-family:Arial,Helvetica,sans-serif';
+    btnDocx.onclick = async () => {
+      try {
+        btnDocx.textContent = '⏳ Gerando...';
+        const procNome = _gestorProcAtual?.nome || _gestorProcAtual?.partes || 'documento';
+        const resp = await fetch(SERVIDOR + '/api/pecas/gerar-docx', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+(getAuthToken?getAuthToken():'')},
+          body:JSON.stringify({titulo:procNome, conteudo:String(txt||''), tipo:'peticao'})
+        });
+        if(!resp.ok) throw new Error('Erro '+resp.status);
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = procNome.replace(/[^a-zA-Z0-9\u00C0-\u00FF ]/g,'_').substring(0,50) + '.docx';
+        a.click(); URL.revokeObjectURL(url);
+        btnDocx.textContent = '✅ Baixado!';
+        setTimeout(()=>{ btnDocx.textContent = '📥 Baixar DOCX'; }, 3000);
+      } catch(e) { btnDocx.textContent = '❌ Erro'; console.error('[LEX] DOCX erro:', e); }
+    };
+    div.appendChild(btnDocx);
+  }
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
 }
@@ -8983,9 +9010,36 @@ function addMsgEl(tipo, txt){
       '<button onclick="atualizarAndamentoProcessoExistente()" style="background:var(--accent);border:none;border-radius:6px;padding:7px 12px;color:#fff;font-size:12px;cursor:pointer;font-weight:700">Atualizar Andamento</button>'
       + '<button onclick="criarNovoCasoViaChat()" style="background:var(--gold);border:none;border-radius:6px;padding:7px 12px;color:#000;font-size:12px;cursor:pointer;font-weight:700">Criar Novo Caso</button>'
       + '<button onclick="apenasConsultaChat()" style="background:transparent;border:1px solid var(--border2);border-radius:6px;padding:7px 12px;color:var(--text2);font-size:12px;cursor:pointer">Apenas Consulta</button>';
+    // Botão DOCX para respostas longas (petições, análises, laudos)
+    if(String(txt||'').length > 500) {
+      acoes.innerHTML += '<button onclick="baixarDocxDoChat(this)" style="background:#1a73e8;border:none;border-radius:6px;padding:7px 12px;color:#fff;font-size:12px;cursor:pointer;font-weight:700">📥 Baixar DOCX</button>';
+    }
     msgs.appendChild(acoes);
   }
   msgs.scrollTop=msgs.scrollHeight;
+}
+
+async function baixarDocxDoChat(btn) {
+  try {
+    const msgDiv = btn.closest('.chat-decisao-final')?.previousElementSibling;
+    const conteudo = msgDiv ? msgDiv.textContent : '';
+    if(!conteudo) { alert('Nenhum conteúdo para baixar'); return; }
+    btn.textContent = '⏳ Gerando...';
+    const titulo = 'Lex_' + new Date().toISOString().slice(0,10);
+    const resp = await fetch(SERVIDOR + '/api/pecas/gerar-docx', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(getAuthToken?getAuthToken():'')},
+      body:JSON.stringify({titulo, conteudo, tipo:'peticao'})
+    });
+    if(!resp.ok) throw new Error('Erro '+resp.status);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = titulo + '.docx';
+    a.click(); URL.revokeObjectURL(url);
+    btn.textContent = '✅ Baixado!';
+    setTimeout(()=>{ btn.textContent = '📥 Baixar DOCX'; }, 3000);
+  } catch(e) { btn.textContent = '❌ Erro'; console.error('[LEX] DOCX chat erro:', e); }
 }
 
 function exportarBackup(){
