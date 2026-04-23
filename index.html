@@ -520,6 +520,7 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
     <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>
     <input type="file" id="import-file" accept=".json" style="display:none" onchange="importarBackup(this)">
     <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram Bot</button>
+    <button class="nav-btn" onclick="ir('mensagens',this)"><span class="nav-icon">💬</span> Central Mensagens</button>
     <button class="nav-btn" onclick="ir('preparacao',this)"><span class="nav-icon">📋</span> Em Preparação</button>
     <button class="nav-btn" onclick="ir('agentes',this)"><span class="nav-icon">🤖</span> Agentes IA</button>
     <button class="nav-btn" id="btn-pje" onclick="ir('pje',this)"><span class="nav-icon">🔗</span> PJe <span id="_pjeDot" style="font-size:9px;color:var(--red-soft)">○</span></button>
@@ -3118,9 +3119,9 @@ function ir(p,btn){
   pag=p; procAtivo=null; fecharSidebar(); esconderBackBar();
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  const t={painel:'Painel Geral',processos:'Processos',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe'};
+  const t={painel:'Painel Geral',processos:'Processos',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe'};
   document.getElementById('page-title').textContent=t[p]||p;
-  ({painel:renderPainel,processos:renderProcessos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderPje})[p]?.();
+  ({painel:renderPainel,processos:renderProcessos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderPje})[p]?.();
 }
 
 // ═══════════════ BUSCA ═══════════════
@@ -7733,6 +7734,146 @@ function getTgConfig(){
   catch(e){ return {}; }
 }
 function saveTgConfig(cfg){ localStorage.setItem('lex_tg_config', JSON.stringify(cfg)); }
+
+// ═══════════════ CENTRAL DE MENSAGENS ═══════════════
+let _centralContatoAtivo = null;
+let _centralCanalAtivo = 'todos';
+let _centralMsgsCache = [];
+
+async function renderCentralMensagens(){
+  const el = document.getElementById('content');
+  el.innerHTML = `
+  <div style="display:flex;gap:16px;height:calc(100vh - 140px);min-height:500px">
+    <!-- PAINEL ESQUERDO: Contatos -->
+    <div style="width:300px;min-width:250px;background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+        <span style="font-size:18px">💬</span>
+        <span style="font-weight:700;font-size:14px;color:var(--text)">Conversas</span>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          <button class="btn-outline" style="font-size:10px;padding:3px 8px;${_centralCanalAtivo==='todos'?'background:var(--accent);color:white':''}" onclick="_centralCanalAtivo='todos';renderCentralMensagens()">Todos</button>
+          <button class="btn-outline" style="font-size:10px;padding:3px 8px;${_centralCanalAtivo==='telegram'?'background:var(--accent);color:white':''}" onclick="_centralCanalAtivo='telegram';renderCentralMensagens()">TG</button>
+          <button class="btn-outline" style="font-size:10px;padding:3px 8px;${_centralCanalAtivo==='whatsapp'?'background:#25D366;color:white':''}" onclick="_centralCanalAtivo='whatsapp';renderCentralMensagens()">WA</button>
+        </div>
+      </div>
+      <div id="_centralContatos" style="flex:1;overflow-y:auto;padding:8px"></div>
+    </div>
+    <!-- PAINEL DIREITO: Chat -->
+    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden">
+      <div id="_centralHeader" style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;color:var(--text)">
+        ${_centralContatoAtivo ? '💬 ' + (_centralContatoAtivo.nome||_centralContatoAtivo.chatId) + ' <span style="font-size:11px;color:var(--text3);font-weight:400">(' + _centralContatoAtivo.canal + ')</span>' : 'Selecione uma conversa'}
+      </div>
+      <div id="_centralChat" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px">
+        ${_centralContatoAtivo ? '<div style="text-align:center;color:var(--text3);font-size:12px">Carregando mensagens...</div>' : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:14px">← Selecione uma conversa para ver e enviar mensagens</div>'}
+      </div>
+      ${_centralContatoAtivo ? `
+      <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px">
+        <input id="_centralInput" class="fi" style="flex:1" placeholder="Digite sua mensagem..." onkeydown="if(event.key==='Enter'){event.preventDefault();_centralEnviar();}">
+        <button class="btn-primary" style="padding:8px 16px;font-size:13px" onclick="_centralEnviar()">Enviar</button>
+      </div>` : ''}
+    </div>
+  </div>`;
+
+  // Carregar contatos
+  _centralCarregarContatos();
+  if(_centralContatoAtivo) _centralCarregarMsgs();
+}
+
+async function _centralCarregarContatos(){
+  try {
+    const r = await fetchComTimeout(BASE+'/api/mensagens/contatos',{headers:{'Authorization':'Bearer '+token}});
+    const d = await r.json();
+    const box = document.getElementById('_centralContatos');
+    if(!box) return;
+    if(!d.ok || !d.contatos?.length) { box.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Nenhuma conversa ainda.<br>As mensagens do Telegram e WhatsApp aparecerão aqui automaticamente.</div>'; return; }
+    let contatos = d.contatos;
+    if(_centralCanalAtivo !== 'todos') contatos = contatos.filter(c => c.canal === _centralCanalAtivo);
+    box.innerHTML = contatos.map(c => {
+      const ativo = _centralContatoAtivo && _centralContatoAtivo.chatId === c.chatId && _centralContatoAtivo.canal === c.canal;
+      const icone = c.canal === 'telegram' ? '✈️' : '📱';
+      const naoLidas = c.naoLidas > 0 ? '<span style="background:var(--red);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:700">' + c.naoLidas + '</span>' : '';
+      return '<div onclick="_centralAbrirChat(' + JSON.stringify(JSON.stringify(c)).slice(1,-1) + ')" style="padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:10px;' + (ativo ? 'background:var(--accent)11;border:1px solid var(--accent)33' : 'border:1px solid transparent') + ';margin-bottom:4px;transition:all .15s" onmouseover="this.style.background=\'var(--border)\'" onmouseout="this.style.background=\'' + (ativo ? 'var(--accent)11' : 'transparent') + '\'">'
+        + '<span style="font-size:16px">' + icone + '</span>'
+        + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (c.nome||c.chatId) + '</div>'
+        + '<div style="font-size:11px;color:var(--text3)">' + c.totalMsgs + ' msgs · ' + new Date(c.ultimaMsg).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}) + '</div></div>'
+        + naoLidas + '</div>';
+    }).join('');
+  } catch(e) { console.warn('Central contatos erro:', e); }
+}
+
+function _centralAbrirChat(contatoJson){
+  _centralContatoAtivo = JSON.parse(contatoJson);
+  renderCentralMensagens();
+}
+
+async function _centralCarregarMsgs(){
+  if(!_centralContatoAtivo) return;
+  try {
+    const canal = _centralContatoAtivo.canal;
+    const r = await fetchComTimeout(BASE+'/api/mensagens?canal='+canal+'&limite=100',{headers:{'Authorization':'Bearer '+token}});
+    const d = await r.json();
+    const chatBox = document.getElementById('_centralChat');
+    if(!chatBox || !d.ok) return;
+    const chatId = _centralContatoAtivo.chatId;
+    const msgs = (d.mensagens||[]).filter(m => m.chatId === chatId).sort((a,b) => new Date(a.em) - new Date(b.em));
+    _centralMsgsCache = msgs;
+    if(!msgs.length) { chatBox.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:20px">Nenhuma mensagem nesta conversa.</div>'; return; }
+    chatBox.innerHTML = msgs.map(m => {
+      const ehSaida = m.direcao === 'saida';
+      const cor = ehSaida ? 'var(--accent)' : 'var(--surface2,#2a2d3e)';
+      const alinha = ehSaida ? 'flex-end' : 'flex-start';
+      const hora = new Date(m.em).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
+      return '<div style="display:flex;justify-content:' + alinha + '">'
+        + '<div style="max-width:70%;padding:10px 14px;border-radius:12px;background:' + cor + ';' + (ehSaida ? 'color:white' : 'color:var(--text);border:1px solid var(--border)') + '">'
+        + '<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:0.7">' + (m.nome||'?') + '</div>'
+        + '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word">' + _escHtml(m.texto||'') + '</div>'
+        + '<div style="font-size:9px;opacity:0.5;text-align:right;margin-top:4px">' + hora + '</div>'
+        + '</div></div>';
+    }).join('');
+    chatBox.scrollTop = chatBox.scrollHeight;
+  } catch(e) { console.warn('Central msgs erro:', e); }
+}
+
+function _escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function _centralEnviar(){
+  if(!_centralContatoAtivo) return;
+  const input = document.getElementById('_centralInput');
+  if(!input) return;
+  const texto = input.value.trim();
+  if(!texto) return;
+  input.value = '';
+  input.disabled = true;
+  try {
+    const r = await fetchComTimeout(BASE+'/api/mensagens/enviar',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:JSON.stringify({ canal:_centralContatoAtivo.canal, destino:_centralContatoAtivo.chatId, texto })
+    });
+    const d = await r.json();
+    if(d.ok) {
+      // Adicionar msg local imediatamente
+      const chatBox = document.getElementById('_centralChat');
+      if(chatBox) {
+        const hora = new Date().toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
+        chatBox.innerHTML += '<div style="display:flex;justify-content:flex-end"><div style="max-width:70%;padding:10px 14px;border-radius:12px;background:var(--accent);color:white">'
+          + '<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:0.7">Kleuber (Lex)</div>'
+          + '<div style="font-size:13px;white-space:pre-wrap">' + _escHtml(texto) + '</div>'
+          + '<div style="font-size:9px;opacity:0.5;text-align:right;margin-top:4px">' + hora + '</div></div></div>';
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+      toast('✓ Enviado!','ok');
+    } else {
+      toast('Erro: '+(d.error||'falha'),'erro');
+    }
+  } catch(e) { toast('Erro de conexão','erro'); }
+  input.disabled = false;
+  input.focus();
+}
+
+// Auto-refresh a cada 10s se Central aberta
+setInterval(()=>{
+  if(pag==='mensagens' && _centralContatoAtivo) _centralCarregarMsgs();
+}, 10000);
 
 function renderTelegram(){
   if(!podeConfig()){ 

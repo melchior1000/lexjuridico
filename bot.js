@@ -182,7 +182,7 @@ const PJE_CONFIG = {
   auto_consulta: true
 };
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'lex-secret-2026';
+const AUTH_SECRET = process.env.AUTH_SECRET || CRYPTO.randomBytes(32).toString('hex');
 const AUTH_IDLE_MS = 30 * 60 * 1000; // 30 min sem atividade invalida token (requisito do Kleuber)
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1072,6 +1072,8 @@ async function envWhatsAppArq(buf, nome, numero, mimetype) {
 // Toda mensagem (Telegram OU WhatsApp) usa { canal, chatId, threadId, numero }
 async function env(texto, ctx) {
   if(!ctx) ctx = {canal:'telegram'};
+  // Registrar resposta na Central de Mensagens
+  try { _registrarMsgCentral(ctx.canal||'telegram', 'saida', ctx.chatId||ctx.numero||'?', 'Lex', String(texto||'').substring(0,300)); } catch(e){}
   if(ctx.canal === 'whatsapp') return envWhatsApp(texto, ctx.numero);
   return envTelegram(texto, ctx.threadId, ctx.chatId);
 }
@@ -4046,6 +4048,22 @@ function _agendarCobrador() {
 //
 // dados = { texto?, arquivo?: {buffer, nome, mime, isPdf}, imagem?: {buffer, mime} }
 
+// ── Registrar mensagens na Central para leitura pelo painel ──
+if(!global._centralMensagens) global._centralMensagens = { telegram:[], whatsapp:[] };
+function _registrarMsgCentral(canal, direcao, chatId, nome, texto, tipo) {
+  if(!global._centralMensagens[canal]) global._centralMensagens[canal] = [];
+  global._centralMensagens[canal].push({
+    id: Date.now() + '_' + Math.random().toString(36).slice(2,6),
+    canal, direcao, chatId: String(chatId), nome: nome||chatId,
+    texto: String(texto||'').substring(0, 2000),
+    tipo: tipo || 'texto',
+    em: new Date().toISOString(),
+    lida: direcao === 'saida'
+  });
+  // Limita a 200 por canal
+  if(global._centralMensagens[canal].length > 200) global._centralMensagens[canal] = global._centralMensagens[canal].slice(-200);
+}
+
 async function processarMensagem(ctx, dados) {
   const chatId = String(ctx.chatId);
   await inicializarMemoria(chatId, ctx.threadId);
@@ -4059,6 +4077,9 @@ async function processarMensagem(ctx, dados) {
 
   console.log('MSG ['+ctx.canal+'/'+chatId+'] modo:'+modo+':', txt.substring(0,80)||'[arquivo]');
   logAtividade('juridico', chatId, txt?'mensagem_'+ctx.canal:'arquivo_'+ctx.canal, txt.substring(0,100));
+
+  // Registrar na Central de Mensagens
+  _registrarMsgCentral(ctx.canal, 'entrada', chatId, ctx.nomeUsuario||chatId, txt || (dados.imagem ? '[Foto]' : dados.arquivo ? '[Arquivo: '+(dados.arquivo.nome||'')+']' : dados.audio ? '[Áudio]' : '[?]'));
 
   // Em grupos do Telegram, só responde se mencionado ou comando
   const isGrupo = ctx.tipoChat==='group' || ctx.tipoChat==='supergroup' || ctx.tipoChat==='channel';
@@ -7071,12 +7092,47 @@ function lerBody(req) {
     req.on('error', rej);
   });
 }
-const CORS = {
-  'Access-Control-Allow-Origin':'*',
-  'Access-Control-Allow-Methods':'GET,POST,PATCH,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Aparelho-Id',
-  'Content-Type':'application/json'
-};
+// ── CORS seguro: só aceita origens confiáveis ──
+const ORIGENS_PERMITIDAS = [
+  'https://lexjuridico.vercel.app',
+  'https://www.lexjuridico.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500'
+];
+function _corsOrigin(req) {
+  const origin = req.headers.origin || req.headers.referer || '';
+  const found = ORIGENS_PERMITIDAS.find(o => origin.startsWith(o));
+  return found || ORIGENS_PERMITIDAS[0]; // nunca retorna '*'
+}
+function corsHeaders(req) {
+  return {
+    'Access-Control-Allow-Origin': _corsOrigin(req),
+    'Access-Control-Allow-Methods':'GET,POST,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Aparelho-Id',
+    'Access-Control-Allow-Credentials':'true',
+    'Content-Type':'application/json'
+  };
+}
+
+// Rate limit no login — max 5 tentativas por IP em 15min
+if(!global._loginAttempts) global._loginAttempts = new Map();
+function _checkLoginRate(ip) {
+  const now = Date.now();
+  const key = String(ip||'unknown');
+  const entry = global._loginAttempts.get(key) || { count:0, first:now };
+  // Reset janela de 15min
+  if(now - entry.first > 15*60*1000) { entry.count = 0; entry.first = now; }
+  entry.count++;
+  global._loginAttempts.set(key, entry);
+  // Limpa entradas velhas a cada 100 checks
+  if(global._loginAttempts.size > 100) {
+    for(const [k,v] of global._loginAttempts) {
+      if(now - v.first > 15*60*1000) global._loginAttempts.delete(k);
+    }
+  }
+  return entry.count <= 5;
+}
 
 if(!global._tokensRevogados) global._tokensRevogados = new Set();
 if(!global._sessaoAtividade) global._sessaoAtividade = new Map();
@@ -7545,23 +7601,29 @@ Objetivos:
 
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
-  if(req.method==='OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
+  if(req.method==='OPTIONS') { res.writeHead(204, corsHeaders(req)); res.end(); return; }
   if(url==='/' || url==='/health' || url==='/api/ping') {
     res.writeHead(200, {
       'Content-Type':'text/plain',
-      'Access-Control-Allow-Origin':'*',
+      'Access-Control-Allow-Origin': _corsOrigin(req),
       'Access-Control-Allow-Methods':'GET,POST,PATCH,DELETE,OPTIONS',
       'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Aparelho-Id'
     });
-    res.end('Lex OK | Up:'+Math.floor(process.uptime())+'s | Procs:'+processos.length+' | v'+processosVersao);
+    res.end('Lex OK');
     return;
   }
 
   // ── AUTH ──
   if(url==='/api/login' && req.method==='POST') {
     try {
+      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      if(!_checkLoginRate(clientIp)) {
+        res.writeHead(429, corsHeaders(req));
+        res.end(JSON.stringify({error:'Muitas tentativas. Aguarde 15 minutos.'}));
+        return;
+      }
       const b = await lerBody(req);
-      if(!b.perfil || !b.senha) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Perfil e senha obrigatorios'})); return; }
+      if(!b.perfil || !b.senha) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil e senha obrigatorios'})); return; }
       
       // Busca senha válida (env var → Supabase → setup mode)
       const senhaCorreta = await obterSenhaValida(b.perfil);
@@ -7571,14 +7633,14 @@ const server = http.createServer(async (req, res) => {
         console.log('[Lex] Primeira configuração de senha para perfil:', b.perfil);
         const salvo = await salvarSenhaSupabase(b.perfil, b.senha);
         if(!salvo) {
-          res.writeHead(500,CORS);
+          res.writeHead(500,corsHeaders(req));
           res.end(JSON.stringify({error:'Senha nao configurada. Erro ao salvar no Supabase. Configure SENHA_ADMIN nas vars de ambiente do Render.'}));
           return;
         }
         // Senha configurada com sucesso — prossegue com login
         console.log('[Lex] Senha configurada e salva no Supabase para', b.perfil);
       } else if(b.senha !== senhaCorreta) {
-        res.writeHead(401,CORS);
+        res.writeHead(401,corsHeaders(req));
         res.end(JSON.stringify({error:'Senha incorreta'}));
         return;
       }
@@ -7587,9 +7649,9 @@ const server = http.createServer(async (req, res) => {
       global._sessaoAtividade.set(token, Date.now());
       _registrarTempoUso(b.perfil, 'login', Date.now()).catch(e=>
         console.warn('[tempo] falha ao registrar login automático:', e.message));
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ok:true, token, perfil:b.perfil, ...PERMS[b.perfil]}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
   
@@ -7597,32 +7659,32 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/trocar-senha' && req.method==='POST') {
     try {
       const perfil = validarToken(getToken(req));
-      if(!perfil) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.novaSenha || b.novaSenha.length < 4) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'Nova senha deve ter pelo menos 4 caracteres'})); return; }
+      if(!b.novaSenha || b.novaSenha.length < 4) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Nova senha deve ter pelo menos 4 caracteres'})); return; }
       const salvo = await salvarSenhaSupabase(perfil, b.novaSenha);
-      if(!salvo) { res.writeHead(500,CORS); res.end(JSON.stringify({error:'Erro ao salvar senha'})); return; }
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Senha alterada com sucesso'}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      if(!salvo) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro ao salvar senha'})); return; }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Senha alterada com sucesso'}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/perfil' && req.method==='GET') {
     const perfil = validarToken(getToken(req));
-    if(!perfil) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-    res.writeHead(200, CORS); res.end(JSON.stringify({perfil, ...PERMS[perfil]}));
+    if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+    res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({perfil, ...PERMS[perfil]}));
     return;
   }
 
   if(url==='/api/trocar-senha' && req.method==='POST') {
     try {
       const perfilAtual = validarToken(getToken(req));
-      if(!perfilAtual) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!perfilAtual) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
-      if(perfilAtual !== 'admin' && b.perfilAlvo !== perfilAtual) { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
-      if(!SENHAS_WEB[b.perfilAlvo]) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'Perfil inválido'})); return; }
-      if(perfilAtual !== 'admin' && b.senhaAtual !== SENHAS_WEB[b.perfilAlvo]) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Senha atual incorreta'})); return; }
-      if(!b.novaSenha || b.novaSenha.length<6) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'Senha curta (mín 6)'})); return; }
+      if(perfilAtual !== 'admin' && b.perfilAlvo !== perfilAtual) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!SENHAS_WEB[b.perfilAlvo]) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil inválido'})); return; }
+      if(perfilAtual !== 'admin' && b.senhaAtual !== SENHAS_WEB[b.perfilAlvo]) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Senha atual incorreta'})); return; }
+      if(!b.novaSenha || b.novaSenha.length<6) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Senha curta (mín 6)'})); return; }
       
       // Atualizar em memória
       SENHAS_WEB[b.perfilAlvo] = b.novaSenha;
@@ -7640,8 +7702,8 @@ const server = http.createServer(async (req, res) => {
       }
       
       _auditarAcao(perfilAtual, 'trocar_senha', {perfil: b.perfilAlvo});
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Senha alterada. NOTA: Se o servidor reiniciar, a senha pode voltar ao valor original das variaveis de ambiente.'}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Senha alterada. NOTA: Se o servidor reiniciar, a senha pode voltar ao valor original das variaveis de ambiente.'}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7661,7 +7723,7 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/sync-status' && req.method==='GET') {
     const u = new URL(req.url, 'http://x');
     const clientVersao = parseInt(u.searchParams.get('clientVersao')||'0', 10);
-    res.writeHead(200, CORS);
+    res.writeHead(200, corsHeaders(req));
     res.end(JSON.stringify({
       servidorVersao: processosVersao,
       total: processos.length,
@@ -7674,8 +7736,8 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/processos' && req.method==='GET') {
     // FIX-11: rota protegida — sem token retorna 401
     const pfProc = validarToken(getToken(req));
-    if(!pfProc) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-    res.writeHead(200, CORS);
+    if(!pfProc) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+    res.writeHead(200, corsHeaders(req));
     res.end(JSON.stringify({
       processos,
       total: processos.length,
@@ -7689,17 +7751,17 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/pipeline' && req.method==='POST') {
     try {
       const pfPipe = validarToken(getToken(req));
-      if(!pfPipe) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfPipe) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
       const processoId = String(b.processo_id || '').trim();
-      if(!processoId) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
+      if(!processoId) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
       const proc = processos.find(p => String(p.id) === processoId);
-      if(!proc) { res.writeHead(404,CORS); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
+      if(!proc) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
 
       const estadoAtual = _obterPipelineEstado(proc);
       // Sem etapa e sem acao => consulta estado atual do pipeline
       if(!b.etapa && !b.acao) {
-        res.writeHead(200, CORS);
+        res.writeHead(200, corsHeaders(req));
         res.end(JSON.stringify({
           etapa_atual: estadoAtual.etapa_atual,
           mensagem: 'Estado atual do pipeline recuperado.',
@@ -7715,14 +7777,14 @@ const server = http.createServer(async (req, res) => {
 
       const etapaExec = String(b.etapa || estadoAtual.etapa_atual || ETAPAS_PIPELINE.INTAKE).toLowerCase();
       const out = await _pipelineElaboracao(proc, etapaExec, b.input || {}, b.acao || '');
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({
         etapa_atual: out.proxima_etapa || _obterPipelineEstado(proc).etapa_atual,
         mensagem: out.mensagem || 'Pipeline atualizado.',
         arquivos: out.arquivos || null,
         perguntas: out.perguntas || null
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7730,23 +7792,23 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/pipeline/download' && req.method==='GET') {
     try {
       const pfPipeDl = validarToken(getToken(req));
-      if(!pfPipeDl) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfPipeDl) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const processoId = String(u.searchParams.get('processo_id') || '').trim();
       const formato = String(u.searchParams.get('formato') || 'pdf').toLowerCase();
-      if(!processoId) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
-      if(!['pdf','docx'].includes(formato)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'formato deve ser pdf|docx'})); return; }
+      if(!processoId) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
+      if(!['pdf','docx'].includes(formato)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'formato deve ser pdf|docx'})); return; }
       const proc = processos.find(p => String(p.id) === processoId);
-      if(!proc) { res.writeHead(404,CORS); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
+      if(!proc) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
       const estado = _obterPipelineEstado(proc);
       const conteudo = String(estado.peca_texto || '').trim();
-      if(!conteudo) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'Peça ainda não gerada no pipeline'})); return; }
+      if(!conteudo) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Peça ainda não gerada no pipeline'})); return; }
       const titulo = 'Peca_'+(proc.nome || proc.numero || 'processo');
 
       if(formato === 'pdf') {
         const pdfBuf = await _gerarPecaPdfBuffer(titulo, conteudo, 'peticao');
         const nome = _nomeArquivoSeguro(titulo, '.pdf');
-        res.writeHead(200, { 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"', ...CORS });
+        res.writeHead(200, { 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"', ...corsHeaders(req) });
         res.end(pdfBuf);
         return;
       }
@@ -7755,10 +7817,10 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition':'attachment; filename="' + nome + '"',
-        ...CORS
+        ...corsHeaders(req)
       });
       res.end(docxBuf);
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7766,15 +7828,15 @@ const server = http.createServer(async (req, res) => {
     try {
       // FIX-12: rota protegida — previne sobrescrita não-autorizada
       const pfSync = validarToken(getToken(req));
-      if(!pfSync) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfSync) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
-      if(!Array.isArray(b.processos)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processos[] obrigatório'})); return; }
+      if(!Array.isArray(b.processos)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processos[] obrigatório'})); return; }
       const aparelhoId = req.headers['x-aparelho-id'] || b.aparelhoId || 'desconhecido';
       const clientVersao = parseInt(b.clientVersao||0, 10);
 
       // ⬇ ANTI-OVERWRITE: cliente desatualizado NÃO sobrescreve
       if(clientVersao > 0 && clientVersao < processosVersao) {
-        res.writeHead(409, CORS);
+        res.writeHead(409, corsHeaders(req));
         res.end(JSON.stringify({
           error: 'Sua cópia está desatualizada. Baixe a versão do servidor primeiro.',
           servidorVersao: processosVersao,
@@ -7790,9 +7852,9 @@ const server = http.createServer(async (req, res) => {
       notificarTodosSSE('processos_atualizados', { aparelho: aparelhoId, versao: processosVersao, total: processos.length });
       await _persistirProcessosCache();
       console.log('SYNC <-', aparelhoId, '| total:', processos.length, '| nova versão:', processosVersao);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ok:true, total:processos.length, versao:processosVersao}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7804,13 +7866,13 @@ const server = http.createServer(async (req, res) => {
       const cmds = await buscarComandosPendentes();
       const rowIds = cmds.map(c=>c._row_id).filter(Boolean);
       // Marca como entregues APÓS responder (evita perda em caso de erro de rede)
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({comandos: cmds.map(c=>{const {_row_id,...rest}=c;return rest;})}));
       // Confirma entrega (assíncrono, não bloqueia resposta)
       if(rowIds.length) marcarComandosEntregues(rowIds).catch(()=>{});
       // Limpa fallback RAM
       global._cmdsRam = [];
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7820,30 +7882,30 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/chat' && req.method==='POST') {
     try {
       const tk = getToken(req);
-      if(!validarToken(tk)) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.messages) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'messages obrigatório'})); return; }
+      if(!b.messages) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'messages obrigatório'})); return; }
     const sysPrompt = b.system || sysAssessor(null, null);
     const txt = await ia(b.messages, sysPrompt, b.maxTokens||4096);
       // Pós-processamento: marcadores de atualização de processo
       const acoes = _processarMarcadoresChat(txt);
-      res.writeHead(200,CORS); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/analisar' && req.method==='POST') {
     try {
       const tk = getToken(req);
-      if(!validarToken(tk)) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.base64) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
+      if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
       const buf = Buffer.from(b.base64,'base64');
       const isPdf = (b.mimeType||'').includes('pdf') || (b.nome||'').toLowerCase().endsWith('.pdf');
       // FIX-07: usa _analisarDocEmChunks para PDFs grandes (>100 páginas)
       const analise = await _analisarDocEmChunks(buf, isPdf, b.nome||'documento', null, {});
-      res.writeHead(200,CORS); res.end(JSON.stringify(analise));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify(analise));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7851,14 +7913,14 @@ const server = http.createServer(async (req, res) => {
     try {
       const tk = getToken(req);
       const pf = validarToken(tk);
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-      if(pf==='secretaria') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(pf==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
-      if(!b.tipo) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'tipo obrigatório'})); return; }
+      if(!b.tipo) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tipo obrigatório'})); return; }
       const memCaso = b.processo ? await recuperarMemoriaDoCaso(b.processo.nome, 30) : [];
       const texto = await gerarDoc(b.tipo, b.processo||null, b.instrucoes||'', b.dadosProf||null, b.ehInicial||false, b.dadosCliente||null, memCaso);
-      res.writeHead(200,CORS); res.end(JSON.stringify({texto}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({texto}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7870,7 +7932,7 @@ const server = http.createServer(async (req, res) => {
   if((url==='/api/agente-vivo' || url.startsWith('/api/vivo')) && lex_agente_vivo && typeof lex_agente_vivo.tratarRota === 'function') {
     try {
       const pfAgv = validarToken(getToken(req));
-      if(!pfAgv) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfAgv) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const bodyAgv = req.method === 'POST' ? await lerBody(req) : {};
       const vivoUrl = url === '/api/agente-vivo' ? '/api/vivo/conversar' : url;
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
@@ -7879,10 +7941,10 @@ const server = http.createServer(async (req, res) => {
         helpers: { validarToken, getToken, lerBody, notificarTodosSSE }
       });
       if(typeof out !== 'undefined' && !res.writableEnded) {
-        res.writeHead(200, CORS);
+        res.writeHead(200, corsHeaders(req));
         res.end(JSON.stringify(out));
       }
-    } catch(e) { if(!res.writableEnded) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); } }
+    } catch(e) { if(!res.writableEnded) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); } }
     return;
   }
 
@@ -7890,9 +7952,9 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/documentos/upload' && req.method==='POST') {
     try {
       const pfDoc = validarToken(getToken(req));
-      if(!pfDoc) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfDoc) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b || !b.pdf_base64) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'pdf_base64 obrigatorio'})); return; }
+      if(!b || !b.pdf_base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'pdf_base64 obrigatorio'})); return; }
       const texto = _extrairTextoPdf(b.pdf_base64);
       const docId = CRYPTO.randomUUID ? CRYPTO.randomUUID() : CRYPTO.randomBytes(16).toString('hex');
       await sbReq('POST', 'documentos_processo', {
@@ -7904,16 +7966,16 @@ const server = http.createServer(async (req, res) => {
         criado_por: pfDoc,
         criado_em: new Date().toISOString()
       }, null, null);
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, id:docId, texto_chars:texto.length}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url.startsWith('/api/documentos/buscar') && req.method==='GET') {
     try {
       const pfDocB = validarToken(getToken(req));
-      if(!pfDocB) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfDocB) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const processo = u.searchParams.get('processo');
       const q = (u.searchParams.get('q') || '').trim();
@@ -7929,26 +7991,26 @@ const server = http.createServer(async (req, res) => {
         const qq = q.toLowerCase();
         rows = rows.filter(r => (String(r.titulo||'').toLowerCase().includes(qq) || String(r.texto_extraido||'').toLowerCase().includes(qq)));
       }
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({total: rows.length, documentos: rows}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url.startsWith('/api/documentos/do-processo/') && req.method==='GET') {
     try {
       const pfDocP = validarToken(getToken(req));
-      if(!pfDocP) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfDocP) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const processoId = decodeURIComponent(url.split('/').pop() || '');
-      if(!processoId) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'id do processo obrigatorio'})); return; }
+      if(!processoId) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'id do processo obrigatorio'})); return; }
       const rows = await sbReq('GET', 'documentos_processo', null, {
         processo: 'eq.' + processoId,
         order: 'criado_em.desc',
         select: 'id,processo,titulo,tipo,criado_em,criado_por,texto_extraido'
       }, null) || [];
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({processo: processoId, total: rows.length, documentos: rows}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7956,11 +8018,11 @@ const server = http.createServer(async (req, res) => {
   if(url.startsWith('/api/tempo/logins') && req.method==='GET') {
     try {
       const pfLg = validarToken(getToken(req));
-      if(!pfLg) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfLg) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const perfilConsulta = u.searchParams.get('perfil') || pfLg;
       if(perfilConsulta !== pfLg && pfLg !== 'admin') {
-        res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissao'})); return;
+        res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissao'})); return;
       }
       const dias = Math.min(parseInt(u.searchParams.get('dias')||'30', 10), 365);
       const hj = horaBrasilia();
@@ -7987,9 +8049,9 @@ const server = http.createServer(async (req, res) => {
         porDia[d] += 1;
       }
       const logins = Object.keys(porDia).sort().map(d => ({ data: d, logins: porDia[d] }));
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({perfil: perfilConsulta, dias, total: rows.length, logins}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -7999,24 +8061,24 @@ if(url==='/api/memoria' && req.method==='GET') {
       const caso = u.searchParams.get('caso');
       if(!caso) {
         const todas = await recuperarTodaMemoria();
-        res.writeHead(200,CORS); res.end(JSON.stringify({casos:todas}));
+        res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({casos:todas}));
         return;
       }
       const fatos = await recuperarMemoriaDoCaso(caso, 100);
-      res.writeHead(200,CORS); res.end(JSON.stringify({caso, fatos}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({caso, fatos}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/memoria' && req.method==='POST') {
     try {
       const tk = getToken(req);
-      if(!validarToken(tk)) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.caso || !b.texto) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'caso e texto obrigatórios'})); return; }
+      if(!b.caso || !b.texto) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'caso e texto obrigatórios'})); return; }
       const ok = await lembrarDoCaso(b.caso, b.tipo||'observacao', b.texto, b.fonte||'web');
       res.writeHead(ok?200:500,CORS); res.end(JSON.stringify({ok}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8044,9 +8106,9 @@ if(url==='/api/memoria' && req.method==='GET') {
         }
         md += '---\n\n';
       }
-      res.writeHead(200, {'Content-Type':'text/markdown; charset=utf-8', 'Content-Disposition':'attachment; filename="lex-memoria.md"', ...CORS});
+      res.writeHead(200, {'Content-Type':'text/markdown; charset=utf-8', 'Content-Disposition':'attachment; filename="lex-memoria.md"', ...corsHeaders(req)});
       res.end(md);
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8057,10 +8119,10 @@ if(url==='/api/memoria' && req.method==='GET') {
     try {
       const b = await lerBody(req);
       // Resposta 200 imediata (Evolution não retentar), processa async
-      res.writeHead(200, CORS); res.end(JSON.stringify({ok:true, recebido:true}));
+      res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({ok:true, recebido:true}));
       adapterEvolution(b).catch(e=>console.error('WhatsApp adapter erro:', e.message));
     } catch(e) {
-      res.writeHead(200, CORS); // sempre 200 pra Evolution não retentar
+      res.writeHead(200, corsHeaders(req)); // sempre 200 pra Evolution não retentar
       res.end(JSON.stringify({ok:false, erro:e.message}));
     }
     return;
@@ -8070,7 +8132,7 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/fila' && req.method==='GET') {
     try {
       const tokensUsados = _tokensUsadosNaJanela();
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({
         em_curso: _analiseEmCurso ? {
           arquivo: _analiseEmCurso.arq.nome,
@@ -8091,14 +8153,14 @@ if(url==='/api/memoria' && req.method==='GET') {
           chunks_historico: _rateLimitHistorico.length
         }
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/whatsapp/configurar' && req.method==='POST') {
     try {
       const pfW = validarToken(getToken(req));
-      if(!pfW) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfW) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       const ativo = !!b.ativo;
       const numero = b.numero ? _normalizarNumeroWhats(b.numero) : null;
@@ -8113,7 +8175,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       await _salvarConfigPersistida('whatsapp', _configRuntime.whatsapp);
       if(ativo && numero) await _inicializarConexaoWhatsApp();
       if(!ativo) await _desconectarWhatsApp();
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ok:true,
         ativo: _configRuntime.whatsapp.ativo,
@@ -8121,7 +8183,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         conectado: _estadoWhatsApp.conectado,
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8129,14 +8191,14 @@ if(url==='/api/memoria' && req.method==='GET') {
     try {
       const cfgW = await _carregarConfigPersistida('whatsapp', WHATSAPP_CONFIG);
       _configRuntime.whatsapp = {..._configRuntime.whatsapp, ...cfgW};
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ativo: !!_configRuntime.whatsapp.ativo,
         numero: _configRuntime.whatsapp.numero,
         conectado: !!_estadoWhatsApp.conectado,
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8146,31 +8208,31 @@ if(url==='/api/memoria' && req.method==='GET') {
       const numero = _normalizarNumeroWhats(b.numero || '');
       const mensagem = String(b.mensagem || '').trim();
       const tipo = String(b.tipo || 'texto').toLowerCase();
-      if(!numero || !mensagem) { res.writeHead(400,CORS); res.end(JSON.stringify({ok:false,error:'numero e mensagem obrigatorios'})); return; }
+      if(!numero || !mensagem) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:'numero e mensagem obrigatorios'})); return; }
       if(tipo !== 'texto') {
-        res.writeHead(200,CORS);
+        res.writeHead(200,corsHeaders(req));
         res.end(JSON.stringify({ok:true, resposta:'No momento o secretario processa somente mensagens de texto.'}));
         return;
       }
       const sessao = await _carregarSessaoSecretarioWhatsApp(numero, null);
       const out = await _conversarWhatsAppCliente(numero, mensagem, sessao);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({
         ok: !!out?.ok,
         resposta: out?.resposta || '',
         escalonado: !!out?.escalonado,
         perguntas_feitas: sessao.perguntas_feitas || 0
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
 
   if(url==='/api/whatsapp/sessoes' && req.method==='GET') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const rows = await sbGet('whatsapp_sessoes', {}, { limit: 300, order: 'ultima_msg.desc' });
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({
         ok: true,
         total: (rows||[]).length,
@@ -8183,16 +8245,16 @@ if(url==='/api/memoria' && req.method==='GET') {
           escalonado: !!s.escalonado
         }))
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
 
   if(url==='/api/whatsapp/escalonamentos' && req.method==='GET') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const itens = _estadoSecretarioWhatsApp.escalonamentos_memoria.filter(x => !x.resolvido);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({
         ok: true,
         total_pendentes: itens.length,
@@ -8213,7 +8275,7 @@ if(url==='/api/memoria' && req.method==='GET') {
           ultimas_5_msgs: Array.isArray(i.conversa) ? i.conversa.slice(-5) : []
         }))
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({ok:false,error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
 
@@ -8222,9 +8284,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       const b = await lerBody(req);
       const secCfg = _configRuntime.whatsapp.webhook_secret || '';
       const secReq = String(req.headers['x-webhook-secret'] || '');
-      if(secCfg && secReq !== secCfg) { res.writeHead(401,CORS); res.end(JSON.stringify({ok:false,error:'assinatura invalida'})); return; }
+      if(secCfg && secReq !== secCfg) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:'assinatura invalida'})); return; }
       _estadoWhatsApp.ultima_mensagem = new Date().toISOString();
-      res.writeHead(200, CORS); res.end(JSON.stringify({ok:true, recebido:true}));
+      res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({ok:true, recebido:true}));
       const data = b.data || b;
       const remoto = data.key?.remoteJid || data.from || data.numero || '';
       const nomeRem = data.pushName || data.nome || (String(remoto).split('@')[0] || 'Cliente');
@@ -8240,19 +8302,104 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       adapterEvolution(b).catch(e=>console.error('WhatsApp webhook erro:', e.message));
     } catch(e) {
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ok:false, erro:e.message}));
     }
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ── CENTRAL DE MENSAGENS — Ler e Enviar Telegram/WhatsApp pelo Lex ──
+  // ════════════════════════════════════════════════════════════════════════
+
+  // Log de mensagens em memória (últimas 200 por canal)
+  if(!global._centralMensagens) global._centralMensagens = { telegram:[], whatsapp:[] };
+
+  // GET /api/mensagens — lista mensagens recentes de ambos os canais
+  if(url==='/api/mensagens' && req.method==='GET') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const params = new URL('http://x'+req.url).searchParams;
+      const canal = params.get('canal') || 'todos'; // telegram, whatsapp, todos
+      const limite = Math.min(parseInt(params.get('limite')||'50'), 200);
+      let msgs = [];
+      if(canal === 'telegram' || canal === 'todos') msgs = msgs.concat((global._centralMensagens.telegram||[]).slice(-limite));
+      if(canal === 'whatsapp' || canal === 'todos') msgs = msgs.concat((global._centralMensagens.whatsapp||[]).slice(-limite));
+      msgs.sort((a,b) => new Date(b.em) - new Date(a.em));
+      res.writeHead(200, corsHeaders(req));
+      res.end(JSON.stringify({ ok:true, total:msgs.length, mensagens:msgs.slice(0,limite) }));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // POST /api/mensagens/enviar — envia mensagem pelo Telegram ou WhatsApp
+  if(url==='/api/mensagens/enviar' && req.method==='POST') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf || pf === 'secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissao'})); return; }
+      const b = await lerBody(req);
+      const canal = String(b.canal||'').toLowerCase();
+      const destino = String(b.destino||b.numero||b.chat_id||'').trim();
+      const texto = String(b.texto||b.mensagem||'').trim();
+      if(!canal || !destino || !texto) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'canal, destino e texto obrigatorios'})); return; }
+
+      let enviado = false;
+      if(canal === 'telegram') {
+        try {
+          await enviarMsgTelegram(destino, texto);
+          enviado = true;
+          _registrarMsgCentral('telegram', 'saida', destino, 'Kleuber (Lex)', texto);
+        } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro Telegram: '+e.message})); return; }
+      } else if(canal === 'whatsapp') {
+        try {
+          await envWhatsApp(texto, destino);
+          enviado = true;
+          _registrarMsgCentral('whatsapp', 'saida', destino, 'Kleuber (Lex)', texto);
+        } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro WhatsApp: '+e.message})); return; }
+      } else {
+        res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'canal deve ser telegram ou whatsapp'})); return;
+      }
+
+      res.writeHead(200,corsHeaders(req));
+      res.end(JSON.stringify({ok:true, enviado, canal, destino}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // GET /api/mensagens/contatos — lista contatos/conversas ativas
+  if(url==='/api/mensagens/contatos' && req.method==='GET') {
+    try {
+      const pf = validarToken(getToken(req));
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      // Agrupa msgs por remetente/destinatário
+      const contatos = new Map();
+      for(const canal of ['telegram','whatsapp']) {
+        for(const m of (global._centralMensagens[canal]||[])) {
+          const key = canal + ':' + (m.chatId || m.destino);
+          if(!contatos.has(key)) {
+            contatos.set(key, { canal, chatId: m.chatId||m.destino, nome: m.nome||m.chatId||m.destino, ultimaMsg: m.em, totalMsgs: 0, naoLidas: 0 });
+          }
+          const c = contatos.get(key);
+          c.totalMsgs++;
+          if(m.em > c.ultimaMsg) { c.ultimaMsg = m.em; c.nome = m.nome || c.nome; }
+          if(m.direcao === 'entrada' && !m.lida) c.naoLidas++;
+        }
+      }
+      const lista = [...contatos.values()].sort((a,b) => new Date(b.ultimaMsg) - new Date(a.ultimaMsg));
+      res.writeHead(200, corsHeaders(req));
+      res.end(JSON.stringify({ ok:true, contatos: lista }));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/pje/configurar' && req.method==='POST') {
     try {
       const pfP = validarToken(getToken(req));
-      if(!pfP) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfP) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       const oab = String(b.oab_numero||'').trim().toUpperCase();
-      if(oab && !_validarOab(oab)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'Formato OAB invalido. Use XXXXXX/UF'})); return; }
+      if(oab && !_validarOab(oab)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Formato OAB invalido. Use XXXXXX/UF'})); return; }
       const tribunais = Array.isArray(b.tribunais) ? b.tribunais : (Array.isArray(b.tribunais_favoritos) ? b.tribunais_favoritos : []);
       _configRuntime.pje = {
         ..._configRuntime.pje,
@@ -8265,20 +8412,20 @@ if(url==='/api/memoria' && req.method==='GET') {
         atualizado_em: new Date().toISOString()
       };
       await _salvarConfigPersistida('pje', _configRuntime.pje);
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, config:_configRuntime.pje}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/pje/conectar' && req.method==='POST') {
     try {
       const pfP = validarToken(getToken(req));
-      if(!pfP) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfP) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const cfgP = await _carregarConfigPersistida('pje', PJE_CONFIG);
       _configRuntime.pje = {..._configRuntime.pje, ...cfgP};
       const tribunais = (_configRuntime.pje.tribunais_favoritos||[]).length ? _configRuntime.pje.tribunais_favoritos : ['TJSP','TRT-2','TRF-3'];
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ok:true,
         conectado:false,
@@ -8288,14 +8435,14 @@ if(url==='/api/memoria' && req.method==='GET') {
         orientacao:'Abra o PJe no navegador, faca login com token A3 e mantenha sessao ativa. O bot consulta andamentos publicos pela DATAJUD.',
         tribunais
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url.startsWith('/api/pje/andamentos') && req.method==='GET') {
     try {
       const pfP = validarToken(getToken(req));
-      if(!pfP) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfP) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       let processo_numero = u.searchParams.get('processo_numero') || u.searchParams.get('processo') || '';
       // Fallback: se recebeu processo_id sem numero, buscar no array processos
@@ -8306,7 +8453,7 @@ if(url==='/api/memoria' && req.method==='GET') {
           if(proc && proc.numero) processo_numero = proc.numero;
         }
       }
-      if(!processo_numero) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_numero obrigatorio (ou processo_id de processo com numero cadastrado)'})); return; }
+      if(!processo_numero) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_numero obrigatorio (ou processo_id de processo com numero cadastrado)'})); return; }
       const trib = u.searchParams.get('tribunal') || _extrairTribunalDoProcesso(processo_numero);
       const r = await _buscarAndamentosDatajud(processo_numero, trib);
       const ultima = r.movimentacoes[0] || null;
@@ -8318,7 +8465,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(nova && ultima) {
         await envTelegram('MOVIMENTACAO: Processo '+processo_numero+' - '+(ultima.tipo||'Movimentacao')+' em '+(ultima.data||new Date().toISOString()), null, CHAT_ID).catch(()=>{});
       }
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ok:r.ok,
         processo_numero,
@@ -8327,16 +8474,16 @@ if(url==='/api/memoria' && req.method==='GET') {
         nova_movimentacao:nova,
         erro:r.erro||null
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/pje/sincronizar' && req.method==='POST') {
     try {
       const pfP = validarToken(getToken(req));
-      if(!pfP) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pfP) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const varredura = await _varrerAndamentosPjeAgora();
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ok:true,
         processos: processos.filter(p=>p.numero).map(p => ({
@@ -8350,7 +8497,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         novasIntimacoes: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero })),
         ultimo_check: varredura.ultimo_check
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8360,7 +8507,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const hoje = horaBrasilia().toLocaleDateString('pt-BR');
       const logs = await sbGet('agente_logs', {});
       const doDia = logs.filter(l=>new Date(l.criado_em).toLocaleDateString('pt-BR')===hoje);
-      res.writeHead(200,CORS);
+      res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         total_hoje: doDia.length,
         total_geral: logs.length,
@@ -8371,7 +8518,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         ultimo_aparelho: processosUltimoAparelho,
         escritorio: ESCRITORIO.nome
       }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8381,18 +8528,18 @@ if(url==='/api/memoria' && req.method==='GET') {
   if((url==='/api/pecas/gerar-pdf' || url==='/api/gerar-pdf') && req.method==='POST') {
     try {
       const pfPecaPdf = validarToken(getToken(req));
-      if(!pfPecaPdf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfPecaPdf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
       const tipo = String((b.tipo || 'peticao')).toLowerCase();
-      if(!['peticao','pericia'].includes(tipo)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'tipo deve ser peticao|pericia'})); return; }
+      if(!['peticao','pericia'].includes(tipo)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tipo deve ser peticao|pericia'})); return; }
       const titulo = String(b.titulo || (tipo==='pericia' ? 'Laudo Pericial' : 'Peça Jurídica'));
       const conteudo = String(b.conteudo || '').trim();
-      if(!conteudo) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'conteudo obrigatório'})); return; }
+      if(!conteudo) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'conteudo obrigatório'})); return; }
       const pdfBuf = await _gerarPecaPdfBuffer(titulo, conteudo, tipo);
       const nome = _nomeArquivoSeguro(titulo, '.pdf');
-      res.writeHead(200, { 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"', ...CORS });
+      res.writeHead(200, { 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"', ...corsHeaders(req) });
       res.end(pdfBuf);
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8400,22 +8547,22 @@ if(url==='/api/memoria' && req.method==='GET') {
   if((url==='/api/pecas/gerar-docx' || url==='/api/gerar-docx') && req.method==='POST') {
     try {
       const pfPecaDocx = validarToken(getToken(req));
-      if(!pfPecaDocx) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfPecaDocx) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
       const tipo = String((b.tipo || 'peticao')).toLowerCase();
-      if(!['peticao','pericia'].includes(tipo)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'tipo deve ser peticao|pericia'})); return; }
+      if(!['peticao','pericia'].includes(tipo)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tipo deve ser peticao|pericia'})); return; }
       const titulo = String(b.titulo || (tipo==='pericia' ? 'Laudo Pericial' : 'Peça Jurídica'));
       const conteudo = String(b.conteudo || '').trim();
-      if(!conteudo) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'conteudo obrigatório'})); return; }
+      if(!conteudo) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'conteudo obrigatório'})); return; }
       const docxBuf = _gerarDocxBufferPeca(titulo, conteudo, tipo);
       const nome = _nomeArquivoSeguro(titulo, '.docx');
       res.writeHead(200, {
         'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition':'attachment; filename="' + nome + '"',
-        ...CORS
+        ...corsHeaders(req)
       });
       res.end(docxBuf);
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8423,15 +8570,15 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/docx' && req.method==='POST') {
     try {
       const b = await lerBody(req);
-      if(!b.texto) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'texto obrigatório'})); return; }
+      if(!b.texto) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'texto obrigatório'})); return; }
       const buf = Buffer.from(b.texto, 'utf8');
       res.writeHead(200, {
         'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition':'attachment; filename="peticao.docx"',
-        ...CORS
+        ...corsHeaders(req)
       });
       res.end(buf);
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8442,7 +8589,7 @@ if(url==='/api/memoria' && req.method==='GET') {
   // ════════════════════════════════════════════════════════════════════════
   if(url==='/api/sse' && req.method==='GET') {
     const pfSse = validarToken(getToken(req));
-    if(!pfSse) { res.writeHead(401,CORS); res.end('data: {"error":"Não autenticado"}\n\n'); return; }
+    if(!pfSse) { res.writeHead(401,corsHeaders(req)); res.end('data: {"error":"Não autenticado"}\n\n'); return; }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -8491,13 +8638,13 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/sync-push' && req.method==='POST') {
     try {
       const pfPush = validarToken(getToken(req));
-      if(!pfPush) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfPush) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
-      if(!Array.isArray(b.processos)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processos[] obrigatório'})); return; }
+      if(!Array.isArray(b.processos)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processos[] obrigatório'})); return; }
       const aparelhoId = req.headers['x-aparelho-id'] || b.aparelhoId || 'web';
       const clientVersao = parseInt(b.clientVersao||0, 10);
       if(clientVersao > 0 && clientVersao < processosVersao) {
-        res.writeHead(409, CORS);
+        res.writeHead(409, corsHeaders(req));
         res.end(JSON.stringify({
           error: 'Versão desatualizada. Baixe antes de enviar.',
           servidorVersao: processosVersao, clientVersao,
@@ -8523,27 +8670,27 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       console.log('[sync-push]', aparelhoId, '| processos:', processos.length,
         '| versão:', processosVersao, '| SSE notificados:', notificados);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok: true, versao: processosVersao, total: processos.length, notificados }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/calendario' && req.method==='GET') {
     try {
       const pfCal = validarToken(getToken(req));
-      if(!pfCal) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfCal) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const eventos = _coletarEventosCalendario();
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, total:eventos.length, eventos }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url.startsWith('/api/arquivo-morto/exportar') && req.method==='GET') {
     try {
       const pfAm = validarToken(getToken(req));
-      if(!pfAm) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfAm) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const tipo = u.searchParams.get('tipo') || 'todos';
       let rows = await sbGet('clientes_pendentes', {}, { limit: 1000, order: 'atualizado_em.desc' });
@@ -8561,17 +8708,17 @@ if(url==='/api/memoria' && req.method==='GET') {
       res.writeHead(200, {
         'Content-Type': 'application/zip',
         'Content-Disposition': 'attachment; filename=\"arquivo_morto_'+Date.now()+'.zip\"',
-        ...CORS
+        ...corsHeaders(req)
       });
       res.end(zipBuf);
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/arquivo-morto/limpar' && req.method==='POST') {
     try {
       const pfAmL = validarToken(getToken(req));
-      if(!pfAmL || pfAmL!=='admin') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!pfAmL || pfAmL!=='admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
       const tipo = b.tipo || 'inativos';
       const rows = await sbGet('clientes_pendentes', {}, { limit: 1000, order: 'atualizado_em.desc' });
@@ -8596,35 +8743,35 @@ if(url==='/api/memoria' && req.method==='GET') {
         await sbDelete('clientes_pendentes', { chat_id: String(c.chat_id) });
         removidos++;
       }
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, tipo, removidos }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url.startsWith('/api/arquivo-morto/consultar') && req.method==='GET') {
     try {
       const pfAmC = validarToken(getToken(req));
-      if(!pfAmC) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfAmC) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const q = _normTexto(u.searchParams.get('q') || '');
       const rows = await sbGet('arquivo_morto_indice', {}, { limit: 1000, order: 'arquivado_em.desc' });
       const filtrados = !q ? rows : rows.filter(r => _normTexto((r.nome||'')+' '+(r.resumo||'')+' '+(r.caso_tipo||'')).includes(q));
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, total: filtrados.length, resultados: filtrados.slice(0,100) }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
   if(url==='/api/arquivo-morto/restaurar' && req.method==='POST') {
     try {
       const pfAmR = validarToken(getToken(req));
-      if(!pfAmR || pfAmR!=='admin') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!pfAmR || pfAmR!=='admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
-      if(!b.zipBase64) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'zipBase64 obrigatório'})); return; }
+      if(!b.zipBase64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'zipBase64 obrigatório'})); return; }
       const zipBuf = Buffer.from(String(b.zipBase64), 'base64');
       const arqJson = _extrairZipEntry(zipBuf, 'clientes_pendentes.json') || _extrairZipEntry(zipBuf, 'arquivo_morto.json');
-      if(!arqJson) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'ZIP inválido: JSON não encontrado'})); return; }
+      if(!arqJson) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'ZIP inválido: JSON não encontrado'})); return; }
       const json = arqJson.toString('utf8');
       const payload = JSON.parse(json);
       const dados = Array.isArray(payload?.dados) ? payload.dados : [];
@@ -8634,9 +8781,9 @@ if(url==='/api/memoria' && req.method==='GET') {
         await sbUpsert('clientes_pendentes', c, 'chat_id');
         restaurados++;
       }
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, restaurados }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8650,21 +8797,21 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/tempo/registrar' && req.method==='POST') {
     try {
       const pfTempo = validarToken(getToken(req));
-      if(!pfTempo) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfTempo) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
       const acao = b.acao; // 'login' | 'logout' | 'heartbeat'
       const perfilAlvo = b.perfil || pfTempo;
       // Apenas admin pode registrar por outro perfil
       if(perfilAlvo !== pfTempo && pfTempo !== 'admin') {
-        res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return;
+        res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return;
       }
       if(!['login','logout','heartbeat'].includes(acao)) {
-        res.writeHead(400,CORS); res.end(JSON.stringify({error:'acao deve ser login|logout|heartbeat'})); return;
+        res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'acao deve ser login|logout|heartbeat'})); return;
       }
       const resultado = await _registrarTempoUso(perfilAlvo, acao, b.timestamp || Date.now());
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok: true, acao, ...resultado }));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8672,16 +8819,16 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url.startsWith('/api/tempo/resumo') && req.method==='GET') {
     try {
       const pfRs = validarToken(getToken(req));
-      if(!pfRs) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfRs) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const perfilConsulta = u.searchParams.get('perfil') || pfRs;
       if(perfilConsulta !== pfRs && pfRs !== 'admin') {
-        res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return;
+        res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return;
       }
       const resumo = await _resumoTempoUso(perfilConsulta);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(resumo));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8689,17 +8836,17 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url.startsWith('/api/tempo/historico') && req.method==='GET') {
     try {
       const pfHist = validarToken(getToken(req));
-      if(!pfHist) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(!pfHist) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const u = new URL(req.url, 'http://x');
       const perfilConsulta = u.searchParams.get('perfil') || pfHist;
       const dias = Math.min(parseInt(u.searchParams.get('dias')||'30', 10), 365);
       if(perfilConsulta !== pfHist && pfHist !== 'admin') {
-        res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return;
+        res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return;
       }
       const historico = await _historicoTempoUso(perfilConsulta, dias);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(historico));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8712,14 +8859,14 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/sacadas-juridicas' && req.method==='POST') {
     try {
       const pfSj = validarToken(getToken(req));
-      if(!pfSj) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-      if(pfSj==='secretaria') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!pfSj) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(pfSj==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
-      if(!b.texto) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'texto obrigatório'})); return; }
+      if(!b.texto) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'texto obrigatório'})); return; }
       const sacadas = await _motorSacardasJuridicas(b.texto, b.area||'', b.tribunal||'', b.processo||null);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(sacadas));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8732,14 +8879,14 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/perfil-juiz' && req.method==='POST') {
     try {
       const pfJuiz = validarToken(getToken(req));
-      if(!pfJuiz) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-      if(pfJuiz==='secretaria') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!pfJuiz) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(pfJuiz==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
-      if(!b.nomeJuiz) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'nomeJuiz obrigatório'})); return; }
+      if(!b.nomeJuiz) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'nomeJuiz obrigatório'})); return; }
       const perfil = await _analisarPerfilJuiz(b.nomeJuiz, b.tribunal||'', b.processoId||null, b.decisoes||null);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(perfil));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8750,18 +8897,18 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/prognostico' && req.method==='POST') {
     try {
       const pfProg = validarToken(getToken(req));
-      if(!pfProg) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-      if(pfProg==='secretaria') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      if(!pfProg) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(pfProg==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
       const pid = Number(b && b.processo_id);
-      if(!pid) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
+      if(!pid) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
       const processo = processos.find(p => Number(p.id) === pid);
-      if(!processo) { res.writeHead(404,CORS); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
+      if(!processo) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
       const prognostico = await _gerarPrognosticoRealista(processo);
-      res.writeHead(200, CORS);
+      res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, processo_id: pid, prognostico }));
     } catch(e) {
-      res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message}));
+      res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message}));
     }
     return;
   }
@@ -8770,15 +8917,15 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/notificar-telegram' && req.method==='POST') {
     try {
       const pfTg = validarToken(getToken(req));
-      if(!pfTg || pfTg !== 'admin') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Somente admin pode enviar notificacoes'})); return; }
+      if(!pfTg || pfTg !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Somente admin pode enviar notificacoes'})); return; }
       const b = await lerBody(req);
       if(!b.mensagem || typeof b.mensagem !== 'string' || !b.mensagem.trim()) {
-        res.writeHead(400,CORS); res.end(JSON.stringify({error:'mensagem obrigatoria'})); return;
+        res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'mensagem obrigatoria'})); return;
       }
       if(!TK) { res.writeHead(503,CORS); res.end(JSON.stringify({error:'TELEGRAM_TOKEN nao configurado no servidor'})); return; }
       await envTelegram(b.mensagem.trim(), null, b.chat_id || CHAT_ID);
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Notificacao enviada via Telegram'}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Notificacao enviada via Telegram'}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8786,11 +8933,11 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/revogar' && req.method==='POST') {
     try {
       const tk = getToken(req);
-      if(!tk || !validarToken(tk)) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Token invalido'})); return; }
+      if(!tk || !validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Token invalido'})); return; }
       if(!global._tokensRevogados) global._tokensRevogados = new Set();
       global._tokensRevogados.add(tk);
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Sessao revogada'}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Sessao revogada'}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8799,10 +8946,10 @@ if(url==='/api/memoria' && req.method==='GET') {
     try {
       const tk = getToken(req);
       const perfil = validarToken(tk);
-      if(!perfil) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Token invalido ou expirado'})); return; }
+      if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Token invalido ou expirado'})); return; }
       const novoToken = gerarToken(perfil);
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, token:novoToken, perfil}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, token:novoToken, perfil}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8810,12 +8957,12 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/tempo-uso/login' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
       global._tempoUsoRegistros.push({perfil:pf, tipo:'login', ts:Date.now(), data:new Date().toISOString().slice(0,10)});
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8823,12 +8970,12 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/tempo-uso' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
       global._tempoUsoRegistros.push({perfil:pf, tipo:'heartbeat', ts:Date.now(), data:new Date().toISOString().slice(0,10), minutos:b.minutos||1});
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8836,7 +8983,7 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url.startsWith('/api/tempo-uso/relatorio') && req.method==='GET') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const u2 = new URL(req.url, 'http://localhost');
       const perfilFiltro = u2.searchParams.get('perfil') || pf;
       const regs = (global._tempoUsoRegistros||[]).filter(r=>r.perfil===perfilFiltro);
@@ -8847,8 +8994,8 @@ if(url==='/api/memoria' && req.method==='GET') {
         if(r.tipo==='heartbeat') porDia[r.data].minutos += (r.minutos||1);
       }
       const dias = Object.keys(porDia).sort().map(d=>({data:d,...porDia[d]}));
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, perfil:perfilFiltro, total:regs.length, dias}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, perfil:perfilFiltro, total:regs.length, dias}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8856,14 +9003,14 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/jurisprudencia' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.tema && !b.area) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'tema ou area obrigatorio'})); return; }
+      if(!b.tema && !b.area) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tema ou area obrigatorio'})); return; }
       const sysJuris = 'Você é um pesquisador jurídico expert. Busque jurisprudência REAL e VERIFICÁVEL sobre o tema solicitado. NUNCA invente decisões, números de processo ou ementas. Se não tiver certeza, diga que não encontrou. Formate: Tribunal, Número, Relator, Data, Ementa resumida, e como se aplica ao caso. Foque em STJ, STF, TST e TRFs. Priorize decisões recentes (últimos 5 anos).';
       const msgs = [{role:'user', content:`Busque jurisprudência sobre: ${b.tema||''} | Área: ${b.area||'geral'} | Tribunal preferencial: ${b.tribunal||'todos'} | Contexto adicional: ${b.contexto||'nenhum'}`}];
       const txt = await ia(msgs, sysJuris, 4096);
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, resposta:txt, tema:b.tema, area:b.area}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, resposta:txt, tema:b.tema, area:b.area}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8871,14 +9018,14 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/gestor/chat' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.messages || !Array.isArray(b.messages)) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'messages obrigatorio'})); return; }
+      if(!b.messages || !Array.isArray(b.messages)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'messages obrigatorio'})); return; }
       const resumoProcs = processos.slice(0,30).map(p=>`[${p.id}] ${p.titulo||p.nome||'?'} (${p.area||'?'}) - ${p.status||'?'} - Cliente: ${p.cliente||'?'}`).join('\n');
       const sysGestor = sysAssessor(null, null) + '\n\n## Processos ativos no escritório:\n' + (resumoProcs || '(nenhum processo cadastrado)') + '\n\nVocê tem acesso direto aos dados acima. Responda como gestor do escritório.';
       const txt = await ia(b.messages, sysGestor, b.maxTokens||4096);
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, resposta:txt, text:txt}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, resposta:txt, text:txt}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8886,13 +9033,13 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/processo/atualizar' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!b.processo_id) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'processo_id obrigatorio'})); return; }
+      if(!b.processo_id) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_id obrigatorio'})); return; }
       // BACKUP antes de atualizar
       _backupProcesso(b.processo_id, 'atualizacao_api');
       const idx = processos.findIndex(p=>String(p.id)===String(b.processo_id));
-      if(idx===-1) { res.writeHead(404,CORS); res.end(JSON.stringify({error:'Processo nao encontrado'})); return; }
+      if(idx===-1) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Processo nao encontrado'})); return; }
       const camposPermitidos = ['titulo','area','status','cliente','descricao','numero','valor_causa','juiz','vara','proxacao','prazo','prazoReal','observacoes'];
       const atualizados = [];
       for(const campo of camposPermitidos) {
@@ -8902,8 +9049,8 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(b.andamentos && Array.isArray(b.andamentos)) { processos[idx].andamentos = b.andamentos; atualizados.push('andamentos'); }
       // AUDITORIA
       _auditarAcao(pf, 'processo_atualizar_api', {processo_id:b.processo_id, campos:atualizados});
-      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, processo_id:b.processo_id, atualizados, msg:'Processo atualizado com sucesso'}));
-    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, processo_id:b.processo_id, atualizados, msg:'Processo atualizado com sucesso'}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -8913,11 +9060,11 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/exportar-dados-cliente' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
-      if(!pf || pf!=='admin') { res.writeHead(403,CORS); res.end(JSON.stringify({error:'Somente admin pode exportar dados'})); return; }
+      if(!pf || pf!=='admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Somente admin pode exportar dados'})); return; }
       const b = await lerBody(req);
       const clienteNome = (b.cliente_nome||b.cliente||'').trim().toLowerCase();
       const clienteId = b.cliente_id ? String(b.cliente_id) : '';
-      if(!clienteNome && !clienteId) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'cliente_nome ou cliente_id obrigatorio'})); return; }
+      if(!clienteNome && !clienteId) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'cliente_nome ou cliente_id obrigatorio'})); return; }
 
       // Filtrar processos do cliente
       const procsCliente = processos.filter(p => {
@@ -8927,7 +9074,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         return clienteNome && nome.includes(clienteNome);
       });
 
-      if(procsCliente.length===0) { res.writeHead(404,CORS); res.end(JSON.stringify({error:'Nenhum processo encontrado para este cliente'})); return; }
+      if(procsCliente.length===0) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Nenhum processo encontrado para este cliente'})); return; }
 
       // Montar ZIP
       const zip = new JSZip();
@@ -8960,9 +9107,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       ].join('\n'));
 
       const zipBuf = await zip.generateAsync({type:'nodebuffer'});
-      res.writeHead(200, {...CORS, 'Content-Type':'application/zip', 'Content-Disposition':'attachment; filename="dados_cliente.zip"', 'Content-Length':zipBuf.length});
+      res.writeHead(200, {...corsHeaders(req), 'Content-Type':'application/zip', 'Content-Disposition':'attachment; filename="dados_cliente.zip"', 'Content-Length':zipBuf.length});
       res.end(zipBuf);
-    } catch(e) { if(!res.writableEnded) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); } }
+    } catch(e) { if(!res.writableEnded) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); } }
     return;
   }
 
@@ -8970,17 +9117,17 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/analisar-documento-estrategico' && req.method==='POST'){
     try{
       const pf=validarToken(getToken(req));
-      if(!pf){res.writeHead(401,CORS);res.end(JSON.stringify({error:'Nao autenticado'}));return;}
+      if(!pf){res.writeHead(401,corsHeaders(req));res.end(JSON.stringify({error:'Nao autenticado'}));return;}
       const b=await lerBody(req);
-      if(!b.processo_id){res.writeHead(400,CORS);res.end(JSON.stringify({error:'processo_id obrigatorio'}));return;}
+      if(!b.processo_id){res.writeHead(400,corsHeaders(req));res.end(JSON.stringify({error:'processo_id obrigatorio'}));return;}
       const proc=processos.find(p=>String(p.id)===String(b.processo_id));
-      if(!proc){res.writeHead(404,CORS);res.end(JSON.stringify({error:'Processo nao encontrado'}));return;}
-      if(!b.documento_base64){res.writeHead(400,CORS);res.end(JSON.stringify({error:'documento_base64 obrigatorio'}));return;}
+      if(!proc){res.writeHead(404,corsHeaders(req));res.end(JSON.stringify({error:'Processo nao encontrado'}));return;}
+      if(!b.documento_base64){res.writeHead(400,corsHeaders(req));res.end(JSON.stringify({error:'documento_base64 obrigatorio'}));return;}
       
       const buffer=Buffer.from(b.documento_base64,'base64');
       const pagEst=Math.max(1,Math.round(buffer.length/(1024*1024)*7));
       if(pagEst>PDF_MAX_PGS_TOTAL){
-        res.writeHead(400,CORS);res.end(JSON.stringify({error:`Documento muito grande: ~${pagEst} pg. Limite: ${PDF_MAX_PGS_TOTAL} folhas`}));return;
+        res.writeHead(400,corsHeaders(req));res.end(JSON.stringify({error:`Documento muito grande: ~${pagEst} pg. Limite: ${PDF_MAX_PGS_TOTAL} folhas`}));return;
       }
       
       _auditarAcao(pf,'analise_estrategica_iniciada',{processo_id:b.processo_id,tipo_doc:b.tipo_documento||'decisao',paginas:pagEst});
@@ -8995,7 +9142,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }));
       
       _processarAnaliseEstrategicaAsync(b.processo_id,proc,b,pf);
-    }catch(e){if(!res.writableEnded){res.writeHead(500,CORS);res.end(JSON.stringify({error:e.message}));}}
+    }catch(e){if(!res.writableEnded){res.writeHead(500,corsHeaders(req));res.end(JSON.stringify({error:e.message}));}}
     return;
   }
 
