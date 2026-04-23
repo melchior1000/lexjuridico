@@ -2721,6 +2721,35 @@ function renderGestaoSenhas(){
       ${chaveAtual?'<div style="margin-top:8px;font-size:11px;color:var(--green);">✓ Chave configurada</div>':'<div style="margin-top:8px;font-size:11px;color:var(--orange);">⚠ Sem chave local — usando servidor</div>'}
     </div>
 
+    <!-- GESTÃO FINANCEIRA / RECARGA API -->
+    <div style="background:var(--surface);border:1px solid var(--accent)44;border-radius:14px;padding:20px 22px;margin-bottom:20px;">
+      <div style="font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:14px;">💳 GESTÃO FINANCEIRA — MANTER O LEX ONLINE</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7;">
+        O Lex funciona através da <strong>API Anthropic (Claude)</strong>. Para que ele nunca pare, é necessário manter créditos na conta.<br>
+        Clique no botão abaixo para acessar o painel de cobrança e fazer recarga.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <a href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),#7c3aed);color:#fff;padding:12px 24px;border-radius:10px;text-decoration:none;font-size:13px;font-weight:600;transition:all .2s;box-shadow:0 4px 15px rgba(139,92,246,0.3);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(139,92,246,0.4)'" onmouseout="this.style.transform='';this.style.boxShadow='0 4px 15px rgba(139,92,246,0.3)'">
+          <span style="font-size:18px;">⚡</span> Recarregar API Anthropic
+        </a>
+        <a href="https://console.anthropic.com/settings/usage" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface2);color:var(--text2);padding:10px 18px;border-radius:10px;text-decoration:none;font-size:12px;border:1px solid var(--border2);transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
+          📊 Ver Consumo / Usage
+        </a>
+      </div>
+      <div style="margin-top:14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">LINKS RÁPIDOS</div>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;">
+          <a href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">💳 Billing — Pagamento e recarga de créditos</a>
+          <a href="https://console.anthropic.com/settings/usage" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">📊 Usage — Consumo detalhado por modelo</a>
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">🔑 API Keys — Gerenciar chaves de acesso</a>
+          <a href="https://status.anthropic.com/" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">🟢 Status — Verificar se a API está online</a>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--text3);line-height:1.6;">
+        💡 <strong>Dica:</strong> Configure alerta de saldo baixo no painel Anthropic para ser avisado antes de acabar os créditos.
+      </div>
+    </div>
+
     <!-- WHATSAPP -->
     <div class="cfg-card">
       <div class="cfg-head">
