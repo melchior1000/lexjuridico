@@ -1230,11 +1230,16 @@ TÉCNICO:
 - Andamento: "já qualificado nos autos do processo em epígrafe nº [número]"
 
 ATUALIZAÇÃO DE PROCESSOS VIA CHAT:
-Quando o usuário pedir para atualizar dados de um processo, EXECUTE e inclua marcadores no final da resposta:
-- Atualizar campo: [ATUALIZAR:processo_id:campo:valor] (campos: status, titulo, juiz, vara, proxacao, observacoes, area, cliente)
+Quando o usuário pedir para atualizar dados de um processo, EXECUTE IMEDIATAMENTE e inclua marcadores no final da resposta:
+- Atualizar campo: [ATUALIZAR:processo_id:campo:valor] (campos: status, titulo, juiz, vara, proxacao, observacoes, area, cliente, prazo)
 - Novo andamento: [ANDAMENTO:processo_id:descricao do andamento]
 - Novo prazo: [PRAZO:processo_id:descricao:YYYY-MM-DD:tipo]
-Exemplo: Se pedirem "atualiza o status do processo 123 para em andamento", responda confirmando e inclua [ATUALIZAR:123:status:em_andamento].
+Exemplo: "atualiza o status do processo 123" → [ATUALIZAR:123:status:em_andamento]
+Exemplo: "foi publicada decisão no processo 456" → [ANDAMENTO:456:Publicação de decisão interlocutória] + [PRAZO:456:Conferir decisão publicada:YYYY-MM-DD:conferencia]
+IMPORTANTE: Cada atualização gera prazo automático de 5 dias para conferência.
+EXCEÇÃO JULGAMENTO: Se for marcado julgamento/audiência/sessão, NÃO gera prazo de 5 dias — a data do julgamento é o prazo. Use: [PRAZO:id:Julgamento...:data:julgamento]
+OBEDIÊNCIA: Quando Kleuber ou equipe pedirem atualização, EXECUTE SEM QUESTIONAR. Confirme com 1 linha curta.
+Funciona por TODOS os canais: chat do painel, Telegram e WhatsApp.
 
 EXPERTISE BANCÁRIA/CDC:
 - Lei 9.514/97 (alienação fiduciária), CDC em bancos (Súmula 297 STJ)
@@ -5471,6 +5476,8 @@ async function _conversaInteligente(ctx, mem, txt, low) {
       null,
       900
     );
+    // Processa marcadores de atualização na resposta
+    await _processarMarcadoresChat(resposta, validarToken(getToken({headers:ctx.headers||{}}))||'assessor').catch(()=>{});
     await env(resposta, ctx);
     return;
   }
@@ -8416,7 +8423,7 @@ const server = http.createServer(async (req, res) => {
     const sysPrompt = b.system || sysAssessor(null, null);
     const txt = await ia(b.messages, sysPrompt, b.maxTokens||4096);
       // Pós-processamento: marcadores de atualização de processo
-      const acoes = _processarMarcadoresChat(txt);
+      const acoes = await _processarMarcadoresChat(txt);
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -9707,23 +9714,43 @@ if(url==='/api/memoria' && req.method==='GET') {
 // FEATURE: Processar marcadores de ação no chat do assessor
 // Formato: [ATUALIZAR:processo_id:campo:valor] [ANDAMENTO:processo_id:descricao] [PRAZO:processo_id:descricao:data:tipo]
 // ═══════════════════════════════════════════════════════════════════
-function _processarMarcadoresChat(texto, perfil='assessor') {
+async function _processarMarcadoresChat(texto, perfil='assessor') {
   if(!texto) return [];
   const acoes = [];
+  const hoje = new Date().toISOString().slice(0,10);
+  const em5dias = new Date(Date.now() + 5*86400000).toISOString().slice(0,10);
+  
   // [ATUALIZAR:ID:campo:valor]
   const regAtu = /\[ATUALIZAR:(\d+):(\w+):([^\]]+)\]/g;
   let m;
   while((m = regAtu.exec(texto)) !== null) {
     const idx = processos.findIndex(p=>String(p.id)===m[1]);
     if(idx!==-1) {
-      const camposValidos = ['status','titulo','juiz','vara','proxacao','observacoes','area','cliente'];
+      const camposValidos = ['status','titulo','juiz','vara','proxacao','observacoes','area','cliente','prazo'];
       if(camposValidos.includes(m[2])) {
-        // BACKUP antes de atualizar
         _backupProcesso(m[1], 'atualizacao_assessor_chat');
         processos[idx][m[2]] = m[3];
         acoes.push({tipo:'atualizar', processo_id:m[1], campo:m[2], valor:m[3], ok:true});
-        // AUDITORIA
         _auditarAcao(perfil, 'atualizar_processo', {processo_id:m[1], campo:m[2], valor:m[3]});
+        // ── PERSISTIR NO SUPABASE ──
+        try {
+          const updateData = {};
+          updateData[m[2]] = m[3];
+          await sbReq('PATCH', 'processos', updateData, { id: 'eq.' + m[1] });
+        } catch(e) { console.warn('[Lex] Erro persisting update:', e.message); }
+        
+        // ── AUTO-PRAZO 5 DIAS para conferência (exceto se é julgamento) ──
+        if(m[2] !== 'prazo') {
+          if(!Array.isArray(processos[idx].prazos)) processos[idx].prazos = [];
+          const novoPz = {id:Date.now(), descricao:'Conferir atualização: '+m[2]+' → '+m[3], data:em5dias, tipo:'conferencia', status:'pendente'};
+          processos[idx].prazos.push(novoPz);
+          // Atualiza prazo principal do processo
+          if(!processos[idx].prazo || new Date(processos[idx].prazo.split('/').reverse().join('-')) > new Date(em5dias)) {
+            processos[idx].prazo = em5dias.split('-').reverse().join('/');
+            try { await sbReq('PATCH', 'processos', { prazo: processos[idx].prazo }, { id: 'eq.' + m[1] }); } catch(e) {}
+          }
+          acoes.push({tipo:'prazo_auto', processo_id:m[1], descricao:'Conferência em 5 dias', data:em5dias, ok:true});
+        }
       }
     }
   }
@@ -9733,13 +9760,19 @@ function _processarMarcadoresChat(texto, perfil='assessor') {
     const idx = processos.findIndex(p=>String(p.id)===m[1]);
     if(idx!==-1) {
       if(!Array.isArray(processos[idx].andamentos)) processos[idx].andamentos = [];
-      // BACKUP antes de adicionar andamento
       _backupProcesso(m[1], 'novo_andamento_assessor');
-      const novoAnd = {id:Date.now(), data:new Date().toISOString().slice(0,10), descricao:m[2], tipo:'atualizacao_assessor'};
+      const novoAnd = {id:Date.now(), data:hoje, descricao:m[2], tipo:'atualizacao_assessor'};
       processos[idx].andamentos.push(novoAnd);
       acoes.push({tipo:'andamento', processo_id:m[1], descricao:m[2], ok:true});
-      // AUDITORIA
       _auditarAcao(perfil, 'adicionar_andamento', {processo_id:m[1], descricao:m[2]});
+      // ── PERSISTIR andamento no Supabase ──
+      try {
+        await sbReq('POST', 'andamentos', { processo_id: parseInt(m[1]), data: hoje, descricao: m[2], tipo: 'atualizacao_assessor' });
+      } catch(e) {}
+      // ── AUTO-PRAZO 5 DIAS para conferência ──
+      if(!Array.isArray(processos[idx].prazos)) processos[idx].prazos = [];
+      processos[idx].prazos.push({id:Date.now()+1, descricao:'Conferir andamento: '+m[2].substring(0,50), data:em5dias, tipo:'conferencia', status:'pendente'});
+      acoes.push({tipo:'prazo_auto', processo_id:m[1], descricao:'Conferência em 5 dias', data:em5dias, ok:true});
     }
   }
   // [PRAZO:ID:descricao:data:tipo]
@@ -9748,13 +9781,38 @@ function _processarMarcadoresChat(texto, perfil='assessor') {
     const idx = processos.findIndex(p=>String(p.id)===m[1]);
     if(idx!==-1) {
       if(!Array.isArray(processos[idx].prazos)) processos[idx].prazos = [];
-      // BACKUP antes de adicionar prazo
       _backupProcesso(m[1], 'novo_prazo_assessor');
       const novoPz = {id:Date.now(), descricao:m[2], data:m[3], tipo:m[4], status:'pendente'};
       processos[idx].prazos.push(novoPz);
       acoes.push({tipo:'prazo', processo_id:m[1], descricao:m[2], data:m[3], ok:true});
-      // AUDITORIA
       _auditarAcao(perfil, 'adicionar_prazo', {processo_id:m[1], descricao:m[2], data:m[3]});
+      // ── PERSISTIR prazo no Supabase ──
+      try {
+        await sbReq('POST', 'prazos', { processo_id: parseInt(m[1]), descricao: m[2], data: m[3], tipo: m[4], status: 'pendente' });
+        // Atualiza prazo principal se este é mais próximo
+        const prazoAtual = processos[idx].prazo ? new Date(processos[idx].prazo.split('/').reverse().join('-')) : new Date('2099-01-01');
+        const prazoNovo = new Date(m[3]);
+        if(prazoNovo < prazoAtual) {
+          processos[idx].prazo = m[3].split('-').reverse().join('/');
+          await sbReq('PATCH', 'processos', { prazo: processos[idx].prazo }, { id: 'eq.' + m[1] });
+        }
+      } catch(e) {}
+      
+      // ── Se é JULGAMENTO: registrar na agenda e calendário ──
+      if(m[4] && /julgamento|audiencia|sessao/i.test(m[4])) {
+        try {
+          await sbReq('POST', 'eventos_calendario', {
+            processo_id: parseInt(m[1]),
+            titulo: m[2],
+            data: m[3],
+            tipo: m[4],
+            processo_nome: processos[idx]?.nome || ''
+          });
+        } catch(e) {}
+        // Notifica equipe sobre julgamento
+        const nomeProc = processos[idx]?.nome || 'Processo #'+m[1];
+        _notificarEquipe('📅 *JULGAMENTO AGENDADO*\n\n📁 '+nomeProc+'\n📆 Data: '+m[3]+'\n📝 '+m[2]+'\n\n⚠️ Marcado no calendário e nos prazos.').catch(()=>{});
+      }
     }
   }
   return acoes;
