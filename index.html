@@ -2046,7 +2046,7 @@ async function chamarIA(messages, system, maxTokens) {
 }
 // Chave API deve ser configurada pelo usuário no sistema — nunca embutida no código
 const COR={'Cível':'#1ab8d8','Criminal':'#e84545','Ambiental':'#2ec97e','Trabalhista':'#4f6ef7','Tributário':'#9b6ef7','Tributário Municipal':'#9b6ef7','Execução Federal':'#f0832a','Previdenciário':'#c9a84c','Família':'#e879a8'};
-const SC={URGENTE:'#e84545',ATIVO:'#2ec97e',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',EM_PREP:'#9b6ef7',GANHO:'#2ec97e',PERDIDO:'#e84545',ARQUIVADO:'#555878'};
+const SC={URGENTE:'#e84545',ATIVO:'#1a73e8',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',EM_PREP:'#9b6ef7',MONITORAR:'#6b7280',VENCIDO:'#e84545',CONCLUIDO:'#2ec97e',GANHO:'#2ec97e',PERDIDO:'#e84545',ARQUIVADO:'#555878'};
 
 // PERFIS e SENHAS_KEY definidos no bloco AUTH acima — senhas no servidor
 // usuarioAtivo declarado no bloco AUTH abaixo
@@ -3747,9 +3747,17 @@ function cardProc(p){
   if(['URGENTE','ATIVO','RECURSAL','EM_PREP'].includes(p.status)){
     const ands=p.andamentos||[];
     if(ands.length){
-      const [dd,mm,aa]=(ands[0].data||'').split('/').map(Number);
-      if(aa){
-        const dt=new Date(aa,mm-1,dd);const hoje=new Date();hoje.setHours(0,0,0,0);
+      const ultimaData = ands[ands.length-1].data || ands[0].data || '';
+      let dt;
+      // Suporta YYYY-MM-DD e DD/MM/AAAA
+      if(ultimaData.includes('-')) {
+        dt = new Date(ultimaData + 'T00:00:00');
+      } else {
+        const [dd,mm,aa]=(ultimaData).split('/').map(Number);
+        if(aa) dt = new Date(aa,mm-1,dd);
+      }
+      if(dt && !isNaN(dt)){
+        const hoje=new Date();hoje.setHours(0,0,0,0);
         const diasSem=Math.ceil((hoje-dt)/86400000);
         if(diasSem>=15) chipParado=`<span style="font-size:9px;padding:2px 8px;border-radius:20px;background:var(--red-soft);color:var(--red);border:1px solid var(--red)33;font-weight:700">🚨 ${diasSem}d parado</span>`;
         else if(diasSem>=10) chipParado=`<span style="font-size:9px;padding:2px 8px;border-radius:20px;background:var(--orange-soft);color:var(--orange);border:1px solid var(--orange)33;font-weight:700">⚠ ${diasSem}d parado</span>`;
@@ -4304,7 +4312,7 @@ function abrirProc(id){
           ${conexos.map(cx=>`
             <div onclick="abrirProc(${cx.id})" style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer;" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
               <div style="font-size:11px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${cx.nome}</div>
-              <span style="font-size:9px;padding:2px 8px;border-radius:20px;background:${({URGENTE:'#e8454522',ATIVO:'#2ec97e22',RECURSAL:'#1ab8d822'}[cx.status])||'var(--border)'};color:${({URGENTE:'var(--red)',ATIVO:'var(--green)',RECURSAL:'var(--cyan)'}[cx.status])||'var(--text3)'};">${cx.status}</span>
+              <span style="font-size:9px;padding:2px 8px;border-radius:20px;background:${({URGENTE:'#e8454522',ATIVO:'#1a73e822',RECURSAL:'#1ab8d822'}[cx.status])||'var(--border)'};color:${({URGENTE:'var(--red)',ATIVO:'#1a73e8',RECURSAL:'var(--cyan)'}[cx.status])||'var(--text3)'};">${cx.status}</span>
             </div>`).join('')}
         </div>`:''
         }
@@ -4407,7 +4415,7 @@ function imprimirProcesso(id){
   if(!p) return;
   const esc = getEscritorio();
   const d = diasRestantes(p.prazo);
-  const statusCor = {URGENTE:'#e84545',ATIVO:'#2ec97e',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',GANHO:'#2ec97e',PERDIDO:'#e84545'}[p.status]||'#888';
+  const statusCor = {URGENTE:'#e84545',ATIVO:'#1a73e8',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',MONITORAR:'#6b7280',VENCIDO:'#e84545',CONCLUIDO:'#2ec97e',GANHO:'#2ec97e',PERDIDO:'#e84545'}[p.status]||'#888';
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html><head>
   <!-- LEX v2 - Build 2026-04-22 21:20 --><meta charset="UTF-8">
