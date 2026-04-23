@@ -5163,38 +5163,183 @@ function renderPreparacao(){
   preps.forEach(p=>_pSync(p));
   const urg=preps.filter(p=>{const dr=diasRestantes(p.previsao);return p.status==='URGENTE'||(dr!==null&&dr<=3&&dr>=0);}).length;
   const prt=preps.filter(p=>p.status==='PRONTO').length;
+  const aguard=preps.filter(p=>p.status==='AGUARDANDO_APROVACAO').length;
+  const emPrep=preps.filter(p=>!['PRONTO','URGENTE','AGUARDANDO_APROVACAO','ARQUIVADO'].includes(p.status)).length;
   const ord=[...preps].sort((a,b)=>{if(a.status==='URGENTE'&&b.status!=='URGENTE')return -1;if(b.status==='URGENTE'&&a.status!=='URGENTE')return 1;return(diasRestantes(a.previsao)??999)-(diasRestantes(b.previsao)??999);});
+
+  // Agrupar por área para gráfico
+  const porArea={};preps.forEach(p=>{const a=p.area||'Outros';porArea[a]=(porArea[a]||0)+1;});
+  const areasHTML=Object.entries(porArea).map(([a,n])=>{
+    const cores={'Previdenciário':'#6366f1','Trabalhista':'#f59e0b','Cível':'#3b82f6','Família':'#ec4899','Tributário':'#10b981','Criminal':'#ef4444','Administrativo':'#8b5cf6','Outros':'#6b7280'};
+    const cor=cores[a]||'#6b7280';
+    const pct=preps.length?Math.round(n/preps.length*100):0;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <div style="width:90px;font-size:11px;color:var(--text2);font-weight:500;text-align:right">${a}</div>
+      <div style="flex:1;height:22px;background:var(--surface2);border-radius:6px;overflow:hidden;position:relative">
+        <div style="height:100%;width:${pct}%;background:${cor};border-radius:6px;transition:width .5s;min-width:${n?'24px':'0'}"></div>
+        <span style="position:absolute;right:8px;top:3px;font-size:10px;font-weight:700;color:var(--text)">${n}</span>
+      </div>
+    </div>`;
+  }).join('');
+
   document.getElementById('content').innerHTML=`
-    <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
-      <div class="stat-card" style="border-top:2px solid var(--accent)"><div class="stat-label">TOTAL</div><div class="stat-num" style="color:var(--accent)">${preps.length}</div></div>
-      <div class="stat-card" style="border-top:2px solid var(--red)"><div class="stat-label">URGENTES</div><div class="stat-num" style="color:var(--red)">${urg}</div></div>
-      <div class="stat-card" style="border-top:2px solid var(--green)"><div class="stat-label">PRONTOS</div><div class="stat-num" style="color:var(--green)">${prt}</div></div>
+    <!-- HEADER COM GRADIENTE -->
+    <div style="background:linear-gradient(135deg,var(--accent)15,var(--surface));border:1px solid var(--accent)33;border-radius:16px;padding:20px 24px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--text)">📋 Em Preparação</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${preps.length===0?'Nenhum caso cadastrado — use + Novo Caso ou /novocaso no Telegram':'Gerenciando '+preps.length+' caso'+(preps.length!==1?'s':'')+' · Última atualização: '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-novo" style="padding:10px 20px;font-size:13px;font-weight:700;border-radius:10px;display:flex;align-items:center;gap:6px" onclick="abrirModalPrep(null)">
+            <span style="font-size:16px">+</span> Novo Caso
+          </button>
+          <label style="padding:10px 16px;cursor:pointer;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--text2);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+            🤖 Analisar Doc com IA<input type="file" accept=".pdf,image/*" style="display:none" onchange="_pAnal(this.files[0])">
+          </label>
+        </div>
+      </div>
     </div>
-    <div class="btn-row">
-      <button class="btn-novo" onclick="abrirModalPrep(null)">+ Novo Caso</button>
-      <label class="btn-outline" style="padding:9px 16px;cursor:pointer;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px;border-radius:8px">🤖 Analisar Doc<input type="file" accept=".pdf,image/*" style="display:none" onchange="_pAnal(this.files[0])"></label>
+
+    <!-- CARDS KPI -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;font-size:48px;opacity:0.06">📁</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Total</div>
+        <div style="font-size:32px;font-weight:800;color:var(--accent);margin-top:4px;line-height:1">${preps.length}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">caso${preps.length!==1?'s':''} cadastrado${preps.length!==1?'s':''}</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid ${urg?'var(--red)44':'var(--border)'};border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;${urg?'animation:pulse 2s infinite':''}">
+        <div style="position:absolute;top:-8px;right:-8px;font-size:48px;opacity:0.06">🚨</div>
+        <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:1px">Urgentes</div>
+        <div style="font-size:32px;font-weight:800;color:var(--red);margin-top:4px;line-height:1">${urg}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">${urg?'atenção imediata!':'tudo sob controle'}</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;font-size:48px;opacity:0.06">⏳</div>
+        <div style="font-size:11px;font-weight:600;color:var(--orange);text-transform:uppercase;letter-spacing:1px">Em Preparo</div>
+        <div style="font-size:32px;font-weight:800;color:var(--orange);margin-top:4px;line-height:1">${emPrep}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">aguardando docs</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;font-size:48px;opacity:0.06">✅</div>
+        <div style="font-size:11px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:1px">Prontos</div>
+        <div style="font-size:32px;font-weight:800;color:var(--green);margin-top:4px;line-height:1">${prt}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">${prt?'para protocolar':'nenhum pronto'}</div>
+      </div>
+      ${aguard?`<div style="background:var(--surface);border:1px solid var(--yellow,#eab308)44;border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;font-size:48px;opacity:0.06">🔔</div>
+        <div style="font-size:11px;font-weight:600;color:var(--yellow,#eab308);text-transform:uppercase;letter-spacing:1px">Aprovação</div>
+        <div style="font-size:32px;font-weight:800;color:var(--yellow,#eab308);margin-top:4px;line-height:1">${aguard}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">aguardando CEO</div>
+      </div>`:''}
     </div>
-    ${ord.length===0?'<div style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:36px;margin-bottom:10px">📋</div><div>Nenhum caso em preparação.</div></div>':ord.map(p=>{
+
+    <!-- GRÁFICO DE ÁREAS (se tiver casos) -->
+    ${preps.length>0?`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+        📊 Distribuição por Área
+        <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:auto">${Object.keys(porArea).length} área${Object.keys(porArea).length!==1?'s':''}</span>
+      </div>
+      ${areasHTML}
+    </div>`:''}
+
+    <!-- FILTROS RÁPIDOS -->
+    ${preps.length>0?`
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;color:var(--text3);font-weight:600">Filtrar:</span>
+      <button class="btn-outline" style="font-size:10px;padding:4px 10px;border-radius:20px" onclick="_pFiltro('todos')">Todos (${preps.length})</button>
+      ${urg?`<button class="btn-outline" style="font-size:10px;padding:4px 10px;border-radius:20px;border-color:var(--red);color:var(--red)" onclick="_pFiltro('URGENTE')">🔴 Urgentes (${urg})</button>`:''}
+      ${prt?`<button class="btn-outline" style="font-size:10px;padding:4px 10px;border-radius:20px;border-color:var(--green);color:var(--green)" onclick="_pFiltro('PRONTO')">✅ Prontos (${prt})</button>`:''}
+      ${aguard?`<button class="btn-outline" style="font-size:10px;padding:4px 10px;border-radius:20px;border-color:var(--yellow,#eab308);color:var(--yellow,#eab308)" onclick="_pFiltro('AGUARDANDO_APROVACAO')">🔔 Aprovação (${aguard})</button>`:''}
+    </div>`:''}
+
+    <!-- LISTA DE CASOS -->
+    <div id="_pListaCasos">
+    ${ord.length===0?`
+    <div style="text-align:center;padding:60px 20px;color:var(--text3)">
+      <div style="font-size:64px;margin-bottom:16px;opacity:0.3">📋</div>
+      <div style="font-size:16px;font-weight:600;color:var(--text2);margin-bottom:8px">Nenhum caso em preparação</div>
+      <div style="font-size:13px;max-width:400px;margin:0 auto;line-height:1.6">
+        Clique em <strong>+ Novo Caso</strong> para cadastrar manualmente,<br>
+        ou envie <strong>/novocaso</strong> no Telegram/WhatsApp com fotos dos documentos — o agente cadastra automaticamente!
+      </div>
+    </div>`:ord.map(p=>{
       const dr=diasRestantes(p.previsao);
-      let al='';if(dr!==null){if(dr<0)al=`<span style="font-size:11px;font-weight:700;color:var(--red)">⚠️ ${Math.abs(dr)}d ATRASADO</span>`;else if(dr===0)al='<span style="font-size:11px;font-weight:700;color:var(--red)">🚨 HOJE</span>';else if(dr<=3)al=`<span style="font-size:11px;font-weight:700;color:var(--orange)">⏰ ${dr}d</span>`;}
-      const bc=p.status==='URGENTE'?'var(--red)':p.status==='PRONTO'?'var(--green)':'var(--accent)';
-      const sc=p.status==='URGENTE'?'var(--red)':p.status==='PRONTO'?'var(--green)':'var(--text3)';
-      return `<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid ${bc};border-radius:12px;padding:15px;margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;cursor:pointer" onclick="_pDet(${p.id})">
-          <div style="flex:1"><div style="font-family:'Playfair Display',serif;font-size:15px;font-weight:600">${p.nome}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">${p.tipo||'—'} · ${p.area||'Cível'} · ${p.tribunal||'—'}</div>
-          ${p.partes?`<div style="font-size:12px;color:var(--text2);margin-top:2px">${p.partes}</div>`:''}</div>
-          <div style="text-align:right;flex-shrink:0"><span class="badge" style="background:${sc}22;color:${sc}">${p.status||'INATIVO'}</span><div style="margin-top:4px">${al}</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Prev: ${p.previsao||'—'}</div>${p.docsCount?`<div style="font-size:10px;color:var(--accent);margin-top:2px">📎 ${p.docsCount} doc(s)</div>`:''}</div>
+      let al='';if(dr!==null){if(dr<0)al=`<span style="font-size:11px;font-weight:700;color:var(--red);background:var(--red)11;padding:2px 8px;border-radius:10px">⚠️ ${Math.abs(dr)}d ATRASADO</span>`;else if(dr===0)al='<span style="font-size:11px;font-weight:700;color:var(--red);background:var(--red)11;padding:2px 8px;border-radius:10px">🚨 VENCE HOJE</span>';else if(dr<=3)al=`<span style="font-size:11px;font-weight:700;color:var(--orange);background:var(--orange)11;padding:2px 8px;border-radius:10px">⏰ ${dr} dia${dr>1?'s':''}</span>`;else al=`<span style="font-size:10px;color:var(--text3)">${dr}d restantes</span>`;}
+      const bc=p.status==='URGENTE'?'var(--red)':p.status==='PRONTO'?'var(--green)':p.status==='AGUARDANDO_APROVACAO'?'var(--yellow,#eab308)':'var(--accent)';
+      const sc=p.status==='URGENTE'?'var(--red)':p.status==='PRONTO'?'var(--green)':p.status==='AGUARDANDO_APROVACAO'?'var(--yellow,#eab308)':'var(--text3)';
+      const stLabel={'URGENTE':'🔴 Urgente','PRONTO':'✅ Pronto','AGUARDANDO_APROVACAO':'🔔 Aguardando','INATIVO':'⚪ Inativo','EM_PREP':'🔵 Em Preparo'};
+      const areaCor={'Previdenciário':'#6366f1','Trabalhista':'#f59e0b','Cível':'#3b82f6','Família':'#ec4899','Tributário':'#10b981','Criminal':'#ef4444','Administrativo':'#8b5cf6'};
+      const ac=areaCor[p.area]||'var(--text3)';
+      
+      // Calcular progresso dos docs
+      const docsTotal=7; // slots padrão
+      const docsOk=p.docsCount||0;
+      const docsPct=Math.min(Math.round(docsOk/docsTotal*100),100);
+      
+      return `<div class="_pCasoCard" data-status="${p.status}" style="background:var(--surface);border:1px solid var(--border);border-left:5px solid ${bc};border-radius:14px;padding:0;margin-bottom:12px;overflow:hidden;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,0.05)" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.12)';this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 1px 3px rgba(0,0,0,0.05)';this.style.transform='none'">
+        <div style="padding:16px 18px;cursor:pointer" onclick="_pDet(${p.id})">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--text)">${p.nome||'Sem nome'}</span>
+                <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;background:${sc}18;color:${sc}">${stLabel[p.status]||p.status||'—'}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+                <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;background:${ac}15;color:${ac}">${p.area||'—'}</span>
+                <span style="font-size:11px;color:var(--text3)">${p.tipo||'—'}</span>
+                ${p.tribunal?`<span style="font-size:11px;color:var(--text3)">· ${p.tribunal}</span>`:''}
+              </div>
+              ${p.partes?`<div style="font-size:12px;color:var(--text2);margin-top:4px">👥 ${p.partes}</div>`:''}
+              ${p.resumo?`<div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4;max-height:40px;overflow:hidden">${p.resumo.substring(0,120)}${p.resumo.length>120?'...':''}</div>`:''}
+            </div>
+            <div style="text-align:right;flex-shrink:0;min-width:120px">
+              <div>${al}</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:4px">${p.previsao?'Prev: '+p.previsao:'Sem previsão'}</div>
+              ${p.valor?`<div style="font-size:12px;font-weight:700;color:var(--accent);margin-top:4px">R$ ${Number(p.valor).toLocaleString('pt-BR')}</div>`:''}
+            </div>
+          </div>
+
+          <!-- BARRA DE PROGRESSO DOCS -->
+          <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+            <div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${docsPct}%;background:${docsPct>=70?'var(--green)':docsPct>=30?'var(--orange)':'var(--red)'};border-radius:3px;transition:width .5s"></div>
+            </div>
+            <span style="font-size:10px;font-weight:600;color:var(--text3);white-space:nowrap">📎 ${docsOk}/${docsTotal} docs</span>
+          </div>
+
+          ${p.faltando?.trim()?`<div style="margin-top:10px;background:var(--red)08;border:1px solid var(--red)22;border-radius:8px;padding:8px 12px;font-size:11px;display:flex;align-items:flex-start;gap:6px"><span style="color:var(--red);font-weight:700;flex-shrink:0">⚠ Falta:</span><span style="color:var(--text2)">${p.faltando.substring(0,180)}${p.faltando.length>180?'...':''}</span></div>`:''}
         </div>
-        ${p.faltando?.trim()?`<div style="margin-top:8px;background:var(--orange-soft);border:1px solid var(--orange)33;border-radius:6px;padding:7px 12px;font-size:12px"><strong style="color:var(--orange)">⚠ Falta:</strong> ${p.faltando.substring(0,150)}</div>`:'<div style="margin-top:6px;font-size:11px;color:var(--green)">✅ Sem pendências</div>'}
-        <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-          <button class="btn-outline" style="font-size:11px;padding:6px 10px" onclick="abrirModalPrep(${p.id})">✎ Editar</button>
-          <button class="btn-green" style="font-size:11px;padding:6px 10px;border:none" onclick="_pDistr(${p.id})">✓ Distribuído</button>
-          <button class="btn-outline" style="font-size:11px;padding:6px 10px;color:var(--orange)" onclick="_pSt(${p.id},'URGENTE')">🔴 Urgente</button>
-          <button class="btn-outline" style="font-size:11px;padding:6px 10px;color:var(--green)" onclick="_pSt(${p.id},'PRONTO')">✅ Pronto</button>
-          <button class="btn-danger" style="font-size:11px;padding:6px 10px" onclick="excluirPrep(${p.id})">✕</button>
+
+        <!-- AÇÕES -->
+        <div style="display:flex;gap:0;border-top:1px solid var(--border)">
+          <button style="flex:1;padding:10px;border:none;background:none;font-size:11px;font-weight:600;color:var(--accent);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="abrirModalPrep(${p.id})" onmouseover="this.style.background='var(--accent)11'" onmouseout="this.style.background='none'">✎ Editar</button>
+          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--green);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="_pDistr(${p.id})" onmouseover="this.style.background='var(--green)11'" onmouseout="this.style.background='none'">✓ Distribuir</button>
+          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--orange);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="_pSt(${p.id},'URGENTE')" onmouseover="this.style.background='var(--orange)11'" onmouseout="this.style.background='none'">🔴 Urgente</button>
+          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--red);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="excluirPrep(${p.id})" onmouseover="this.style.background='var(--red)11'" onmouseout="this.style.background='none'">✕ Excluir</button>
         </div>
-      </div>`;}).join('')}`;
+      </div>`;}).join('')}
+    </div>
+
+    <!-- DICA TELEGRAM/WHATSAPP -->
+    <div style="margin-top:20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="font-size:28px">💡</div>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:12px;font-weight:700;color:var(--text)">Cadastro rápido por Telegram ou WhatsApp</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;line-height:1.5">Envie <code style="background:var(--accent)22;color:var(--accent);padding:1px 6px;border-radius:4px;font-size:10px">/novocaso</code> → tire fotos dos documentos → descreva o caso → o agente cadastra automaticamente!</div>
+      </div>
+    </div>`;
+}
+
+// Filtro de casos
+function _pFiltro(status){
+  const cards=document.querySelectorAll('._pCasoCard');
+  cards.forEach(c=>{
+    if(status==='todos') c.style.display='';
+    else c.style.display=c.dataset.status===status?'':'none';
+  });
 }
 
 async function abrirModalPrep(id){
