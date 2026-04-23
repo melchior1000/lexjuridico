@@ -305,6 +305,40 @@ const SENHAS_WEB = {
   secretaria: process.env.SENHA_SECRETARIA
 };
 
+// ═══ AUTH PERSISTENTE — Supabase como fallback para env vars ═══
+// Se SENHA_ADMIN não está nas env vars, busca na tabela 'configuracoes' do Supabase
+// Permite que o admin configure a senha pela primeira vez via /api/setup-senha
+async function obterSenhaValida(perfil) {
+  // 1. Prioridade: variável de ambiente (já carregada)
+  if(SENHAS_WEB[perfil]) return SENHAS_WEB[perfil];
+  // 2. Fallback: busca na tabela 'config' do Supabase (mesma tabela do startup)
+  try {
+    const chave = perfil === 'admin' ? 'SENHA_ADMIN' : 'SENHA_SECRETARIA';
+    const r = await sbReq('GET','config',null,{chave:'eq.'+chave, select:'valor'});
+    if(r.ok && r.body && r.body.length && r.body[0].valor) {
+      SENHAS_WEB[perfil] = r.body[0].valor; // cache em memória
+      return r.body[0].valor;
+    }
+  } catch(e) { console.warn('[Lex] Erro buscando senha Supabase:', e.message || e); }
+  return null;
+}
+
+// Salva senha no Supabase (persistência permanente na tabela 'config')
+async function salvarSenhaSupabase(perfil, senha) {
+  try {
+    const chave = perfil === 'admin' ? 'SENHA_ADMIN' : 'SENHA_SECRETARIA';
+    const existe = await sbReq('GET','config',null,{chave:'eq.'+chave, select:'id'});
+    if(existe.ok && existe.body && existe.body.length) {
+      await sbReq('PATCH','config',{valor:senha},{chave:'eq.'+chave});
+    } else {
+      await sbReq('POST','config',{chave,valor:senha},{},{'Prefer':'return=minimal'});
+    }
+    SENHAS_WEB[perfil] = senha; // atualiza cache
+    console.log('[Lex] Senha salva no Supabase para', perfil);
+    return true;
+  } catch(e) { console.warn('[Lex] Erro salvando senha:', e.message || e); return false; }
+}
+
 const PERMS = {
   admin:      { label:'Administrador', podeEditar:true,  podeExcluir:true,  podeConfig:true,  podeRelatorio:true,  podePeticao:true,  podeDocumentos:true  },
   secretaria: { label:'Secretária',    podeEditar:false, podeExcluir:false, podeConfig:false, podeRelatorio:false, podePeticao:false, podeDocumentos:false }
@@ -7124,15 +7158,47 @@ const server = http.createServer(async (req, res) => {
     try {
       const b = await lerBody(req);
       if(!b.perfil || !b.senha) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Perfil e senha obrigatorios'})); return; }
-      if(!SENHAS_WEB[b.perfil]) { res.writeHead(500,CORS); res.end(JSON.stringify({error:'Senha nao configurada no servidor - contate admin'})); return; }
-      if(b.senha !== SENHAS_WEB[b.perfil]) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Senha incorreta'})); return; }
+      
+      // Busca senha válida (env var → Supabase → setup mode)
+      const senhaCorreta = await obterSenhaValida(b.perfil);
+      
+      if(!senhaCorreta) {
+        // Nenhuma senha configurada — primeira vez: CONFIGURA automaticamente
+        console.log('[Lex] Primeira configuração de senha para perfil:', b.perfil);
+        const salvo = await salvarSenhaSupabase(b.perfil, b.senha);
+        if(!salvo) {
+          res.writeHead(500,CORS);
+          res.end(JSON.stringify({error:'Senha nao configurada. Erro ao salvar no Supabase. Configure SENHA_ADMIN nas vars de ambiente do Render.'}));
+          return;
+        }
+        // Senha configurada com sucesso — prossegue com login
+        console.log('[Lex] Senha configurada e salva no Supabase para', b.perfil);
+      } else if(b.senha !== senhaCorreta) {
+        res.writeHead(401,CORS);
+        res.end(JSON.stringify({error:'Senha incorreta'}));
+        return;
+      }
+      
       const token = gerarToken(b.perfil);
       global._sessaoAtividade.set(token, Date.now());
-      // Registra automaticamente o login no controle de tempo
       _registrarTempoUso(b.perfil, 'login', Date.now()).catch(e=>
         console.warn('[tempo] falha ao registrar login automático:', e.message));
       res.writeHead(200, CORS);
       res.end(JSON.stringify({ok:true, token, perfil:b.perfil, ...PERMS[b.perfil]}));
+    } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+  
+  // ── TROCAR SENHA (autenticado) ──
+  if(url==='/api/trocar-senha' && req.method==='POST') {
+    try {
+      const perfil = validarToken(getToken(req));
+      if(!perfil) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!b.novaSenha || b.novaSenha.length < 4) { res.writeHead(400,CORS); res.end(JSON.stringify({error:'Nova senha deve ter pelo menos 4 caracteres'})); return; }
+      const salvo = await salvarSenhaSupabase(perfil, b.novaSenha);
+      if(!salvo) { res.writeHead(500,CORS); res.end(JSON.stringify({error:'Erro ao salvar senha'})); return; }
+      res.writeHead(200,CORS); res.end(JSON.stringify({ok:true, msg:'Senha alterada com sucesso'}));
     } catch(e) { res.writeHead(500,CORS); res.end(JSON.stringify({error:e.message})); }
     return;
   }

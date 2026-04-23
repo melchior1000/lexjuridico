@@ -3040,11 +3040,10 @@ window.onload=()=>{
         });
       }
     }).catch(()=>{
-      // Servidor offline/dormindo — tenta ativar com dados locais
-      // Render free tier pode demorar até 50s para acordar
-      usuarioAtivo=_sp.perfil;
-      _perms=_sp.perms||PERFIS[_sp.perfil]||{};
-      setTimeout(()=>ativarApp(_sp.perfil),100);
+      // Servidor offline/dormindo — NÃO ativa sem autenticação
+      // Apenas faz ping para acordar o Render, usuário vai digitar senha
+      console.log('[Lex] Servidor dormindo — aguardando login manual');
+      fetch(SERVIDOR+'/api/ping',{method:'GET'}).catch(()=>{});
     });
   }
   document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
