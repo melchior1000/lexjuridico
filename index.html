@@ -2132,9 +2132,9 @@ function _getTotalLoginsSemana(perfil) {
 const _TEMPO_KEY = 'lex_tempo_uso_v1'; // cache local para fallback offline
 let _tempoSessaoInicio = null;    // Date de quando a sessão ativa começou
 let _tempoUltimaAtiv  = null;    // Date do último evento de atividade
-let _tempoIdleTimer   = null;    // Timer de idle (8h)
+let _tempoIdleTimer   = null;    // Timer de idle (30 min)
 let _tempoSalvarTimer = null;    // Timer de persist periódico (30s)
-const AUTH_IDLE_MS = 8 * 60 * 60 * 1000; // 8 horas sem atividade = idle (jornada completa)
+const AUTH_IDLE_MS = 30 * 60 * 1000; // 30 minutos sem atividade = fecha sistema
 
 // Inicia rastreamento ao fazer login
 function iniciarRastreamentoTempo() {
@@ -3014,37 +3014,13 @@ window.onload=()=>{
   // Acorda servidor imediatamente ao carregar a página — antes mesmo do login
   fetch(SERVIDOR+'/api/ping',{method:'GET',signal:AbortSignal.timeout(8000)}).catch((e)=>{ console.warn('[ping] falha inicial:', e?.message || e); });
   // Continua acordando a cada 4 minutos após login
-  // Auto-login por sessão salva — VALIDA token antes de entrar
+  // SENHA OBRIGATÓRIA A CADA ACESSO — nunca auto-login
+  // Sessão salva serve apenas para re-login silencioso (quando token expira DURANTE uso)
+  // Ao abrir/recarregar a página: SEMPRE mostra tela de login
   const _sp=_loadSess();
-  if(_sp && _sp.token && _sp.perfil){
-    // Verifica se token é válido no servidor antes de ativar
-    fetch(SERVIDOR+'/api/perfil',{
-      method:'GET',
-      headers:{'Authorization':'Bearer '+_sp.token},
-      signal:AbortSignal.timeout(12000)
-    }).then(r=>{
-      if(r.ok){
-        usuarioAtivo=_sp.perfil;
-        _perms=_sp.perms||PERFIS[_sp.perfil]||{};
-        ativarApp(_sp.perfil);
-      } else {
-        // Token inválido — tenta re-login silencioso (sem erro visível)
-        _tentarReloginSilencioso().then(ok=>{
-          if(ok){
-            const ns=_loadSess();
-            usuarioAtivo=ns.perfil;
-            _perms=ns.perms||PERFIS[ns.perfil]||{};
-            ativarApp(ns.perfil);
-          }
-          // Se falhou, fica na tela de login — usuário digita senha
-        });
-      }
-    }).catch(()=>{
-      // Servidor offline/dormindo — NÃO ativa sem autenticação
-      // Apenas faz ping para acordar o Render, usuário vai digitar senha
-      console.log('[Lex] Servidor dormindo — aguardando login manual');
-      fetch(SERVIDOR+'/api/ping',{method:'GET'}).catch(()=>{});
-    });
+  // Apenas faz ping para acordar o Render enquanto usuário digita senha
+  if(_sp && _sp.token) {
+    fetch(SERVIDOR+'/api/ping',{method:'GET'}).catch(()=>{});
   }
   document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
   // Atualiza dados do escritório na topbar

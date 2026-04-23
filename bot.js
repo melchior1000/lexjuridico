@@ -183,7 +183,7 @@ const PJE_CONFIG = {
 };
 
 const AUTH_SECRET = process.env.AUTH_SECRET || 'lex-secret-2026';
-const AUTH_IDLE_MS = 8 * 60 * 60 * 1000; // 8 horas sem atividade invalida token (jornada completa)
+const AUTH_IDLE_MS = 30 * 60 * 1000; // 30 min sem atividade invalida token (requisito do Kleuber)
 
 // ════════════════════════════════════════════════════════════════════════════
 // ARQUITETURA DO ESCRITÓRIO DIGITAL (v2.9)
