@@ -7461,6 +7461,10 @@ async function aplicarPropostaGestor() {
     document.getElementById('gestor-proposta').innerHTML = '<div style="padding:12px;color:var(--green);font-weight:700;text-align:center">✅ Aplicado com sucesso!</div>';
     _addMsgGestor('assistant', '✅ Atualização aplicada. O processo agora está atualizado no Lex. Posso ajudar com mais alguma coisa deste caso?');
     _gestorPropostaAtiva = null;
+    // Re-renderiza o dashboard pra refletir mudança de status/setor/urgência
+    if(typeof renderPainel === 'function') renderPainel();
+    if(typeof renderProcessos === 'function') renderProcessos();
+    if(typeof renderPrazos === 'function') renderPrazos();
 
     // FIX: força re-render COMPLETO (painel, urgentes, detalhe)
     setTimeout(()=>{

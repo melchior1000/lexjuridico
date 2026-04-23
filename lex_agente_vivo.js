@@ -584,7 +584,7 @@ async function persistirProcesso(deps, processo_atualizado) {
   try {
     if (deps.sbPatch) {
       const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo'];
+      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao'];
       for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
       if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
       if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
@@ -594,7 +594,7 @@ async function persistirProcesso(deps, processo_atualizado) {
       return { ok: true, via: 'supabase' };
     } else if (deps.sbReq) {
       const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','tipo'];
+      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao'];
       for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
       if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
       if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
@@ -864,6 +864,10 @@ async function handlerAplicar(req, res, body, deps) {
         justificativa: proposta.justificativa || ''
       });
       processo.ultima_atualizacao = hoje;
+      processo.atualizado_em = hoje;
+      // Atualização = houve trabalho = reseta dias parado
+      processo.dias_parado = 0;
+      processo.diasParado = 0;
     }
     if (proposta.status) {
       const stUp = String(proposta.status).toUpperCase().trim();
