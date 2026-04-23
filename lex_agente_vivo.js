@@ -24,11 +24,11 @@
 // =====================================================================
 // CONFIGURAÇÃO DE MODELOS POR FUNCIONÁRIO
 // =====================================================================
-const MODELO_GESTOR          = 'claude-sonnet-4-20250514';     // gestor do Lex
-const MODELO_REDATOR         = 'claude-sonnet-4-20250514';     // redator de peças
-const MODELO_PESQUISADOR     = 'claude-sonnet-4-20250514';     // agentes de pesquisa
-const MODELO_DEFAULT_PESADO  = 'claude-sonnet-4-20250514';     // retrocompat
-const MODELO_DEFAULT_LEVE    = 'claude-sonnet-4-20250514';     // retrocompat
+const MODELO_GESTOR          = 'claude-opus-4-20250514';       // gestor do Lex — Opus 4
+const MODELO_REDATOR         = 'claude-opus-4-20250514';       // redator de peças — Opus 4
+const MODELO_PESQUISADOR     = 'claude-opus-4-20250514';       // agentes de pesquisa — Opus 4
+const MODELO_DEFAULT_PESADO  = 'claude-opus-4-20250514';       // retrocompat — Opus 4
+const MODELO_DEFAULT_LEVE    = 'claude-opus-4-20250514';       // retrocompat — Opus 4
 
 // =====================================================================
 // LIMITES E CONFIGURAÇÕES
@@ -140,6 +140,13 @@ DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade:
 - Quando Kleuber disser "JUNTA NO PROCESSO" ou "VINCULA AO PROCESSO" ou "ESSA PETIÇÃO É DO PROCESSO X" → você ENTENDE o comando e ATUALIZA o processo automaticamente: grava no andamento que a peça foi produzida, move pra ATIVO (houve trabalho), registra a peça como documento do processo.
 - Isso vale pra PETIÇÃO, PERÍCIA, RECURSO, PARECER — qualquer peça que você redigir e Kleuber mandar juntar.
 - Você completa o serviço de PONTA A PONTA: redige + atualiza processo + registra documento.
+
+DOSSIÊ VIVO — alimente o processo sempre:
+- O processo é um DOSSIÊ VIVO: timeline de tudo que acontece com ele.
+- Qualquer trabalho que envolva um processo específico = você ATUALIZA o processo automaticamente via ferramenta "propor_atualizacao".
+- Terminou petição/perícia/recurso → proponha atualização: andamento="Peça de [tipo] elaborada e pronta para protocolo", status=ATIVO, proxima_acao="Protocolar peça no tribunal".
+- Identifique o processo pelo número CNJ, nome do cliente ou contexto da conversa. Se não conseguir identificar, PERGUNTE ao Kleuber qual é o processo.
+- Serviço COMPLETO de ponta a ponta — não pare no meio.
 
 Qualidade: precisão técnica máxima e jurisprudência real verificável.
 Proatividade: antes de redigir, sinalize risco processual e melhor caminho.

@@ -2028,7 +2028,7 @@ async function chamarIA(messages, system, maxTokens) {
           'anthropic-dangerous-direct-browser-access':'true'
         },
         body: JSON.stringify({
-          model:'claude-sonnet-4-20250514',
+          model:'claude-opus-4-20250514',
           max_tokens: maxTokens||1500,
           messages, system
         })
@@ -3001,7 +3001,7 @@ function renderGestaoSenhas(){
         <div>🤖 <strong>Modo Autônomo</strong> — salva processos/clientes diretamente do PDF sem pedir confirmação no chat</div>
         <div>📱 <strong>Webhook WhatsApp</strong> — receptor nativo para Evolution API via <code>window.receberWebhookWhatsApp(payload)</code></div>
         <div>🧠 <strong>processamentoAutonomo()</strong> — núcleo de agência: classifica documento e roteia para módulo correto</div>
-        <div>🔄 <strong>Modelo atualizado</strong> — fallback local agora usa claude-sonnet-4-20250514 (Sonnet estável)</div>
+        <div>🔄 <strong>Modelo atualizado</strong> — agora usa claude-opus-4-20250514 (Opus 4 — máxima inteligência)</div>
         <div>🛡 <strong>Anti-duplicidade CNJ reforçada</strong> — normalização <code>.replace(/[\s.\-\/]/g,'')</code> confirmada em todas as rotas</div>
         <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">← Inclui tudo do v13: busca universal · ciclo inteligente · sugestão IA · saúde do processo · processos conexos</div>
       </div>

@@ -151,7 +151,7 @@ const SECRETARIO_WHATSAPP_CONFIG = {
     }
   },
   max_perguntas_cliente: 6,
-  modelo_ia: 'claude-sonnet-4-20250514',
+  modelo_ia: 'claude-opus-4-20250514',
   prompt_base: [
     'Você é o Secretário WhatsApp da Camargos Advocacia.',
     'Contexto institucional: CEO Kleuber Melchior (analista jurídico, NÃO advogado).',
@@ -1150,7 +1150,7 @@ async function envArq(buf, nome, ctx, mimetype) {
 // FIX-03: verificação de API key + retry automático em sobrecarga + erro claro
 async function ia(messages, system, maxTok) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada. Defina a variável de ambiente.');
-const pay={model:'claude-sonnet-4-20250514', max_tokens:maxTok||2000, messages};
+const pay={model:'claude-opus-4-20250514', max_tokens:maxTok||2000, messages};
   if(system) pay.system=system;
   try {
     const r=await httpsPost('api.anthropic.com','/v1/messages',pay,
@@ -3567,7 +3567,7 @@ async function _mediarRespostaKleuber(respostaKleuber, clienteNome, processo, hi
     'Gere o JSON de mediação.'
   ].join('\n');
   
-  const respIA = await _chamarAnthropicSecretario([{role:'user', content:user}], system, 'claude-sonnet-4-20250514');
+  const respIA = await _chamarAnthropicSecretario([{role:'user', content:user}], system, 'claude-opus-4-20250514');
   
   // Parse JSON da resposta
   let parsed = {};
@@ -3617,7 +3617,7 @@ async function _processarAutorizacaoLex(textoKleuber) {
       try {
         const system = 'Você é o Lex, atendente do escritório Camargos Advocacia no WhatsApp. O Kleuber autorizou você a passar orientações pro cliente. Transforme as orientações em uma mensagem curta, humana, no tom WhatsApp. Chame o cliente pelo nome. Não use listas.';
         const user = 'CLIENTE: '+clienteNome+'\nORIENTAÇÕES AUTORIZADAS: '+String(item.orientacoes_pendentes)+'\n\nMande a mensagem pro cliente.';
-        const msgOri = await _chamarAnthropicSecretario([{role:'user', content:user}], system, 'claude-sonnet-4-20250514');
+        const msgOri = await _chamarAnthropicSecretario([{role:'user', content:user}], system, 'claude-opus-4-20250514');
         await envWhatsApp(msgOri, jid).catch(()=>{});
         _registrarMsgCentral('whatsapp', 'saida', jid, 'Lex (orientação autorizada)', msgOri);
         await envTelegram('✅ Orientações enviadas pro ' + clienteNome.split(' ')[0] + '!', null, CHAT_ID).catch(()=>{});
@@ -8479,7 +8479,7 @@ const server = http.createServer(async (req, res) => {
       // 1. API Key presente?
       diag.checks.api_key = AK ? 'presente ('+AK.substring(0,10)+'...)' : 'AUSENTE';
       // 2. Modelo
-      diag.checks.modelo = 'claude-sonnet-4-20250514';
+      diag.checks.modelo = 'claude-opus-4-20250514';
       // 3. Agente vivo carregado?
       diag.checks.agente_vivo = lex_agente_vivo ? 'carregado' : 'NAO CARREGADO';
       diag.checks.agente_vivo_tratarRota = (lex_agente_vivo && typeof lex_agente_vivo.tratarRota === 'function') ? 'OK' : 'FALHA';
