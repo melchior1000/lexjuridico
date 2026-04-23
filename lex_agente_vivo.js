@@ -75,9 +75,16 @@ Análise psicológica do julgador (quando houver juiz/relator identificado):
 Quando for propor atualização, considere:
 - andamento: descrição formal do que foi feito (1-3 frases, tom jurídico)
 - status: URGENTE | ATIVO | MONITORAR | AGUARDANDO | VENCIDO | CONCLUIDO — REGRA CRÍTICA: NÃO mude o status atual a menos que Kleuber peça explicitamente. Se o processo está URGENTE, ele continua URGENTE. Atualizar informações NÃO significa mudar status.
+- setor: autuacao | administrativo | judicial — use para MOVER processo entre setores quando Kleuber mandar (ex: "manda pra judicial", "volta pra autuação", "esse é administrativo"). NÃO mude se Kleuber não pediu.
 - dias_parado: geralmente zerar (0) quando há movimentação nova
 - proxima_acao: o que precisa ser feito depois e por quê
 - prazo: se houver novo prazo, no formato YYYY-MM-DD
+
+Setores do escritório:
+- AUTUAÇÃO: cliente novo, coletando documentos, lembrete 10 dias. Sai quando Kleuber diz "cumpriu docs, processo nº X".
+- ADMINISTRATIVO: processos administrativos em andamento (4 dias sem atualização = urgência).
+- JUDICIAL: processos judiciais em andamento (4 dias sem atualização = urgência).
+- Quando Kleuber pedir para mover de setor, use o campo "setor" na proposta de atualização.
 
 Integração com PJe (Processo Judicial Eletrônico):
 - Quando Kleuber colar ou mencionar movimentos importados do PJe, interprete cada código/evento no contexto processual real.
@@ -247,7 +254,8 @@ const TOOL_PROPOR_ATUALIZACAO = {
     type: 'object',
     properties: {
       andamento:    { type: 'string',  description: 'Texto formal do novo andamento (1-3 frases, tom jurídico).' },
-      status:       { type: 'string', enum: ['URGENTE', 'ATIVO', 'MONITORAR', 'AGUARDANDO', 'VENCIDO', 'CONCLUIDO'], description: 'Novo status.' },
+      status:       { type: 'string', enum: ['URGENTE', 'ATIVO', 'MONITORAR', 'AGUARDANDO', 'VENCIDO', 'CONCLUIDO'], description: 'Novo status. NÃO mude a menos que Kleuber peça explicitamente.' },
+      setor:        { type: 'string', enum: ['autuacao', 'administrativo', 'judicial'], description: 'Setor do processo. Use para MOVER entre setores quando Kleuber mandar (ex: sai da autuação e vai pra judicial). NÃO mude se Kleuber não pediu.' },
       dias_parado:  { type: 'integer', description: 'Dias sem movimentação. Geralmente 0 quando há movimentação nova.' },
       proxima_acao: { type: 'string',  description: 'O que precisa ser feito depois.' },
       prazo:        { type: 'string',  description: 'Novo prazo no formato YYYY-MM-DD. Opcional.' },
@@ -826,6 +834,18 @@ async function handlerAplicar(req, res, body, deps) {
         processo.prazo = pr;
       } else {
         console.warn('[VIVO] Prazo formato inválido ignorado:', proposta.prazo);
+      }
+    }
+    if (proposta.setor) {
+      const setorNovo = String(proposta.setor).toLowerCase().trim();
+      if (['autuacao', 'administrativo', 'judicial'].includes(setorNovo)) {
+        processo.setor = setorNovo;
+        // Atualiza tipo para manter compatibilidade
+        if (setorNovo === 'judicial') processo.tipo = 'judicial';
+        else if (setorNovo === 'administrativo') processo.tipo = 'administrativo';
+        console.log('[VIVO] Processo movido para setor:', setorNovo);
+      } else {
+        console.warn('[VIVO] Setor inválido ignorado:', proposta.setor);
       }
     }
     const integrarParecer = String(proposta.integrar_parecer || '').trim();
