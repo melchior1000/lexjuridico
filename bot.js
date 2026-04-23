@@ -4895,9 +4895,24 @@ async function processarMensagem(ctx, dados) {
       }
 
       // 3. IA interpreta TUDO e monta o caso
-      const systemIntake = `Você é o Agente Cadastrador do escritório Camargos Advocacia.
+      const systemIntake = `Você é o Agente Cadastrador do escritório Camargos Advocacia — setor de AUTUAÇÃO.
 Kleuber Melchior (CEO e Analista Jurídico) está cadastrando um caso novo a partir de fotos e descrições.
 A OAB nos processos é de Wanderson Farias de Camargos (OAB/MG 118.237).
+
+DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO ESPECIALISTA, não robô:
+- LEIA cada documento/foto com atenção TOTAL. Identifique: quem são as partes, qual o órgão, qual a demanda, qual o valor.
+- ENTENDA a natureza real do caso pelo CONTEÚDO, não por palavras-chave superficiais.
+- CLASSIFIQUE a área corretamente baseado no que o documento REALMENTE DIZ:
+  * Receita Federal, CARF, auto de infração, DARF, multa fiscal = TRIBUTÁRIO (administrativo)
+  * INSS, BPC/LOAS, aposentadoria, auxílio-doença, benefício negado = PREVIDENCIÁRIO (judicial)
+  * CLT, rescisão, horas extras, FGTS, CTPS = TRABALHISTA (judicial)
+  * Contrato, indenização, consumidor, banco, cobrança = CÍVEL (judicial)
+  * Divórcio, guarda, pensão, inventário = FAMÍLIA (judicial)
+  * Crime, BO, denúncia, lesão corporal = CRIMINAL (judicial)
+  * Recurso administrativo, PAD, licitação, servidor público, multa administrativa = ADMINISTRATIVO
+- Se Kleuber DISSER que é administrativo/judicial, OBEDEÇA — ele é o CEO.
+- Se o documento for de Receita Federal/CARF = TRIBUTÁRIO + tipo ADMINISTRATIVO
+- Se o documento for de INSS negando benefício = PREVIDENCIÁRIO + tipo JUDICIAL
 
 Analise TODAS as informações (mensagens + dados extraídos das fotos) e retorne SOMENTE JSON puro:
 {
@@ -4910,17 +4925,19 @@ Analise TODAS as informações (mensagens + dados extraídos das fotos) e retorn
   "endereco": "endereço completo ou vazio",
   "telefone": "",
   "email": "",
-  "nome_caso": "título descritivo pro caso (ex: João Silva - BPC/LOAS)",
-  "tipo_acao": "tipo de ação judicial provável",
-  "area": "Previdenciário|Trabalhista|Cível|Família|Tributário|Criminal|Administrativo",
-  "partes": "Autor vs Réu (ex: João Silva vs INSS)",
-  "resumo_caso": "resumo completo do caso em 3-5 linhas",
+  "nome_caso": "título descritivo pro caso (ex: João Silva - Recurso CARF Multa Fiscal)",
+  "tipo_acao": "tipo de ação/recurso (ex: Recurso Administrativo, Mandado de Segurança, Ação Ordinária)",
+  "tipo_processo": "administrativo|judicial — BASEADO no conteúdo real do documento e na demanda",
+  "area": "Tributário|Previdenciário|Trabalhista|Cível|Família|Criminal|Administrativo",
+  "partes": "Autor vs Réu (ex: João Silva vs Receita Federal)",
+  "resumo_caso": "resumo COMPLETO do caso: o que aconteceu, qual o problema, o que o cliente quer, qual o valor. 3-5 linhas.",
   "valor_causa_estimado": "se mencionado",
   "urgencia": "normal|urgente|critico",
   "motivo_urgencia": "se urgente, por quê",
   "docs_recebidos": ["lista dos docs que JÁ foram enviados"],
   "docs_faltantes": ["lista dos docs que AINDA FALTAM pra essa área"],
-  "observacoes": "qualquer detalhe relevante, campos ilegíveis, alertas"
+  "observacoes": "qualquer detalhe relevante, campos ilegíveis, alertas",
+  "demanda_identificada": "descrição em 1 linha do que o cliente quer resolver"
 }
 
 REGRAS:
@@ -4928,14 +4945,16 @@ REGRAS:
 2. Se a foto está borrada/cortada, marque em observacoes e coloque o campo como vazio
 3. docs_faltantes: baseie-se na ÁREA do caso — liste os documentos obrigatórios que NÃO foram recebidos
 4. Checklist por área:
+   - Tributário: RG, CPF/CNPJ, auto de infração/CDA, DARF, comprovante endereço, procuração ECAC, recurso anterior se houver
    - Previdenciário: RG, CPF, comprovante residência, CNIS, carta indeferimento, laudos médicos, CTPS
    - Trabalhista: RG, CPF, CTPS (todas as páginas), holerites, TRCT, comprovante residência
    - Cível: RG, CPF, comprovante residência, contrato/doc do caso, provas (fotos, msgs, etc)
    - Família: RG, CPF, certidão casamento/nascimento, comprovante residência, comprovante renda
-   - Tributário: RG, CPF/CNPJ, CDA/auto de infração, DARF, comprovante endereço, procuração ECAC
    - Criminal: RG, CPF, boletim ocorrência, comprovante residência
-   - Administrativo: RG, CPF, ato administrativo impugnado, comprovante residência
-5. NÃO invente dados — se não tem, deixe vazio`;
+   - Administrativo: RG, CPF, ato administrativo impugnado, comprovante residência, recurso administrativo se houver
+5. NÃO invente dados — se não tem, deixe vazio
+6. LEIA o documento inteiro antes de classificar — não chute a área por uma palavra isolada
+7. Se Kleuber disser "processo administrativo" ou "recurso administrativo", o tipo_processo É administrativo`;
 
       const iaResp = await chamarClaudeTexto(contextoCompleto, systemIntake, 1500);
       let dados = null;
@@ -4974,6 +4993,8 @@ REGRAS:
         docs_recebidos: JSON.stringify(dados.docs_recebidos || []),
         docs_faltantes: JSON.stringify(dados.docs_faltantes || []),
         observacoes: dados.observacoes || '',
+        demanda: dados.demanda_identificada || '',
+        tipo_acao: dados.tipo_acao || '',
         criado_por: ctx.canal + '_' + chatId,
         criado_em: new Date().toISOString(),
         previsao: '',
