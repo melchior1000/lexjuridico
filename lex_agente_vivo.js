@@ -236,7 +236,8 @@ const TOOL_PROPOR_ATUALIZACAO = {
       dias_parado:  { type: 'integer', description: 'Dias sem movimentação. Geralmente 0 quando há movimentação nova.' },
       proxima_acao: { type: 'string',  description: 'O que precisa ser feito depois.' },
       prazo:        { type: 'string',  description: 'Novo prazo no formato YYYY-MM-DD. Opcional.' },
-      justificativa:{ type: 'string',  description: 'Justificativa jurídica breve.' }
+      justificativa:{ type: 'string',  description: 'Justificativa jurídica breve.' },
+      integrar_parecer: { type: 'string', description: 'Resumo essencial do parecer para integrar ao processo ao finalizar.' }
     },
     required: ['andamento', 'status', 'proxima_acao', 'justificativa']
   }
@@ -507,16 +508,20 @@ async function persistirProcesso(deps, processo_atualizado) {
   try {
     if (deps.sbPatch) {
       const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero'];
+      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo'];
       for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
       if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
+      if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
+      if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
       await deps.sbPatch('processos', updateData, { id: 'eq.' + processo_atualizado.id });
       console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via PATCH');
       return { ok: true, via: 'supabase' };
     } else if (deps.sbReq) {
       const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo'];
+      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','tipo'];
       for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
+      if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
+      if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
       await deps.sbReq('PATCH', 'processos', updateData, { id: 'eq.' + processo_atualizado.id });
       console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via sbReq');
       return { ok: true, via: 'supabase' };
@@ -807,6 +812,16 @@ async function handlerAplicar(req, res, body, deps) {
       } else {
         console.warn('[VIVO] Prazo formato inválido ignorado:', proposta.prazo);
       }
+    }
+    const integrarParecer = String(proposta.integrar_parecer || '').trim();
+    if (integrarParecer) {
+      const trecho = integrarParecer.substring(0, 1200);
+      processo.integracao_parecer = trecho;
+      const descAtual = String(processo.descricao || '');
+      const marcador = 'Integração IA (parecer): ';
+      processo.descricao = descAtual
+        ? (descAtual + '\n\n' + marcador + trecho)
+        : (marcador + trecho);
     }
 
     const resultado = await persistirProcesso(deps, processo);

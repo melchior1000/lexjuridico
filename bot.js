@@ -4896,7 +4896,7 @@ REGRAS:
       const ehAdmin = isAdvogado(chatId);
       const novoCaso = {
         nome: dados.nome_caso || dados.nome_cliente || 'Caso sem nome',
-        tipo: dados.tipo_acao || '',
+        tipo: _normalizarTipoProcesso(dados.tipo_processo || dados.tipo || dados.tipo_acao, dados.area),
         area: dados.area || 'Cível',
         partes: dados.partes || '',
         status: ehAdmin ? 'EM_PREP' : 'AGUARDANDO_APROVACAO',
@@ -5610,9 +5610,11 @@ async function _conversaInteligente(ctx, mem, txt, low) {
     // Resposta 1 — cadastrar como NOVO ignorando o match
     if(respNum === '1' || /^(novo)\b/i.test(respRaw)) {
       mem.aguardando = null;
-      const novo = _cadastrarProcessoNovo(analise, arq);
+      const tipoEscolhido = _inferirTipoProcessoCadastro(analise, respRaw);
+      const novo = _cadastrarProcessoNovo(analise, arq, { tipo: tipoEscolhido });
       _bumpProcessos(ctx.canal+':'+ctx.chatId);
       await _persistirProcessosCache();
+      await _persistirProcessoNaTabela(novo, ctx, 'confirmar_andamento_123');
       await lembrarDoCaso(novo.nome, 'estrategia',
         'Processo cadastrado como NOVO (ignorou match com "'+match.proc_nome+'") a partir de '+arq.nome, ctx.canal);
       await enfileirarComando({acao:'criar_processo', dados:novo});
@@ -5695,9 +5697,11 @@ async function _conversaInteligente(ctx, mem, txt, low) {
     // Resposta 1 — cadastrar como NOVO
     if(respNum === '1' || /^(sim|cadastra|novo|ok|pode)\b/i.test(respRaw)) {
       mem.aguardando = null;
-      const novo = _cadastrarProcessoNovo(analise, arq);
+      const tipoEscolhido = _inferirTipoProcessoCadastro(analise, respRaw);
+      const novo = _cadastrarProcessoNovo(analise, arq, { tipo: tipoEscolhido });
       _bumpProcessos(ctx.canal+':'+ctx.chatId);
       await _persistirProcessosCache();
+      await _persistirProcessoNaTabela(novo, ctx, 'sem_match_123');
       await lembrarDoCaso(novo.nome, 'estrategia',
         'Processo cadastrado a partir de '+arq.nome+'. '+(analise.resumo||'').substring(0,300), ctx.canal);
       await enfileirarComando({acao:'criar_processo', dados:novo});
@@ -5770,9 +5774,11 @@ async function _conversaInteligente(ctx, mem, txt, low) {
 
     // Resposta "NOVO" → cadastra novo processo
     if(/^(NOVO|N)\b/.test(resp)) {
-      const novo = _cadastrarProcessoNovo(analise, arq);
+      const tipoEscolhido = _inferirTipoProcessoCadastro(analise, resp);
+      const novo = _cadastrarProcessoNovo(analise, arq, { tipo: tipoEscolhido });
       _bumpProcessos(ctx.canal+':'+ctx.chatId);
       await _persistirProcessosCache();
+      await _persistirProcessoNaTabela(novo, ctx, 'escolher_processo_ambiguo');
       await lembrarDoCaso(novo.nome, 'estrategia',
         'Processo cadastrado manualmente após ambiguidade em '+arq.nome, ctx.canal);
       await enfileirarComando({acao:'criar_processo', dados:novo});
@@ -5854,9 +5860,11 @@ async function _conversaInteligente(ctx, mem, txt, low) {
     if(ehSim) {
       const analise = mem.dadosColetados.analisePendente;
       const arq = mem.dadosColetados.arqPendente || {nome:'documento'};
-      const novo = _cadastrarProcessoNovo(analise, arq);
+      const tipoEscolhido = _inferirTipoProcessoCadastro(analise, txt);
+      const novo = _cadastrarProcessoNovo(analise, arq, { tipo: tipoEscolhido });
       _bumpProcessos(ctx.canal+':'+ctx.chatId);
       await _persistirProcessosCache();
+      await _persistirProcessoNaTabela(novo, ctx, 'confirmar_cadastro_auto');
       await lembrarDoCaso(novo.nome, 'estrategia',
         'Processo cadastrado automaticamente a partir de '+arq.nome+'. '+(analise.resumo||'').substring(0,300),
         ctx.canal);
@@ -6986,10 +6994,60 @@ function _classificarAndamentos(novos, existentes) {
 
 // Cria processo novo quando não houve match nenhum
 // v3.0: agora salva juiz_relator e instancia também
-function _cadastrarProcessoNovo(analise, arq) {
+function _normalizarTipoProcesso(tipo, areaFallback) {
+  const bruto = String(tipo || '').toLowerCase().trim();
+  if (bruto === 'administrativo' || bruto === 'admin') return 'administrativo';
+  if (bruto === 'judicial' || bruto === 'judiciario') return 'judicial';
+  const area = String(areaFallback || '').toLowerCase();
+  if (area.includes('administ')) return 'administrativo';
+  return 'judicial';
+}
+
+function _inferirTipoProcessoCadastro(analise, textoOpcional) {
+  const txt = String(textoOpcional || '').toLowerCase();
+  if (txt.includes('administrativ')) return 'administrativo';
+  if (txt.includes('judicial')) return 'judicial';
+  return _normalizarTipoProcesso(analise && analise.tipo, analise && analise.area);
+}
+
+async function _persistirProcessoNaTabela(proc, ctx, origem) {
+  try {
+    const payload = {
+      nome: proc.nome || 'Processo sem nome',
+      tipo: _normalizarTipoProcesso(proc.tipo, proc.area),
+      area: proc.area || '',
+      partes: proc.partes || '',
+      status: proc.status || 'ATIVO',
+      resumo: proc.descricao || '',
+      tribunal: proc.tribunal || '',
+      juiz_relator: proc.juiz_relator || '',
+      instancia: proc.instancia || '',
+      prazo: proc.prazo || '',
+      proxacao: proc.proxacao || '',
+      numero: proc.numero || '',
+      valor_causa: proc.valor || '',
+      docs_faltantes: proc.docsFaltantes || '',
+      criado_por: (ctx && ctx.canal && ctx.chatId) ? (ctx.canal + '_' + ctx.chatId) : String(origem || 'agente'),
+      criado_em: proc.criado_em || new Date().toISOString()
+    };
+    const r = await sbReq('POST', 'processos', payload, {}, {'Prefer':'return=representation'});
+    if(!r.ok) {
+      console.warn('[Lex][cadastro] falha ao salvar em processos:', r.status, JSON.stringify(r.body||{}).substring(0,200));
+      return { ok:false, status:r.status, body:r.body };
+    }
+    return { ok:true, status:r.status, body:r.body };
+  } catch(e) {
+    console.warn('[Lex][cadastro] exceção ao salvar em processos:', e.message);
+    return { ok:false, status:0, erro:e.message };
+  }
+}
+
+function _cadastrarProcessoNovo(analise, arq, opcoes) {
+  const tipoProcesso = _normalizarTipoProcesso(opcoes && opcoes.tipo, analise && analise.area);
   const novo = {
     id: Date.now() + Math.floor(Math.random()*1000),
     nome: analise.nome_caso || (analise.partes||'Novo processo').substring(0,50),
+    tipo: tipoProcesso,
     numero: analise.numero_processo || '',
     partes: analise.partes || '',
     area: analise.area || '',
@@ -7099,7 +7157,7 @@ async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
     }
 
     txt += '\n\n➡ Responda:\n';
-    txt += '1 — Cadastrar como processo NOVO\n';
+    txt += '1 — Cadastrar como processo NOVO (responda "1 administrativo" para tipo administrativo)\n';
     txt += '2 — Cancelar (não cadastrar)\n';
     txt += '3 — Só consultoria/explicação (não grava nada)';
 
@@ -7166,7 +7224,7 @@ async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
   txt += '\nCritério do match: '+criterio+' (confiança: '+confianca+')\n';
   txt += '\n━━━━━━━━━━━━━━━━━━━━\n';
   txt += '➡ Responda:\n';
-  txt += '1 — É processo NOVO (cadastrar separado, ignorar o match)\n';
+  txt += '1 — É processo NOVO (responda "1 administrativo" para tipo administrativo)\n';
   txt += '2 — CONFIRMAR: é andamento deste processo (atualiza cadastro)\n';
   txt += '3 — Só consultoria/explicação (não grava nada)';
 
@@ -8379,6 +8437,42 @@ const server = http.createServer(async (req, res) => {
     // FIX-11: rota protegida — sem token retorna 401
     const pfProc = validarToken(getToken(req));
     if(!pfProc) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+    try {
+      const sbRows = await sbReq('GET', 'processos', null, { order:'criado_em.desc', limit:'2000' });
+      if(sbRows && sbRows.ok && Array.isArray(sbRows.body) && sbRows.body.length) {
+        const mapa = new Map();
+        (processos||[]).forEach(p => mapa.set(String(p.id), p));
+        for(const row of sbRows.body) {
+          const idKey = String(row.id);
+          const atual = mapa.get(idKey) || {};
+          mapa.set(idKey, {
+            ...atual,
+            id: (row.id != null && !isNaN(Number(row.id))) ? Number(row.id) : (atual.id != null ? atual.id : row.id),
+            nome: row.nome || atual.nome || 'Processo sem nome',
+            tipo: _normalizarTipoProcesso(row.tipo || atual.tipo, row.area || atual.area),
+            numero: row.numero || atual.numero || '',
+            partes: row.partes || atual.partes || '',
+            area: row.area || atual.area || '',
+            tribunal: row.tribunal || atual.tribunal || '',
+            juiz_relator: row.juiz_relator || atual.juiz_relator || '',
+            instancia: row.instancia || atual.instancia || '',
+            status: row.status || atual.status || 'ATIVO',
+            prazo: row.prazo || atual.prazo || '',
+            proxacao: row.proxacao || atual.proxacao || '',
+            valor: row.valor_causa || atual.valor || '',
+            descricao: row.resumo || atual.descricao || '',
+            docsFaltantes: row.docs_faltantes || atual.docsFaltantes || '',
+            atualizado_em: row.atualizado_em || atual.atualizado_em || new Date().toISOString(),
+            criado_em: row.criado_em || atual.criado_em || new Date().toISOString(),
+            andamentos: atual.andamentos || [],
+            arquivos: atual.arquivos || []
+          });
+        }
+        processos = Array.from(mapa.values());
+      }
+    } catch(e) {
+      console.warn('[Lex][api/processos] fallback memoria por erro Supabase:', e.message);
+    }
     res.writeHead(200, corsHeaders(req));
     res.end(JSON.stringify({
       processos,

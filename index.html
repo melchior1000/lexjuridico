@@ -550,6 +550,7 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
     <div class="nav-section">Principal</div>
     <button class="nav-btn active" onclick="ir('painel',this)"><span class="nav-icon">◈</span> Painel Geral</button>
     <button class="nav-btn" onclick="ir('processos',this)"><span class="nav-icon">⊞</span> Processos</button>
+    <button class="nav-btn" onclick="ir('processos_admin',this)"><span class="nav-icon">▣</span> Processo Administrativo</button>
     <button class="nav-btn" onclick="ir('prazos',this)"><span class="nav-icon">◷</span> Prazos</button>
     <button class="nav-btn" onclick="ir('calendario',this)"><span class="nav-icon">📅</span> Calendário</button>
     <button class="nav-btn" onclick="ir('estatisticas',this)"><span class="nav-icon">◎</span> Estatísticas</button>
@@ -633,6 +634,7 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
   <div class="mob-nav-items">
     <button class="mob-nav-btn active" id="mob-painel" onclick="ir('painel',null);mobActive('mob-painel')"><span>◈</span>Painel</button>
     <button class="mob-nav-btn" id="mob-processos" onclick="ir('processos',null);mobActive('mob-processos')"><span>⊞</span>Procs</button>
+    <button class="mob-nav-btn" id="mob-proc-admin" onclick="ir('processos_admin',null);mobActive('mob-proc-admin')"><span>▣</span>Admin</button>
     <button class="mob-nav-btn" id="mob-agenda" onclick="ir('agenda',null);mobActive('mob-agenda')"><span>📇</span>Contatos</button>
     <button class="mob-nav-btn" id="mob-mensagens" onclick="ir('mensagens',null);mobActive('mob-mensagens')"><span>💬</span>Msgs</button>
     <button class="mob-nav-btn" id="mob-menu" onclick="toggleSidebar()"><span>☰</span>Menu ▸</button>
@@ -676,6 +678,12 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
           <option>Cível</option><option>Criminal</option><option>Ambiental</option>
           <option>Trabalhista</option><option>Tributário</option><option>Tributário Municipal</option>
           <option>Execução Federal</option><option>Previdenciário</option><option>Família</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Tipo de processo</label>
+        <select class="fs" id="f-tipo">
+          <option value="judicial">Judicial</option>
+          <option value="administrativo">Administrativo</option>
         </select>
       </div>
       <div class="fg"><label class="fl">Tribunal</label><input class="fi" id="f-trib" placeholder="Ex: TJMG, TRF-6, STJ"></div>
@@ -3338,6 +3346,7 @@ function setKey(k){localStorage.setItem(AK,k);}
 function getChatHist(id){try{const h=JSON.parse(localStorage.getItem(CK)||'{}');return h[id]||[];}catch(e){return[];}}
 function saveChatHist(id,msgs){try{const h=JSON.parse(localStorage.getItem(CK)||'{}');h[id]=msgs.slice(-30);localStorage.setItem(CK,JSON.stringify(h));}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }}
 if(!localStorage.getItem(SK)) saveProcs(DEFAULT);
+_normalizarTiposProcessosLocais();
 
 // ═══════════════ PRAZO HELPERS ═══════════════
 function parsePrazo(s){if(!s||!s.includes('/'))return null;const[d,m,a]=s.split('/').map(Number);if(!d||!m||!a)return null;return new Date(a,m-1,d);}
@@ -3587,14 +3596,18 @@ function esconderBackBar(){
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('show');}
 function fecharSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show');}
 function toggleTopbarMenu(){const dd=document.getElementById('topbar-mobile-dropdown');if(dd)dd.style.display=dd.style.display==='none'?'block':'none';}
+function _btnNavProcessosPrincipal(){
+  const btns = Array.from(document.querySelectorAll('.nav-btn'));
+  return btns.find(b => (b.getAttribute('onclick')||'').includes("ir('processos',this)")) || null;
+}
 
 function ir(p,btn){
   pag=p; procAtivo=null; fecharSidebar(); esconderBackBar();
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  const t={painel:'Painel Geral',processos:'Processos',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens',agenda:'Agenda / Contatos',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe'};
+  const t={painel:'Painel Geral',processos:'Processos',processos_admin:'Processo Administrativo',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens',agenda:'Agenda / Contatos',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe'};
   document.getElementById('page-title').textContent=t[p]||p;
-  ({painel:renderPainel,processos:renderProcessos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens,agenda:renderAgenda,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderPje})[p]?.();
+  ({painel:renderPainel,processos:renderProcessos,processos_admin:renderProcessosAdministrativos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens,agenda:renderAgenda,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderPje})[p]?.();
 }
 
 // ═══════════════ BUSCA ═══════════════
@@ -3706,7 +3719,13 @@ function secao(label,cor,lista){
   return `<div class="secao-titulo" style="color:${cor}"><div style="width:8px;height:8px;border-radius:50%;background:${cor};flex-shrink:0"></div>${label.toUpperCase()}<div class="secao-linha"></div><div class="secao-count">${lista.length}</div></div>${lista.map(p=>cardProc(p)).join('')}`;
 }
 function cardProc(p){
-  const cor=COR[p.area]||'var(--accent)', sc=SC[p.status]||'#888', pf=fmtPrazo(p);
+  const tipoProc = String(p.tipo||'').toLowerCase();
+  const ehAdmin = tipoProc === 'administrativo';
+  const corBase = ehAdmin ? 'var(--accent)' : (COR[p.area]||'var(--gold)');
+  const cor=corBase, sc=SC[p.status]||'#888', pf=fmtPrazo(p);
+  const chipTipo = ehAdmin
+    ? '<span class="tag" style="background:var(--accent)22;color:var(--accent);border-color:var(--accent)">ADMINISTRATIVO</span>'
+    : '<span class="tag" style="background:var(--gold)22;color:var(--gold);border-color:var(--gold)">JUDICIAL</span>';
   const d=p.prazo?diasRestantes(p.prazo):null;
   const chip=d!==null&&d<=5&&d>=0?`<span class="chip-alerta">⚠ ${d===0?'HOJE':d+'d'}</span>`:'';
   // V12: badge de "tempo sem movimentação"
@@ -3724,10 +3743,10 @@ function cardProc(p){
       }
     }
   }
-  return `<div class="proc-card" style="border-left-color:${cor}" onclick="abrirProc(${p.id})">
+  return `<div class="proc-card" style="border-left-color:${cor}${ehAdmin?';box-shadow:inset 0 0 0 1px var(--accent)33':''}" onclick="abrirProc(${p.id})">
     <div class="pc-top"><div><div class="pc-nome">${p.nome}</div><div class="pc-partes">${p.partes}</div></div>
     <div class="pc-right"><div class="pc-tribunal">${p.tribunal}</div><div class="pc-prazo" style="color:${pf.cor}">${pf.txt}</div></div></div>
-    <div class="pc-bottom"><span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span><span class="tag">${p.area}</span>${chip}${chipParado}${(p.frentes||[]).slice(0,2).map(f=>`<span class="tag">${f}</span>`).join('')}</div>
+    <div class="pc-bottom"><span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span>${chipTipo}<span class="tag">${p.area}</span>${chip}${chipParado}${(p.frentes||[]).slice(0,2).map(f=>`<span class="tag">${f}</span>`).join('')}</div>
   </div>`;
 }
 
@@ -3741,6 +3760,23 @@ const GRUPOS_LIST=['Varejão','COFCO','CEF','Trabalhista','Tributário','Famíli
 const COR_GRUPO={'Varejão':'var(--red)','COFCO':'var(--orange)','CEF':'var(--orange)','Trabalhista':'var(--accent)','Tributário':'var(--purple)','Família':'var(--cyan)','Tocantins':'var(--gold)','INCRA':'var(--green)','Banco do Brasil':'var(--purple)'};
 
 function renderProcessos(){ renderProcessosFiltrado(filtroAtivo); }
+
+function renderProcessosAdministrativos(){
+  const ps = getProcs();
+  const admin = ps.filter(p => String(p.tipo||'').toLowerCase() === 'administrativo');
+  const porGrupo = {};
+  admin.forEach(p => {
+    const g = p.grupo || 'Outros';
+    if(!porGrupo[g]) porGrupo[g] = [];
+    porGrupo[g].push(p);
+  });
+  let cardsHtml = '';
+  Object.keys(porGrupo).sort().forEach(g => {
+    cardsHtml += `<div style="margin-bottom:4px"><div class="secao-titulo" style="color:var(--accent)"><div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0"></div>${g.toUpperCase()}<div class="secao-linha"></div><div class="secao-count">${porGrupo[g].length}</div></div>${porGrupo[g].map(p=>cardProc(p)).join('')}</div>`;
+  });
+  const topo = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap"><div style="font-size:11px;color:var(--text3);letter-spacing:1px">PROCESSOS ADMINISTRATIVOS</div><button class="btn-outline" style="padding:6px 12px;font-size:11px" onclick="ir('processos',_btnNavProcessosPrincipal())">Ver todos</button></div>`;
+  document.getElementById('content').innerHTML = topo + (cardsHtml || '<div style="font-size:13px;color:var(--text3);padding:20px">Nenhum processo administrativo cadastrado.</div>');
+}
 
 function renderProcessosFiltrado(filtro){
   filtroAtivo=filtro;
@@ -3760,6 +3796,24 @@ function renderProcessosFiltrado(filtro){
   const semGrupo=psFiltrados.filter(p=>!p.grupo||!GRUPOS_LIST.includes(p.grupo));
   if(semGrupo.length) cardsHtml+=secao('Outros','var(--text2)',semGrupo);
   document.getElementById('content').innerHTML=filtrosHtml+(cardsHtml||'<div style="font-size:13px;color:var(--text3);padding:20px">Nenhum processo encontrado.</div>');
+}
+
+function _normalizarTipoProcLocal(p){
+  const t = String((p && p.tipo) || '').toLowerCase().trim();
+  if(t === 'administrativo') return 'administrativo';
+  if(t === 'judicial') return 'judicial';
+  const area = String((p && p.area) || '').toLowerCase();
+  return area.includes('administ') ? 'administrativo' : 'judicial';
+}
+
+function _normalizarTiposProcessosLocais(){
+  const ps = getProcs();
+  let mudou = false;
+  ps.forEach(p => {
+    const n = _normalizarTipoProcLocal(p);
+    if((p.tipo || '') !== n) { p.tipo = n; mudou = true; }
+  });
+  if(mudou) saveProcs(ps);
 }
 
 function filtrarGrupoInline(q){
@@ -4609,7 +4663,7 @@ function confirmarAndamento(id, btn){
 
 // ═══════════════ CADASTRO/EDIÇÃO ═══════════════
 function abrirModal(){document.getElementById('modal-titulo').textContent='Cadastrar Processo';document.getElementById('modal').removeAttribute('data-edit');document.getElementById('modal-bg').classList.add('open');}
-function fecharModal(){document.getElementById('modal-bg').classList.remove('open');['f-nome','f-grupo','f-num','f-partes','f-trib','f-prazo','f-desc','f-provas','f-frentes','f-valor','f-proxacao','f-honor','f-honor-status','f-prev-dist','f-docs-falt'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});}
+function fecharModal(){document.getElementById('modal-bg').classList.remove('open');['f-nome','f-grupo','f-num','f-partes','f-trib','f-prazo','f-desc','f-provas','f-frentes','f-valor','f-proxacao','f-honor','f-honor-status','f-prev-dist','f-docs-falt'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); const ft=document.getElementById('f-tipo'); if(ft) ft.value='judicial';}
 function editarProc(id){
   const p=getProcs().find(x=>x.id===id);if(!p)return;
   document.getElementById('f-nome').value=p.nome||'';
@@ -4617,6 +4671,7 @@ function editarProc(id){
   document.getElementById('f-partes').value=p.partes||'';
   document.getElementById('f-grupo').value=p.grupo||'';
   document.getElementById('f-area').value=p.area||'Cível';
+  const ft=document.getElementById('f-tipo'); if(ft) ft.value=(p.tipo||'judicial');
   document.getElementById('f-trib').value=p.tribunal||'';
   document.getElementById('f-status').value=p.status||'ATIVO';
   document.getElementById('f-prazo').value=p.prazoReal||p.prazo||'';
@@ -4639,7 +4694,7 @@ function salvarProc(){
   let statusVal=document.getElementById('f-status').value;
   if(prazo && diasRestantes(prazo)<=7) statusVal='URGENTE';
   else if(statusVal==='URGENTE') statusVal='ATIVO';
-  const dados={nome,grupo:document.getElementById('f-grupo').value||'Outros',numero:document.getElementById('f-num').value,partes:document.getElementById('f-partes').value,area,tribunal:document.getElementById('f-trib').value,status:statusVal,prazo,prazoReal,valor:document.getElementById('f-valor').value,proxacao:document.getElementById('f-proxacao')?.value||'',honor:document.getElementById('f-honor')?.value||'',honorStatus:document.getElementById('f-honor-status')?.value||'',descricao:document.getElementById('f-desc').value,provas:document.getElementById('f-provas').value.split(',').map(s=>s.trim()).filter(Boolean),frentes:document.getElementById('f-frentes').value.split(',').map(s=>s.trim()).filter(Boolean),prevDist:statusVal==='EM_PREP'?(document.getElementById('f-prev-dist')?.value||''):'',docsFaltantes:statusVal==='EM_PREP'?(document.getElementById('f-docs-falt')?.value||''):''};
+  const dados={nome,grupo:document.getElementById('f-grupo').value||'Outros',tipo:document.getElementById('f-tipo')?.value||'judicial',numero:document.getElementById('f-num').value,partes:document.getElementById('f-partes').value,area,tribunal:document.getElementById('f-trib').value,status:statusVal,prazo,prazoReal,valor:document.getElementById('f-valor').value,proxacao:document.getElementById('f-proxacao')?.value||'',honor:document.getElementById('f-honor')?.value||'',honorStatus:document.getElementById('f-honor-status')?.value||'',descricao:document.getElementById('f-desc').value,provas:document.getElementById('f-provas').value.split(',').map(s=>s.trim()).filter(Boolean),frentes:document.getElementById('f-frentes').value.split(',').map(s=>s.trim()).filter(Boolean),prevDist:statusVal==='EM_PREP'?(document.getElementById('f-prev-dist')?.value||''):'',docsFaltantes:statusVal==='EM_PREP'?(document.getElementById('f-docs-falt')?.value||''):''};
   if(editId){const idx=ps.findIndex(x=>x.id==editId);if(idx>-1) ps[idx]={...ps[idx],...dados};}
   else ps.push({id:Date.now(),...dados,andamentos:[],arquivos:[]});
   const _editedId=document.getElementById('modal').getAttribute('data-edit');saveProcs(ps); atualizarUrgentes(); fecharModal(); setTimeout(sincronizarComBot,500);
@@ -7589,6 +7644,7 @@ function salvarProcPdf(){
   const nome=document.getElementById('pdf-nome').value.trim();
   if(!nome){alert('Informe o nome do caso.');return;}
   const area=document.getElementById('pdf-area').value;
+  const tipoProc=document.getElementById('pdf-tipo')?.value||'judicial';
   const prazoInput=document.getElementById('pdf-prazo').value.trim();
   const{prazo,prazoReal}=prazoInput?calcAjustado(prazoInput):{prazo:'',prazoReal:''};
   const numero=document.getElementById('pdf-num').value.trim();
@@ -7630,6 +7686,7 @@ function salvarProcPdf(){
     if(proxacao) existente.proxacao=proxacao;
     const status=document.getElementById('pdf-status').value;
     if(status) existente.status=status;
+    existente.tipo=tipoProc;
     const desc=document.getElementById('pdf-desc').value.trim();
     if(desc&&desc.length>existente.descricao.length) existente.descricao=desc;
     const frentes=document.getElementById('pdf-frentes').value.trim();
@@ -7656,6 +7713,7 @@ function salvarProcPdf(){
       numero,
       partes:document.getElementById('pdf-partes').value,
       area,
+      tipo:tipoProc,
       tribunal:document.getElementById('pdf-trib').value,
       status:document.getElementById('pdf-status').value,
       prazo,prazoReal,
@@ -9737,6 +9795,12 @@ function pipelineVerPecaHistorico(id){
             <option>Execucao Federal</option><option>Previdenciario</option><option>Familia</option>
           </select>
         </div>
+        <div class="fg"><label class="fl">Tipo</label>
+          <select class="fs" id="pdf-tipo">
+            <option value="judicial">Judicial</option>
+            <option value="administrativo">Administrativo</option>
+          </select>
+        </div>
         <div class="fg"><label class="fl">Status</label>
           <select class="fs" id="pdf-status">
             <option>URGENTE</option><option>ATIVO</option><option>RECURSAL</option><option>AGUARDANDO</option><option>EM_PREP</option>
@@ -9765,6 +9829,7 @@ function fecharPdfModal(){
   document.getElementById('pdf-modal').style.display='none';
   document.body.style.overflow='';
   window._pdfAndamentos=[];
+  const pt=document.getElementById('pdf-tipo'); if(pt) pt.value='judicial';
 }
 
 function abrirPdfParaCadastro(input){
