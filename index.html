@@ -3822,7 +3822,7 @@ function renderProcessosFiltrado(filtro){
   const ps=getProcs();
   let psFiltrados=filtro==='todos'?ps:filtro==='em_prep'?ps.filter(p=>p.status==='EM_PREP'):ps.filter(p=>p.status===filtro.toUpperCase());
   const filtrosHtml=`<div class="filtros-row">
-    ${['todos','urgente','ativo','recursal','aguardando','em_prep'].map(s=>`<button class="filtro-btn ${filtroAtivo===s?'ativo':''}" onclick="renderProcessosFiltrado('${s}')">${s==='todos'?'Todos':s==='em_prep'?'Em Preparação':s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
+    ${['todos','urgente','ativo','distribuido','recursal','aguardando','em_prep','entregue','concluido'].map(s=>`<button class="filtro-btn ${filtroAtivo===s?'ativo':''}" onclick="renderProcessosFiltrado('${s}')">${{'todos':'Todos','urgente':'Urgente','ativo':'Ativo','distribuido':'Distribuído','recursal':'Recursal','aguardando':'Aguardando','em_prep':'Em Preparação','entregue':'Entregue','concluido':'Concluído'}[s]||s}</button>`).join('')}
     <input placeholder="🔍 Buscar grupo..." oninput="filtrarGrupoInline(this.value)" style="background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 14px;color:var(--text);font-family:Arial,Helvetica,sans-serif;font-size:11px;outline:none;width:140px;">
   </div>`;
   let cardsHtml='';
