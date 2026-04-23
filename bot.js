@@ -1144,7 +1144,9 @@ PROCESSOS:
 ${procs}
 
 QUEM É KLEUBER:
-- Advogado ghostwriter (OAB/MG 118.237) — estrategista jurídico de alto nível
+- CEO do escritório e Analista Jurídico — estrategista jurídico de alto nível
+- Contratado por Wanderson Farias de Camargos (OAB/MG 118.237) para assessoria jurídica
+- A OAB e os dados nos processos são de Wanderson — Kleuber atua como analista/assessor
 - Desenvolvedor e dono do produto Lex — sistema de gestão com IA
 - Está construindo uma plataforma para comercializar para outros escritórios
 
@@ -2354,7 +2356,7 @@ MEMÓRIA DO CASO (fatos estratégicos de longo prazo):
 ${memTxt}
 ` : '';
 
-  let _prompt = `Você é o ASSESSOR JURÍDICO SÊNIOR do escritório Camargos Advocacia, auxiliando Kleuber Melchior (OAB/MG 118.237) — analista jurídico estrategista que redige petições assinadas por Wanderson Farias de Camargos.
+  let _prompt = `Você é o ASSESSOR JURÍDICO SÊNIOR do escritório Camargos Advocacia, auxiliando Kleuber Melchior — CEO e analista jurídico estrategista que redige petições assinadas por Wanderson Farias de Camargos (OAB/MG 118.237).
 
 SUA MISSÃO: ser ASSESSOR, não redator. Debater estratégia antes de escrever.
 
@@ -2637,7 +2639,7 @@ async function _assessorPerical(ctx, mem, proc, instrucoes, calculosSolicitados)
 
 1. INTRODUÇÃO
    - Identificação do processo (nº CNJ, vara, partes)
-   - Qualificação do perito (dados de Kleuber/Wanderson)
+   - Qualificação do perito (dados de Wanderson Farias de Camargos, OAB/MG 118.237)
    - Objetivo do laudo (citar quesitos do juiz)
    - Fontes consultadas (autos, documentos juntados, legislação)
 
@@ -3061,7 +3063,7 @@ function _agoraIso() { return new Date().toISOString(); }
 
 function _normCasoTxt(t) { return _normTexto(String(t||'')).replace(/\s+/g, ' ').trim(); }
 
-const _MSG_ESCALONAR_DIRETO_DR = 'Essa questao precisa ser tratada diretamente com o Dr. Kleuber. Vou solicitar que ele entre em contato. Pode me informar o melhor horario?';
+const _MSG_ESCALONAR_DIRETO_DR = 'Essa questao precisa ser tratada diretamente com Kleuber, nosso analista jurídico. Vou solicitar que ele entre em contato. Pode me informar o melhor horario?';
 const _MSG_LIMITE_PERGUNTAS = 'Agradeco seu contato. Nesta sessao atingimos o limite de 6 perguntas. O escritorio atende em horario comercial e retornaremos no proximo periodo util.';
 const _REGEX_SENSIVEIS_SECRETARIO = [
   /r\$\s*\d+/i,
@@ -4310,90 +4312,373 @@ async function processarMensagem(ctx, dados) {
     return;
   }
 
-  // ── NOVO CASO via Telegram — comando /novocaso ──
-  if(low.startsWith('/novocaso')) {
-    const descricao = txt.replace(/^\/novocaso\s*/i, '').trim();
-    if(!descricao) {
-      await env('📋 *NOVO CASO — Fluxo Rápido*\n\nDescreva o caso do cliente após o comando.\n\nExemplos:\n• /novocaso João Silva, 62 anos, BPC/LOAS, deficiente visual, renda zero\n• /novocaso Maria, rescisão indireta, assédio moral, 3 anos na empresa\n• /novocaso Empresa XYZ, execução fiscal federal, CDA INSS R$ 50 mil\n\nO agente vai interpretar, classificar e cadastrar automaticamente. Você receberá a confirmação para aprovar.', ctx);
-      return;
-    }
-    
-    // Agente interpreta a descrição
+  // ════════════════════════════════════════════════════════════════════════
+  // ── AGENTE CADASTRADOR INTELIGENTE — /novocaso (Telegram + WhatsApp) ──
+  // Fluxo: Kleuber manda /novocaso → modo intake → envia fotos/textos/áudios
+  //        → /pronto (ou 2min silêncio) → IA lê TUDO → cria caso → lista faltantes
+  // ════════════════════════════════════════════════════════════════════════
+
+  // ── Sessões de intake ativas (em memória, por chatId) ──
+  if(!global._intakeSessoes) global._intakeSessoes = {};
+
+  // Helper: finalizar intake — processa tudo e cria caso
+  async function _finalizarIntake(sessao, ctx) {
+    const chatId = sessao.chatId;
     try {
-      const system = `Você é o Agente de Intake do escritório Camargos Advocacia.
-Interprete a descrição do caso e retorne JSON puro:
-{"nome":"nome do cliente","tipo":"tipo de ação","area":"área do direito","partes":"autor vs réu","resumo":"resumo breve","docs_necessarios":["doc1","doc2"]}
-Áreas: Previdenciário, Cível, Trabalhista, Tributário, Família, Criminal, Administrativo`;
-      
-      const iaResp = await chamarClaudeTexto(descricao, system, 600);
+      await env('🔄 *Processando cadastro...*\nAnalisando ' + sessao.imagens.length + ' foto(s), ' + sessao.textos.length + ' mensagem(ns)' + (sessao.arquivos.length ? ', ' + sessao.arquivos.length + ' arquivo(s)' : '') + '...', ctx);
+
+      // 1. Extrair dados de TODAS as imagens com Vision
+      const dadosImagens = [];
+      for (const img of sessao.imagens) {
+        try {
+          const extraido = await _extrairDadosImagem(img.buffer, img.mime);
+          dadosImagens.push(extraido);
+        } catch(e) { dadosImagens.push({ tipo_documento:'erro', observacoes: e.message }); }
+      }
+
+      // 2. Montar contexto completo pra IA interpretar
+      let contextoCompleto = '=== MENSAGENS DO ANALISTA JURÍDICO (KLEUBER) ===\n';
+      sessao.textos.forEach((t,i) => contextoCompleto += (i+1) + '. ' + t + '\n');
+
+      if (dadosImagens.length) {
+        contextoCompleto += '\n=== DOCUMENTOS EXTRAÍDOS DAS FOTOS ===\n';
+        dadosImagens.forEach((d,i) => {
+          contextoCompleto += '\nFoto ' + (i+1) + ': ' + (d.tipo_documento||'?') + ' (confiança: ' + (d.confianca||'?') + ')\n';
+          if (d.extraido) {
+            Object.entries(d.extraido).forEach(([k,v]) => {
+              if (v && v !== '') contextoCompleto += '  ' + k + ': ' + v + '\n';
+            });
+          }
+          if (d.campos_ilegiveis && d.campos_ilegiveis.length) contextoCompleto += '  ⚠ Campos ilegíveis: ' + d.campos_ilegiveis.join(', ') + '\n';
+          if (d.observacoes) contextoCompleto += '  📝 ' + d.observacoes + '\n';
+        });
+      }
+
+      if (sessao.arquivos.length) {
+        contextoCompleto += '\n=== ARQUIVOS RECEBIDOS ===\n';
+        sessao.arquivos.forEach(a => contextoCompleto += '• ' + a.nome + ' (' + a.mime + ')\n');
+      }
+
+      // 3. IA interpreta TUDO e monta o caso
+      const systemIntake = `Você é o Agente Cadastrador do escritório Camargos Advocacia.
+Kleuber Melchior (CEO e Analista Jurídico) está cadastrando um caso novo a partir de fotos e descrições.
+A OAB nos processos é de Wanderson Farias de Camargos (OAB/MG 118.237).
+
+Analise TODAS as informações (mensagens + dados extraídos das fotos) e retorne SOMENTE JSON puro:
+{
+  "nome_cliente": "nome completo do cliente",
+  "cpf": "só dígitos ou vazio",
+  "rg": "número ou vazio",
+  "data_nascimento": "dd/mm/aaaa ou vazio",
+  "estado_civil": "",
+  "profissao": "",
+  "endereco": "endereço completo ou vazio",
+  "telefone": "",
+  "email": "",
+  "nome_caso": "título descritivo pro caso (ex: João Silva - BPC/LOAS)",
+  "tipo_acao": "tipo de ação judicial provável",
+  "area": "Previdenciário|Trabalhista|Cível|Família|Tributário|Criminal|Administrativo",
+  "partes": "Autor vs Réu (ex: João Silva vs INSS)",
+  "resumo_caso": "resumo completo do caso em 3-5 linhas",
+  "valor_causa_estimado": "se mencionado",
+  "urgencia": "normal|urgente|critico",
+  "motivo_urgencia": "se urgente, por quê",
+  "docs_recebidos": ["lista dos docs que JÁ foram enviados"],
+  "docs_faltantes": ["lista dos docs que AINDA FALTAM pra essa área"],
+  "observacoes": "qualquer detalhe relevante, campos ilegíveis, alertas"
+}
+
+REGRAS:
+1. Se um dado aparece na foto E no texto, priorize a foto (mais confiável)
+2. Se a foto está borrada/cortada, marque em observacoes e coloque o campo como vazio
+3. docs_faltantes: baseie-se na ÁREA do caso — liste os documentos obrigatórios que NÃO foram recebidos
+4. Checklist por área:
+   - Previdenciário: RG, CPF, comprovante residência, CNIS, carta indeferimento, laudos médicos, CTPS
+   - Trabalhista: RG, CPF, CTPS (todas as páginas), holerites, TRCT, comprovante residência
+   - Cível: RG, CPF, comprovante residência, contrato/doc do caso, provas (fotos, msgs, etc)
+   - Família: RG, CPF, certidão casamento/nascimento, comprovante residência, comprovante renda
+   - Tributário: RG, CPF/CNPJ, CDA/auto de infração, DARF, comprovante endereço, procuração ECAC
+   - Criminal: RG, CPF, boletim ocorrência, comprovante residência
+   - Administrativo: RG, CPF, ato administrativo impugnado, comprovante residência
+5. NÃO invente dados — se não tem, deixe vazio`;
+
+      const iaResp = await chamarClaudeTexto(contextoCompleto, systemIntake, 1500);
       let dados = null;
       try {
         const jsonMatch = iaResp.match(/\{[\s\S]*\}/);
         if (jsonMatch) dados = JSON.parse(jsonMatch[0]);
       } catch(e) {}
-      
+
       if (!dados) {
-        await env('❌ Não consegui interpretar o caso. Tente ser mais específico:\n/novocaso [nome], [idade], [tipo de ação], [detalhes]', ctx);
+        await env('❌ Não consegui interpretar os dados. Tente novamente com /novocaso e seja mais específico na descrição.', ctx);
+        delete global._intakeSessoes[chatId];
         return;
       }
-      
-      // Salva no Supabase como EM_PREP + AGUARDANDO_APROVACAO
+
+      // 4. Criar caso no Supabase — Em Preparação
+      const ehAdmin = isAdvogado(chatId);
       const novoCaso = {
-        nome: dados.nome || 'Caso sem nome',
-        tipo: dados.tipo || '',
+        nome: dados.nome_caso || dados.nome_cliente || 'Caso sem nome',
+        tipo: dados.tipo_acao || '',
         area: dados.area || 'Cível',
         partes: dados.partes || '',
-        status: 'AGUARDANDO_APROVACAO',
-        resumo: dados.resumo || descricao,
-        docsFaltantes: (dados.docs_necessarios || []).join(', '),
-        criadoPor: 'telegram_' + ctx.chatId,
-        criadoEm: new Date().toISOString()
+        status: ehAdmin ? 'EM_PREP' : 'AGUARDANDO_APROVACAO',
+        resumo: dados.resumo_caso || sessao.textos.join(' '),
+        nome_cliente: dados.nome_cliente || '',
+        cpf_cliente: dados.cpf || '',
+        rg_cliente: dados.rg || '',
+        data_nascimento: dados.data_nascimento || '',
+        estado_civil: dados.estado_civil || '',
+        profissao: dados.profissao || '',
+        endereco: dados.endereco || '',
+        telefone: dados.telefone || '',
+        email: dados.email || '',
+        valor_causa: dados.valor_causa_estimado || '',
+        urgencia: dados.urgencia || 'normal',
+        docs_recebidos: JSON.stringify(dados.docs_recebidos || []),
+        docs_faltantes: JSON.stringify(dados.docs_faltantes || []),
+        observacoes: dados.observacoes || '',
+        criado_por: ctx.canal + '_' + chatId,
+        criado_em: new Date().toISOString(),
+        previsao: '',
+        numero: ''
       };
-      
+
       const salvo = await sbReq('POST', 'processos', novoCaso, {}, {'Prefer':'return=representation'});
-      
+
       if (salvo.ok) {
         const casoId = salvo.body && salvo.body[0] ? salvo.body[0].id : '?';
-        
-        // Confirma para quem criou
-        let confirmMsg = '✅ *Caso cadastrado com sucesso!*\n\n';
-        confirmMsg += '📋 ' + novoCaso.nome + '\n';
-        confirmMsg += '⚖ Tipo: ' + novoCaso.tipo + '\n';
-        confirmMsg += '📁 Área: ' + novoCaso.area + '\n';
-        confirmMsg += '👥 Partes: ' + novoCaso.partes + '\n';
-        if (novoCaso.docsFaltantes) confirmMsg += '⚠ Docs necessários: ' + novoCaso.docsFaltantes + '\n';
-        confirmMsg += '\n⏳ Status: AGUARDANDO APROVAÇÃO DO CEO';
-        await env(confirmMsg, ctx);
-        
-        // Notifica o CEO (Kleuber) para aprovar
-        const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || ctx.chatId;
-        if (adminChatId && adminChatId !== String(ctx.chatId)) {
-          let notif = '🔔 *NOVO CASO PARA APROVAR*\n\n';
-          notif += '📋 ' + novoCaso.nome + '\n';
-          notif += '⚖ ' + novoCaso.tipo + ' (' + novoCaso.area + ')\n';
-          notif += '👥 ' + novoCaso.partes + '\n';
-          notif += '📝 ' + novoCaso.resumo + '\n';
-          notif += '\nCriado por: Telegram\n';
-          notif += '\n/aprovar_' + casoId + ' — Aprovar caso';
-          notif += '\n/rejeitar_' + casoId + ' — Rejeitar caso';
-          try { await enviarMsgTelegram(adminChatId, notif); } catch(e) { console.warn('[Lex] Erro notificando CEO:', e.message); }
+        const docsRecebidos = dados.docs_recebidos || [];
+        const docsFaltantes = dados.docs_faltantes || [];
+
+        // 5. Mensagem de confirmação completa
+        let msg = '✅ *CASO CADASTRADO COM SUCESSO!* (#' + casoId + ')\n\n';
+        msg += '👤 *Cliente:* ' + (dados.nome_cliente || '—') + '\n';
+        if (dados.cpf) msg += '📄 CPF: ' + dados.cpf + '\n';
+        if (dados.rg) msg += '🪪 RG: ' + dados.rg + '\n';
+        if (dados.telefone) msg += '📱 Tel: ' + dados.telefone + '\n';
+        msg += '\n⚖ *Caso:* ' + (dados.tipo_acao || '—') + '\n';
+        msg += '📁 *Área:* ' + (dados.area || '—') + '\n';
+        msg += '👥 *Partes:* ' + (dados.partes || '—') + '\n';
+        if (dados.urgencia && dados.urgencia !== 'normal') msg += '🚨 *URGÊNCIA:* ' + dados.urgencia.toUpperCase() + ' — ' + (dados.motivo_urgencia||'') + '\n';
+        msg += '\n📝 *Resumo:*\n' + (dados.resumo_caso || '—') + '\n';
+
+        if (docsRecebidos.length) {
+          msg += '\n✅ *Docs recebidos (' + docsRecebidos.length + '):*\n';
+          docsRecebidos.forEach(d => msg += '  ✓ ' + d + '\n');
         }
+
+        if (docsFaltantes.length) {
+          msg += '\n⚠ *DOCS QUE AINDA FALTAM (' + docsFaltantes.length + '):*\n';
+          docsFaltantes.forEach(d => msg += '  ❌ ' + d + '\n');
+          msg += '\n💡 _Envie os documentos faltantes a qualquer momento — o Lex atualiza automaticamente._';
+        } else {
+          msg += '\n🎯 *Todos os documentos principais recebidos!*';
+        }
+
+        if (dados.observacoes) msg += '\n\n📌 *Obs:* ' + dados.observacoes;
+
+        msg += '\n\n' + (ehAdmin ? '✅ Status: EM PREPARAÇÃO' : '⏳ Status: AGUARDANDO APROVAÇÃO DO CEO');
+
+        await env(msg, ctx);
+
+        // 6. Se não é admin, notificar CEO pra aprovar
+        if (!ehAdmin) {
+          const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || CHAT_ID;
+          if (adminChatId) {
+            let notif = '🔔 *NOVO CASO PARA APROVAR*\n\n';
+            notif += '👤 ' + (dados.nome_cliente||'?') + '\n';
+            notif += '⚖ ' + (dados.tipo_acao||'?') + ' (' + (dados.area||'?') + ')\n';
+            notif += '👥 ' + (dados.partes||'?') + '\n';
+            notif += '📝 ' + (dados.resumo_caso||'').substring(0,200) + '\n';
+            notif += '\nCriado por: ' + ctx.canal + ' (' + (ctx.nomeUsuario||chatId) + ')\n';
+            notif += '\n/aprovar\\_' + casoId + ' — Aprovar\n/rejeitar\\_' + casoId + ' — Rejeitar\n/detalhes\\_' + casoId + ' — Ver completo';
+            try { await enviarMsgTelegram(adminChatId, notif); } catch(e) { console.warn('[Lex] Erro notificando CEO:', e.message); }
+          }
+        }
+
+        // 7. Logar atividade
+        logAtividade('juridico', chatId, 'caso_criado_intake', dados.nome_caso || dados.nome_cliente || 'caso').catch(()=>{});
+
       } else {
-        await env('❌ Erro ao salvar: ' + (salvo.erro || 'erro desconhecido'), ctx);
+        await env('❌ Erro ao salvar: ' + (salvo.erro || 'erro desconhecido') + '\n\nTente novamente com /novocaso', ctx);
       }
+
     } catch(e) {
-      await env('❌ Erro no agente: ' + (e.message || e), ctx);
+      await env('❌ Erro no agente cadastrador: ' + (e.message || e), ctx);
+    }
+    delete global._intakeSessoes[chatId];
+  }
+
+  // ── Se está em modo intake, acumular dados ──
+  if(global._intakeSessoes[String(ctx.chatId)]) {
+    const sessao = global._intakeSessoes[String(ctx.chatId)];
+    
+    // /cancelar — sai do modo intake
+    if(low === '/cancelar' || low === 'cancelar') {
+      delete global._intakeSessoes[String(ctx.chatId)];
+      await env('❌ Cadastro cancelado.', ctx);
+      return;
+    }
+
+    // /pronto — finaliza e processa
+    if(low === '/pronto' || low === 'pronto' || low === '/cadastrar' || low === 'cadastrar') {
+      if(sessao.imagens.length === 0 && sessao.textos.length === 0) {
+        await env('⚠ Nenhum dado recebido ainda. Envie fotos dos documentos e/ou descreva o caso antes de finalizar.', ctx);
+        return;
+      }
+      clearTimeout(sessao._timeout);
+      await _finalizarIntake(sessao, ctx);
+      return;
+    }
+
+    // Acumular imagem
+    if(dados.imagem) {
+      sessao.imagens.push(dados.imagem);
+      const n = sessao.imagens.length;
+      await env('📸 Foto ' + n + ' recebida! Continue enviando ou digite /pronto quando terminar.', ctx);
+      // Reset timer de 2min
+      clearTimeout(sessao._timeout);
+      sessao._timeout = setTimeout(() => {
+        _finalizarIntake(sessao, ctx).catch(e => console.warn('[Lex] Auto-intake erro:', e.message));
+      }, 120000);
+      return;
+    }
+
+    // Acumular arquivo (PDF, DOCX)
+    if(dados.arquivo) {
+      sessao.arquivos.push({ buffer: dados.arquivo.buffer, nome: dados.arquivo.nome, mime: dados.arquivo.mime });
+      await env('📎 Arquivo "' + dados.arquivo.nome + '" recebido! Continue ou /pronto.', ctx);
+      clearTimeout(sessao._timeout);
+      sessao._timeout = setTimeout(() => {
+        _finalizarIntake(sessao, ctx).catch(e => console.warn('[Lex] Auto-intake erro:', e.message));
+      }, 120000);
+      return;
+    }
+
+    // Acumular áudio
+    if(dados.audio) {
+      sessao.textos.push('[ÁUDIO RECEBIDO — transcrição pendente]');
+      await env('🎙 Áudio recebido! Continue enviando ou /pronto.', ctx);
+      clearTimeout(sessao._timeout);
+      sessao._timeout = setTimeout(() => {
+        _finalizarIntake(sessao, ctx).catch(e => console.warn('[Lex] Auto-intake erro:', e.message));
+      }, 120000);
+      return;
+    }
+
+    // Acumular texto
+    if(txt) {
+      sessao.textos.push(txt);
+      // Se é uma mensagem curta tipo "pronto", "ok", "é isso" — finaliza
+      if(/^(é isso|só isso|tá bom|ta bom|feito|fim|ok|enviei tudo|é só|so isso)$/i.test(txt.trim())) {
+        clearTimeout(sessao._timeout);
+        await _finalizarIntake(sessao, ctx);
+        return;
+      }
+      await env('📝 Anotado. Continue enviando fotos/docs ou /pronto quando terminar.', ctx);
+      clearTimeout(sessao._timeout);
+      sessao._timeout = setTimeout(() => {
+        _finalizarIntake(sessao, ctx).catch(e => console.warn('[Lex] Auto-intake erro:', e.message));
+      }, 120000);
+      return;
     }
     return;
   }
-  
-  // ── APROVAR/REJEITAR caso — /aprovar_ID e /rejeitar_ID ──
-  if(low.startsWith('/aprovar_') || low.startsWith('/rejeitar_')) {
-    if(!isAdvogado(ctx.chatId)) {
-      await env('🔒 Apenas o advogado pode aprovar/rejeitar casos.', ctx);
+
+  // ── NOVO CASO — /novocaso entra em modo intake ──
+  if(low.startsWith('/novocaso')) {
+    if(!isEquipe(ctx.chatId)) {
+      await env('🔒 Apenas equipe do escritório pode cadastrar casos.', ctx);
       return;
     }
-    const casoId = low.replace(/^\/(aprovar|rejeitar)_/, '').trim();
+    const descInicial = txt.replace(/^\/novocaso\s*/i, '').trim();
+    
+    // Cria sessão de intake
+    const sessao = {
+      chatId: String(ctx.chatId),
+      canal: ctx.canal,
+      nomeUsuario: ctx.nomeUsuario,
+      textos: descInicial ? [descInicial] : [],
+      imagens: [],
+      arquivos: [],
+      criadoEm: new Date().toISOString(),
+      _timeout: null
+    };
+
+    // Se já veio com imagem junto
+    if(dados.imagem) sessao.imagens.push(dados.imagem);
+    if(dados.arquivo) sessao.arquivos.push({ buffer: dados.arquivo.buffer, nome: dados.arquivo.nome, mime: dados.arquivo.mime });
+
+    global._intakeSessoes[String(ctx.chatId)] = sessao;
+
+    // Timer de 2min — se ficar em silêncio, finaliza automaticamente
+    sessao._timeout = setTimeout(() => {
+      _finalizarIntake(sessao, ctx).catch(e => console.warn('[Lex] Auto-intake erro:', e.message));
+    }, 120000);
+
+    let bemVindo = '📋 *MODO CADASTRO ATIVADO*\n\n';
+    bemVindo += '📸 Envie as fotos dos documentos do cliente\n';
+    bemVindo += '📎 Envie PDFs, contratos, laudos\n';
+    bemVindo += '💬 Descreva o caso por texto ou áudio\n';
+    bemVindo += '🎙 Pode mandar áudio explicando\n\n';
+    bemVindo += 'Quando terminar:\n';
+    bemVindo += '• Digite /pronto ou "pronto"\n';
+    bemVindo += '• Ou aguarde 2 min — cadastro automático\n\n';
+    bemVindo += '❌ /cancelar para desistir';
+    if(descInicial) bemVindo += '\n\n✅ Descrição inicial recebida: "' + descInicial.substring(0,100) + '"';
+    if(dados.imagem) bemVindo += '\n📸 1 foto já recebida!';
+    
+    await env(bemVindo, ctx);
+    return;
+  }
+  
+  // ── APROVAR/REJEITAR/DETALHES caso — /aprovar_ID, /rejeitar_ID, /detalhes_ID ──
+  if(low.startsWith('/aprovar_') || low.startsWith('/rejeitar_') || low.startsWith('/detalhes_')) {
+    if(!isAdvogado(ctx.chatId)) {
+      await env('🔒 Apenas o CEO/admin pode gerenciar casos.', ctx);
+      return;
+    }
+    const casoId = low.replace(/^\/(aprovar|rejeitar|detalhes)_/, '').trim();
+
+    // /detalhes — mostra info completa do caso
+    if(low.startsWith('/detalhes_')) {
+      try {
+        const rows = await sbGet('processos', {id: 'eq.' + casoId}, {limit:1});
+        if(rows && rows[0]) {
+          const c = rows[0];
+          let d = '📋 *DETALHES DO CASO #' + casoId + '*\n\n';
+          d += '👤 Cliente: ' + (c.nome_cliente||c.nome||'—') + '\n';
+          if(c.cpf_cliente) d += '📄 CPF: ' + c.cpf_cliente + '\n';
+          if(c.rg_cliente) d += '🪪 RG: ' + c.rg_cliente + '\n';
+          if(c.telefone) d += '📱 Tel: ' + c.telefone + '\n';
+          if(c.email) d += '📧 Email: ' + c.email + '\n';
+          if(c.endereco) d += '📍 End: ' + c.endereco + '\n';
+          d += '\n⚖ Tipo: ' + (c.tipo||'—') + '\n';
+          d += '📁 Área: ' + (c.area||'—') + '\n';
+          d += '👥 Partes: ' + (c.partes||'—') + '\n';
+          d += '🔖 Status: ' + (c.status||'—') + '\n';
+          if(c.urgencia && c.urgencia !== 'normal') d += '🚨 Urgência: ' + c.urgencia + '\n';
+          d += '\n📝 Resumo:\n' + (c.resumo||'—') + '\n';
+          try {
+            const docsR = JSON.parse(c.docs_recebidos||'[]');
+            const docsF = JSON.parse(c.docs_faltantes||'[]');
+            if(docsR.length) { d += '\n✅ Recebidos: ' + docsR.join(', '); }
+            if(docsF.length) { d += '\n❌ Faltantes: ' + docsF.join(', '); }
+          } catch(e){}
+          if(c.observacoes) d += '\n📌 Obs: ' + c.observacoes;
+          d += '\n\nCriado: ' + (c.criado_em||'?') + ' por ' + (c.criado_por||'?');
+          if(c.status === 'AGUARDANDO_APROVACAO') {
+            d += '\n\n/aprovar\\_' + casoId + ' — Aprovar\n/rejeitar\\_' + casoId + ' — Rejeitar';
+          }
+          await env(d, ctx);
+        } else {
+          await env('⚠ Caso #' + casoId + ' não encontrado.', ctx);
+        }
+      } catch(e) { await env('❌ Erro: ' + e.message, ctx); }
+      return;
+    }
+
     const aprovar = low.startsWith('/aprovar_');
     const novoStatus = aprovar ? 'EM_PREP' : 'ARQUIVADO';
     
@@ -6662,6 +6947,26 @@ async function adapterEvolution(body) {
     const numeroPlano = _numeroPlanoWhats(chatIdWpp);
     if(numeroPlano === String(SECRETARIO_WHATSAPP_CONFIG.numero_advogado||'')) {
       const txtAdv = msgData.conversation || msgData.extendedTextMessage?.text || '';
+      // Kleuber pode usar /novocaso pelo WhatsApp — redireciona pro processarMensagem
+      if(txtAdv.trim() && /^\/novocaso/i.test(txtAdv.trim())) {
+        return processarMensagem(ctx, {texto: txtAdv.trim()});
+      }
+      // Se Kleuber está em modo intake, redireciona TUDO pro processarMensagem
+      if(global._intakeSessoes && global._intakeSessoes[chatIdWpp]) {
+        if(txtAdv.trim()) return processarMensagem(ctx, {texto: txtAdv.trim()});
+        // Imagem/doc do Kleuber em modo intake
+        const docMsg2 = msgData.documentMessage || msgData.documentWithCaptionMessage?.message?.documentMessage;
+        const imgMsg2 = msgData.imageMessage;
+        if(docMsg2 || imgMsg2) {
+          const b64 = docMsg2?.base64 || imgMsg2?.base64 || body.base64 || '';
+          if(b64) {
+            const bufI = Buffer.from(b64, 'base64');
+            if(imgMsg2) return processarMensagem(ctx, {imagem: {buffer:bufI, mime:imgMsg2.mimetype||'image/jpeg'}});
+            return processarMensagem(ctx, {arquivo: {buffer:bufI, nome:docMsg2?.fileName||'doc.pdf', mime:docMsg2?.mimetype||'application/pdf'}});
+          }
+        }
+        return;
+      }
       if(txtAdv.trim()) {
         await _registrarRespostaAdvogadoWhats(txtAdv).catch(()=>{});
       }
