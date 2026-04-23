@@ -74,7 +74,7 @@ Análise psicológica do julgador (quando houver juiz/relator identificado):
 
 Quando for propor atualização, considere:
 - andamento: descrição formal do que foi feito (1-3 frases, tom jurídico)
-- status: URGENTE | ATIVO | MONITORAR | AGUARDANDO | VENCIDO | CONCLUIDO
+- status: URGENTE | ATIVO | MONITORAR | AGUARDANDO | VENCIDO | CONCLUIDO — REGRA CRÍTICA: NÃO mude o status atual a menos que Kleuber peça explicitamente. Se o processo está URGENTE, ele continua URGENTE. Atualizar informações NÃO significa mudar status.
 - dias_parado: geralmente zerar (0) quando há movimentação nova
 - proxima_acao: o que precisa ser feito depois e por quê
 - prazo: se houver novo prazo, no formato YYYY-MM-DD
