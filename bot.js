@@ -8337,6 +8337,43 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ═══ DIAGNÓSTICO: testa IA + agente vivo + deps — remover depois ═══
+  if(url==='/api/diagnostico' && req.method==='GET') {
+    const diag = { ts: new Date().toISOString(), checks: {} };
+    try {
+      // 1. API Key presente?
+      diag.checks.api_key = AK ? 'presente ('+AK.substring(0,10)+'...)' : 'AUSENTE';
+      // 2. Modelo
+      diag.checks.modelo = 'claude-sonnet-4-20250514';
+      // 3. Agente vivo carregado?
+      diag.checks.agente_vivo = lex_agente_vivo ? 'carregado' : 'NAO CARREGADO';
+      diag.checks.agente_vivo_tratarRota = (lex_agente_vivo && typeof lex_agente_vivo.tratarRota === 'function') ? 'OK' : 'FALHA';
+      // 4. Processos
+      diag.checks.processos_count = processos.length;
+      // 5. Testa chamada real à IA
+      try {
+        const testeResp = await ia([{role:'user',content:'Diga apenas: OK FUNCIONANDO'}], 'Responda em 2 palavras.', 50);
+        diag.checks.ia_teste = 'OK: ' + (testeResp||'').substring(0,100);
+      } catch(eIa) {
+        diag.checks.ia_teste = 'ERRO: ' + String(eIa.message||eIa).substring(0,300);
+      }
+      // 6. sbReq funciona?
+      try {
+        const sbTest = await sbReq('GET', 'processos', null, { limit: 1 });
+        diag.checks.supabase = 'OK (status '+(sbTest.status||'?')+')';
+      } catch(eSb) {
+        diag.checks.supabase = 'ERRO: ' + String(eSb.message||eSb).substring(0,200);
+      }
+      diag.status = 'diagnostico_completo';
+    } catch(eGeral) {
+      diag.status = 'erro_geral';
+      diag.erro = String(eGeral.message||eGeral).substring(0,500);
+    }
+    res.writeHead(200, corsHeaders(req));
+    res.end(JSON.stringify(diag, null, 2));
+    return;
+  }
+
   if(url==='/api/processos' && req.method==='GET') {
     // FIX-11: rota protegida — sem token retorna 401
     const pfProc = validarToken(getToken(req));
