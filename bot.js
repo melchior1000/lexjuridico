@@ -301,8 +301,8 @@ const BACKOFF_BASE_MS = parseInt(process.env.BACKOFF_BASE_MS || '30000', 10);
 try { if(!fs.existsSync(PDF_TMP_DIR)) fs.mkdirSync(PDF_TMP_DIR, {recursive:true}); } catch(e){ console.warn('[Lex][bot] Erro silenciado:', (e && e.message) ? e.message : e); }
 
 const SENHAS_WEB = {
-  admin:      process.env.SENHA_ADMIN      || 'CONFIGURE_SENHA_ADMIN_NO_RENDER',
-  secretaria: process.env.SENHA_SECRETARIA || 'CONFIGURE_SENHA_SECRETARIA_NO_RENDER'
+  admin:      process.env.SENHA_ADMIN,
+  secretaria: process.env.SENHA_SECRETARIA
 };
 
 const PERMS = {
@@ -7106,7 +7106,8 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/login' && req.method==='POST') {
     try {
       const b = await lerBody(req);
-      if(!b.perfil || !b.senha || !SENHAS_WEB[b.perfil]) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Perfil ou senha inválidos'})); return; }
+      if(!b.perfil || !b.senha) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Perfil e senha obrigatorios'})); return; }
+      if(!SENHAS_WEB[b.perfil]) { res.writeHead(500,CORS); res.end(JSON.stringify({error:'Senha nao configurada no servidor - contate admin'})); return; }
       if(b.senha !== SENHAS_WEB[b.perfil]) { res.writeHead(401,CORS); res.end(JSON.stringify({error:'Senha incorreta'})); return; }
       const token = gerarToken(b.perfil);
       global._sessaoAtividade.set(token, Date.now());
@@ -8667,6 +8668,34 @@ setInterval(async () => {
 }, 5 * 60 * 1000);
 
 server.listen(process.env.PORT||3000, () => {
+  // VALIDACAO DE SEGURANCA NO STARTUP
+  const errosSeguranca = [];
+  
+  // 1. Verificar senhas configuradas
+  if(!process.env.SENHA_ADMIN) errosSeguranca.push('SENHA_ADMIN nao configurada');
+  if(!process.env.SENHA_SECRETARIA) errosSeguranca.push('SENHA_SECRETARIA nao configurada');
+  if(process.env.SENHA_ADMIN?.length < 8) errosSeguranca.push('SENHA_ADMIN muito curta (min 8 caracteres)');
+  
+  // 2. Verificar ANTHROPIC_KEY
+  if(!process.env.ANTHROPIC_KEY) errosSeguranca.push('ANTHROPIC_KEY nao configurada');
+  else if(!process.env.ANTHROPIC_KEY.startsWith('sk-ant-')) errosSeguranca.push('ANTHROPIC_KEY formato invalido');
+  
+  // 3. Verificar Supabase
+  if(!process.env.SUPABASE_URL) errosSeguranca.push('SUPABASE_URL nao configurada');
+  if(!process.env.SUPABASE_KEY) errosSeguranca.push('SUPABASE_KEY nao configurada');
+  
+  // 4. Verificar Telegram (opcional mas alerta)
+  if(!process.env.TELEGRAM_TOKEN) console.warn('[SEGURANCA] TELEGRAM_TOKEN nao configurado - notificacoes desativadas');
+  
+  if(errosSeguranca.length > 0) {
+    console.error('[SEGURANCA] ERROS CRITICOS ENCONTRADOS:');
+    errosSeguranca.forEach(e => console.error('  - ' + e));
+    console.error('[SEGURANCA] O sistema funcionara com funcionalidades limitadas.');
+    // Nao desliga mas alerta
+  } else {
+    console.log('[SEGURANCA] Todas as credenciais validadas com sucesso');
+  }
+  
   console.log('HTTP+API porta', process.env.PORT||3000);
 });
 
