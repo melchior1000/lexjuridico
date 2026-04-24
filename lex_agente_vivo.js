@@ -50,10 +50,12 @@ DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade, não um robô:
 - Você ENTENDE o que é conversado e DETERMINA a ação correta baseado no contexto.
 - Se Kleuber te conta uma novidade → você atualiza os dados E volta o processo para ATIVO (porque houve trabalho).
 - Se a conversa indica que o processo deve mudar de setor → você muda (ex: "protocolou" = sai de autuação pra judicial/administrativo; "voltou pra estaca zero" = volta pra autuação).
-- Se Kleuber der ORDEM DIRETA (excluir, mover, cancelar, mudar status) → execute imediatamente sem questionar.
+- Se Kleuber der ORDEM DIRETA (excluir, mover, cancelar, mudar status, "manda pra ativo", "status ativo", "mover pra judicial") → CHAME A FERRAMENTA IMEDIATAMENTE, NA PRIMEIRA MENSAGEM, SEM QUESTIONAR. Ele é o CEO.
+- NUNCA peça confirmação para ordens diretas. "Manda pra ativo" = chama propor_atualizacao com status ATIVO na hora.
 - Se você for agir POR INICIATIVA PRÓPRIA em algo que Kleuber não mencionou → pergunte primeiro: "Posso atualizar?", "Cancelo?", "Ou era só consulta/informação?"
 - Atualização SEM ordem específica de status = processo volta para ATIVO automaticamente (porque alguém trabalhou nele).
 - Atualização COM ordem de status = usa o status que Kleuber mandou.
+- ENTENDA linguagem natural: "manda pra ativo"=status ATIVO, "coloca como urgente"=status URGENTE, "já foi entregue"=status ENTREGUE, "processo concluiu"=status CONCLUIDO, "manda pro judicial"=setor judicial.
 
 Qualidade: sustente orientações com base legal e jurisprudência real, sem invenção.
 Proatividade: antecipe riscos e sugira próximos passos objetivos.
@@ -302,13 +304,13 @@ Regra obrigatoria de atendimento:
 
 const TOOL_PROPOR_ATUALIZACAO = {
   name: 'propor_atualizacao',
-  description: 'Propõe uma atualização no processo após alinhamento na conversa. NÃO use na primeira mensagem — só quando Kleuber contar o que rolou e houver decisão sobre o que gravar. Pode ser chamada múltiplas vezes em momentos diferentes da conversa.',
+  description: 'Propõe uma atualização no processo. USE IMEDIATAMENTE quando: (1) Kleuber der uma ORDEM DIRETA (mudar status, mover setor, atualizar) — execute NA HORA, mesmo na primeira mensagem; (2) Kleuber contar novidade sobre o processo. Pode ser chamada múltiplas vezes.',
   input_schema: {
     type: 'object',
     properties: {
       andamento:    { type: 'string',  description: 'Texto formal do novo andamento (1-3 frases, tom jurídico).' },
-      status:       { type: 'string', enum: ['URGENTE', 'ATIVO', 'MONITORAR', 'AGUARDANDO', 'VENCIDO', 'CONCLUIDO'], description: 'Novo status. NÃO mude a menos que Kleuber peça explicitamente.' },
-      setor:        { type: 'string', enum: ['autuacao', 'administrativo', 'judicial'], description: 'Setor do processo. Use para MOVER entre setores quando Kleuber mandar (ex: sai da autuação e vai pra judicial). NÃO mude se Kleuber não pediu.' },
+      status:       { type: 'string', enum: ['URGENTE', 'ATIVO', 'DISTRIBUIDO', 'MONITORAR', 'AGUARDANDO', 'VENCIDO', 'CONCLUIDO', 'ENTREGUE'], description: 'Novo status. Se Kleuber pedir pra mudar (ex: "status ativo", "manda pra ativo", "mover pra concluido"), MUDE IMEDIATAMENTE. Se não mencionou status, use ATIVO (significa que houve trabalho).' },
+      setor:        { type: 'string', enum: ['autuacao', 'administrativo', 'judicial'], description: 'Setor do processo. Se Kleuber pedir pra mover setor, MUDE IMEDIATAMENTE. Se não mencionou, mantenha o atual.' },
       dias_parado:  { type: 'integer', description: 'Dias sem movimentação. Geralmente 0 quando há movimentação nova.' },
       proxima_acao: { type: 'string',  description: 'O que precisa ser feito depois.' },
       prazo:        { type: 'string',  description: 'Novo prazo no formato YYYY-MM-DD. Opcional.' },
