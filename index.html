@@ -833,8 +833,11 @@ table{max-width:100%;}
   </div>
   <div id="chat-msgs"></div>
   <div id="chat-mem-bar"></div>
+  <div id="chat-attach-preview" style="display:none;padding:6px 10px;margin:0 8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:12px"></div>
   <div class="chat-foot">
     <textarea id="chat-in" placeholder="Pergunte sobre o processo, peça análise, jurisprudência..."></textarea>
+    <input type="file" id="chat-file-input" accept=".pdf,image/*,audio/*" style="display:none" onchange="chatAnexarArquivo(this.files[0])">
+    <button class="chat-mic-btn" type="button" aria-label="Anexar arquivo" title="Anexar PDF/imagem/audio" onclick="document.getElementById('chat-file-input').click()" style="font-size:18px">📎</button>
     <button id="chat-mic-btn" class="chat-mic-btn" type="button" aria-label="Gravar voz no chat" title="Falar">
       <span class="mic-icon">🎤</span>
       <span id="chat-mic-timer" class="chat-mic-timer">00:00</span>
@@ -1779,6 +1782,94 @@ async function chamarServidor(endpoint, payload) {
   console.log('[LEX] sucesso', endpoint, Object.keys(data));
   return data;
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ANALISE DE DOCUMENTOS — PDFs de qualquer tamanho (ate 5000pg / 100MB+)
+// Estrategia:
+//   - Pequeno (<=10MB): /api/analisar sincrono
+//   - Grande: /api/analisar-async + polling /api/analisar-status/:jobId
+// TRANSPARENTE para o chamador — retorna o mesmo objeto que /api/analisar.
+// ════════════════════════════════════════════════════════════════════════════════
+async function analisarDocInteligente(payload, onProgresso) {
+  // payload: { base64, nome, mimeType }
+  const tk = getAuthToken ? getAuthToken() : null;
+  if(!tk) throw new Error('Nao autenticado');
+  const headers = { 'Content-Type': 'application/json', 'Authorization':'Bearer '+tk };
+
+  // Estimativa de tamanho pelo base64 (len*0.75 ≈ bytes)
+  const b64len = (payload.base64||'').length;
+  const approxBytes = b64len * 0.75;
+  const approxMB = approxBytes / 1048576;
+
+  // <=8MB E nao-PDF OU PDF pequeno (<5MB) -> modo sincrono (rapido)
+  const isPdf = (payload.mimeType||'').includes('pdf') || (payload.nome||'').toLowerCase().endsWith('.pdf');
+  const usarSincrono = approxMB <= 5 && (!isPdf || approxMB <= 5);
+
+  if(usarSincrono) {
+    try {
+      if(onProgresso) onProgresso({ fase:'enviando', msg:'Enviando documento...' });
+      const res = await fetchComTimeout(SERVIDOR + '/api/analisar', {
+        method:'POST', headers, body: JSON.stringify(payload)
+      }, 300000); // 5 min
+      if(res.ok) {
+        if(onProgresso) onProgresso({ fase:'concluido', msg:'Analise concluida' });
+        return await res.json();
+      }
+      // Se falhar, cai para async
+      console.warn('[analisarDocInteligente] sincrono falhou, tentando async...');
+    } catch(e) {
+      console.warn('[analisarDocInteligente] sincrono timeout, tentando async...', e.message);
+    }
+  }
+
+  // Modo assincrono — PDFs grandes
+  if(onProgresso) onProgresso({ fase:'enviando', msg:'Enviando PDF grande ('+approxMB.toFixed(1)+'MB) ao servidor...' });
+  const resStart = await fetchComTimeout(SERVIDOR + '/api/analisar-async', {
+    method:'POST', headers, body: JSON.stringify(payload)
+  }, 180000); // 3 min so para upload
+  if(!resStart.ok) {
+    const err = await resStart.json().catch(()=>({error:'Erro '+resStart.status}));
+    throw new Error(err.error || 'Erro no upload');
+  }
+  const { jobId } = await resStart.json();
+  if(!jobId) throw new Error('Servidor nao retornou jobId');
+
+  // Polling
+  const inicio = Date.now();
+  const MAX_ESPERA_MS = 2 * 60 * 60 * 1000; // 2h (PDFs de 5000pg)
+  let ultimoProgresso = -1;
+  while(true) {
+    if(Date.now() - inicio > MAX_ESPERA_MS) throw new Error('Timeout: analise demorou mais de 2h');
+    await new Promise(r => setTimeout(r, 5000)); // 5s entre polls
+    try {
+      const rSt = await fetchComTimeout(SERVIDOR + '/api/analisar-status/' + encodeURIComponent(jobId), {
+        method:'GET', headers
+      }, 30000);
+      if(!rSt.ok) continue; // tenta de novo
+      const st = await rSt.json();
+      if(st.status === 'concluido') {
+        if(onProgresso) onProgresso({ fase:'concluido', msg:'Analise completa', progresso:100 });
+        return st.resultado;
+      }
+      if(st.status === 'erro') {
+        throw new Error(st.erro || 'Erro na analise');
+      }
+      if(st.progresso !== ultimoProgresso) {
+        ultimoProgresso = st.progresso;
+        if(onProgresso) onProgresso({
+          fase:'processando',
+          msg:'Analisando '+st.chunkAtual+'/'+st.totalChunks+' partes ('+st.progresso+'%)',
+          progresso: st.progresso
+        });
+      }
+    } catch(e) {
+      console.warn('[analisarDocInteligente] erro no polling (retry):', e.message);
+      // nao desiste — rede pode oscilar
+    }
+  }
+}
+// Compat: codigo antigo que chama chamarServidor('/api/analisar', ...) continua
+// funcionando; quem precisar de PDFs grandes deve usar analisarDocInteligente.
 
 
 // ═══ TOUR GUIADO PRIMEIRO USO ════════════════════════════════
@@ -5783,7 +5874,7 @@ function renderJuizes(){
           <div style="font-size:12px;color:var(--text3);margin-top:4px">${todosJuizes.length} magistrado${todosJuizes.length!==1?'s':''} mapeado${todosJuizes.length!==1?'s':''} · ${analisados.length} com perfil completo · ${juizesProc.length} extraído${juizesProc.length!==1?'s':''} de processos</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn-primary" style="padding:10px 18px;font-size:12px;font-weight:700;border-radius:10px" onclick="_juizBuscar()">🔍 Pesquisar Juiz</button>
+          <button class="btn-primary" style="padding:10px 18px;font-size:12px;font-weight:700;border-radius:10px" onclick="_juizAbrirPesquisa()">🔍 Pesquisar Juiz</button>
           <button class="btn-outline" style="padding:10px 14px;font-size:12px;border-radius:10px" onclick="addJuiz()">+ Manual</button>
           ${todosJuizes.length>0?`<button class="btn-outline" style="padding:10px 14px;font-size:12px;border-radius:10px;color:var(--accent)" onclick="_juizAnalisarTodos()">🤖 Analisar Todos</button>`:''}
         </div>
@@ -5821,12 +5912,10 @@ function renderJuizes(){
     <!-- BUSCA RÁPIDA -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:20px">
       <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:6px">🔍 Pesquisa Inteligente de Magistrado</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5">Formulário completo: nome, UF, município, comarca/vara, nº do processo, vínculo com processo do Lex e anexo de PDFs (o Lex lê automaticamente os PDFs — até 100 páginas por chamada, com chunking).</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input id="_juizBuscaInput" class="fi" style="flex:1;min-width:140px" placeholder="Nome do juiz, desembargador ou ministro..." onkeydown="if(event.key==='Enter'){event.preventDefault();_juizBuscar();}">
-        <input id="_juizBuscaTrib" class="fi" style="width:160px" placeholder="Tribunal (TJMG, TRF-6...)">
-        <button class="btn-primary" style="padding:10px 20px;font-size:12px;white-space:nowrap" onclick="_juizBuscar()">🤖 Analisar Perfil</button>
+        <button class="btn-primary" style="padding:10px 20px;font-size:12px;white-space:nowrap" onclick="_juizAbrirPesquisa()">🤖 Abrir Formulário de Pesquisa Completo</button>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:6px">O Lex pesquisa automaticamente nas jurisprudências, decisões e monta o perfil decisório completo.</div>
     </div>
 
     <!-- LISTA DE JUÍZES -->
@@ -7039,6 +7128,17 @@ async function _pIntakeSend() {
   chat.innerHTML += '<div style="background:var(--accent);color:#fff;padding:8px 12px;border-radius:10px 10px 4px 10px;margin-bottom:6px;max-width:85%;margin-left:auto;text-align:right">' + msg.replace(/</g,'&lt;') + '</div>';
   chat.innerHTML += '<div id="_pIntakeLoad" style="color:var(--text3);font-size:11px;padding:4px">⏳ Analisando e preenchendo...</div>';
   chat.scrollTop = chat.scrollHeight;
+
+  // NOVO: se houver analise de doc recente (<5min), incluir como contexto
+  let contextoDoc = '';
+  try {
+    const ua = window._pUltimaAnalise;
+    if (ua && (Date.now() - ua.ts) < 300000) {
+      contextoDoc = '\n\n=== DOCUMENTO ANEXADO (analise automatica) ===\n'
+        + 'Arquivo: ' + ua.nome + '\n'
+        + 'Dados extraidos: ' + JSON.stringify(ua.dados, null, 2);
+    }
+  } catch(_){}
   
   try {
     const system = `Você é o Agente de Intake ELITE do escritório Camargos Advocacia — o melhor cadastrador jurídico do Brasil.
@@ -7055,6 +7155,13 @@ O advogado Kleuber ou a secretária está descrevendo um caso de cliente. Sua mi
    - PAD, licitação, servidor público = ADMINISTRATIVO
 3. GERAR ORIENTAÇÃO OPERACIONAL — instruções claras para qualquer funcionário saber EXATAMENTE o que fazer ao pegar o processo
 4. LISTAR documentos que FALTAM para protocolar (checklist completo da área)
+5. SUGERIR DESTINO — para onde este caso deve ir apos cadastro:
+   - "cadastro"       = novo cliente/caso em preparacao (ainda nao e processo)
+   - "processo_novo"  = processo judicial NOVO a ser ajuizado (precisa preparacao para protocolo)
+   - "administrativo" = processo administrativo (DRJ, CARF, Prefeitura, orgao nao-judicial)
+   - "judicial"       = processo judicial EM ANDAMENTO (ja existe numero CNJ ou sera protocolado imediatamente)
+
+Se um documento foi anexado, USE as informacoes extraidas dele para preencher os campos.
 
 Responda APENAS em JSON puro (sem markdown, sem crases):
 {
@@ -7068,7 +7175,9 @@ Responda APENAS em JSON puro (sem markdown, sem crases):
   "docs_faltantes": ["lista de TODOS os documentos que faltam para esta área do direito"],
   "docs_sugeridos": ["lista dos docs obrigatórios para a área"],
   "urgencia": "normal|urgente|critico — se tem prazo correndo = urgente/critico",
-  "tipo_processo": "administrativo|judicial — baseado no conteúdo real"
+  "tipo_processo": "administrativo|judicial — baseado no conteúdo real",
+  "destino_sugerido": "cadastro|processo_novo|administrativo|judicial",
+  "destino_justificativa": "1-2 linhas explicando por que este destino"
 }
 
 REGRAS DE OURO:
@@ -7077,7 +7186,7 @@ REGRAS DE OURO:
 - Se tem prazo correndo, ALERTE na orientação com ⚠️ URGENTE
 - Preencha tribunal com base na jurisdição (MG=TJMG, Federal=TRF-6, Trabalhista=TRT-3)`;
     
-    const resposta = await chamarIA([{role:'user',content:msg}], system, 1500);
+    const resposta = await chamarIA([{role:'user',content: msg + contextoDoc}], system, 1500);
     
     // Remove loading
     const loadEl = document.getElementById('_pIntakeLoad');
@@ -7147,6 +7256,36 @@ REGRAS DE OURO:
         html += dados.docs_faltantes.map(d => '• ' + d).join('<br>');
         html += '</div>';
       }
+
+      // NOVO: Sugestao de destino — botoes para encaminhar diretamente
+      if (dados.destino_sugerido) {
+        const destinos = {
+          'cadastro':       { icone:'👤', label:'Cadastro (Em Preparacao)', cor:'#6366f1' },
+          'processo_novo':  { icone:'🆕', label:'Processo Novo (Judicial)', cor:'#0ea5e9' },
+          'administrativo': { icone:'🏛️', label:'Processo Administrativo',  cor:'#f59e0b' },
+          'judicial':       { icone:'⚖️', label:'Processo Judicial',        cor:'#10b981' }
+        };
+        const d = destinos[dados.destino_sugerido] || destinos['cadastro'];
+        html += '<div style="background:var(--surface2);border:2px solid '+d.cor+';padding:12px;border-radius:10px;margin-bottom:6px;max-width:90%">';
+        html += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">🎯 Destino sugerido</div>';
+        html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:22px">'+d.icone+'</div><div style="flex:1"><div style="font-weight:700;color:'+d.cor+'">'+d.label+'</div>';
+        if (dados.destino_justificativa) html += '<div style="font-size:11px;color:var(--text3)">'+dados.destino_justificativa+'</div>';
+        html += '</div></div>';
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+        html += '<button class="btn-save" style="flex:1;min-width:120px;font-size:11px;padding:8px;background:'+d.cor+';border-color:'+d.cor+'" onclick="_pIntakeEncaminhar(\''+dados.destino_sugerido+'\')">✓ Encaminhar para '+d.label+'</button>';
+        html += '</div>';
+        // Alternativas manuais
+        html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">';
+        Object.keys(destinos).forEach(k=>{
+          if (k !== dados.destino_sugerido) {
+            html += '<button class="btn-outline" style="font-size:10px;padding:4px 8px" onclick="_pIntakeEncaminhar(\''+k+'\')">'+destinos[k].icone+' '+destinos[k].label+'</button>';
+          }
+        });
+        html += '</div>';
+        html += '</div>';
+        // Guarda p/ encaminhamento
+        window._pIntakeDados = dados;
+      }
       
       chat.innerHTML += html;
       
@@ -7155,7 +7294,7 @@ REGRAS DE OURO:
       const docs = _CHECKLIST_DOCS[area] || _CHECKLIST_DOCS['Cível'];
       _renderChecklistPrep(area, docs, dados.docs_sugeridos || []);
       
-      chat.innerHTML += '<div style="background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);padding:8px 12px;border-radius:8px;margin-top:4px;font-size:11px;font-weight:600">✅ Confira os dados acima e ajuste se necessário. Depois clique em SALVAR.</div>';
+      chat.innerHTML += '<div style="background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);padding:8px 12px;border-radius:8px;margin-top:4px;font-size:11px;font-weight:600">✅ Confira os dados acima e ajuste se necessário. Depois clique em SALVAR ou use os botões de encaminhamento.</div>';
     } else {
       chat.innerHTML += '<div style="background:var(--green);color:#fff;padding:8px 12px;border-radius:10px 10px 10px 4px;margin-bottom:6px;max-width:85%">🤖 ' + resposta.replace(/\n/g,'<br>').substring(0,500) + '</div>';
     }
@@ -7163,6 +7302,86 @@ REGRAS DE OURO:
   } catch(e) {
     const loadEl = document.getElementById('_pIntakeLoad');
     if (loadEl) loadEl.innerHTML = '<span style="color:var(--red)">❌ Erro: ' + (e.message||e) + '</span>';
+  }
+}
+
+// Callback chamado por _pAnal apos analise automatica de PDF/foto no modal de preparacao.
+// Mostra o resultado no chat do agente e dispara analise conjunta (doc + contexto).
+function _pIntakeAgenteAnalisou(nomeArq, dados) {
+  const chat = document.getElementById('_pIntakeChat');
+  if (!chat) return;
+  const resumo = [
+    dados?.tipo_documento && ('📄 '+dados.tipo_documento),
+    dados?.nome_cliente && ('👤 '+dados.nome_cliente),
+    dados?.tipo_acao && ('⚖️ '+dados.tipo_acao),
+    dados?.numero_processo && ('🔢 '+dados.numero_processo),
+    dados?.tribunal && ('🏛️ '+dados.tribunal),
+    dados?.prazo && ('⏰ Prazo: '+dados.prazo)
+  ].filter(Boolean).join('<br>');
+  chat.innerHTML += '<div style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:10px;margin-bottom:6px;max-width:90%;font-size:12px;line-height:1.55">'
+    + '<strong>📎 Documento anexado e analisado: ' + (nomeArq||'arquivo').replace(/</g,'&lt;') + '</strong><br>'
+    + (resumo || '<em>sem dados estruturados</em>')
+    + '<div style="margin-top:6px;color:var(--text3);font-size:11px">Agora me conte em texto o que voce quer fazer: cadastrar, abrir processo novo, administrativo ou judicial? Posso sugerir o destino.</div>'
+    + '</div>';
+  chat.scrollTop = chat.scrollHeight;
+  // Dispara uma analise automatica usando o doc como contexto
+  const input = document.getElementById('_pIntakeInput');
+  if (input && !input.value) {
+    input.value = 'Analise este documento anexado e sugira o destino correto (cadastro, processo novo, administrativo ou judicial). Preencha tudo o que conseguir.';
+    _pIntakeSend();
+  }
+}
+
+// Encaminha o caso para o setor sugerido — pode salvar em preparacao OU ir direto p/ setor destino
+async function _pIntakeEncaminhar(destino) {
+  const dados = window._pIntakeDados;
+  if (!dados) { toast('Sem dados para encaminhar','erro'); return; }
+  // Salva primeiro em preparacao (fonte unica da verdade) depois distribui
+  try {
+    // Garante que os campos principais estao no form (nome, tipo, area, etc)
+    if (dados.nome) { const el=document.getElementById('pn'); if(el && !el.value) el.value = dados.nome; }
+    if (!document.getElementById('pn')?.value) { toast('Preencha o nome do cliente','erro'); return; }
+    // Ajusta status segundo destino
+    const stSel = document.getElementById('pst');
+    if (stSel) {
+      if (destino === 'cadastro') stSel.value = 'EM_PREP';
+      else if (dados.urgencia === 'urgente' || dados.urgencia === 'critico') stSel.value = 'URGENTE';
+      else stSel.value = 'PRONTO';
+    }
+    await _pSv(); // salva em preparacao
+    // Se destino != cadastro, tenta distribuir automaticamente para o setor correto
+    if (destino !== 'cadastro') {
+      // Descobre o id recem salvo (ultimo em getPrep)
+      const cs = getPrep();
+      const ultimo = cs[cs.length - 1];
+      if (ultimo && ultimo.id) {
+        const setorMap = {
+          'processo_novo':  'judicial',
+          'administrativo': 'administrativo',
+          'judicial':       'judicial'
+        };
+        const setor = setorMap[destino] || 'judicial';
+        // Executa distribuicao automatica silenciosa
+        try {
+          // Abre modal de distribuicao e pre-seleciona
+          _pDistr(ultimo.id);
+          setTimeout(()=>{
+            const ov = document.getElementById('_distrOv');
+            if (ov) {
+              ov._setor = setor;
+              // Visual feedback na opcao
+              const btn = ov.querySelector('.\\_dSBtn[data-setor="'+setor+'"]');
+              if (btn) { btn.style.border='2px solid var(--accent)'; btn.style.background='color-mix(in srgb, var(--accent) 7%, transparent)'; }
+            }
+            toast('Selecionado: '+setor+'. Confirme a distribuicao.','ok');
+          }, 160);
+        } catch(e) { console.warn('falha distrib auto', e); }
+      }
+    } else {
+      toast('✓ Caso salvo em Em Preparação','ok');
+    }
+  } catch(e) {
+    toast('Erro ao encaminhar: '+(e.message||e),'erro');
   }
 }
 
@@ -7201,22 +7420,38 @@ async function _pAnal(file){
   if(!file)return;
   const sp=document.getElementById('_pIASp');const re=document.getElementById('_pIARe');
   if(sp)sp.style.display='block';if(re)re.style.display='none';
+  // Helper para atualizar status visual durante chunking
+  const setProg = (txt)=>{ if(sp) sp.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div class="spin"></div><span style="font-size:12px;color:var(--text3)">'+txt+'</span></div>'; };
   try{
     const b64=await _pB64(file);const b64d=b64.split(',')[1];let dados=null;
+    setProg('Enviando documento...');
     try{
-      const tk = (typeof getAuthToken==='function' ? (getAuthToken()||'') : '');
-      const hdrs = {'Content-Type':'application/json'};
-      if(tk) hdrs['Authorization'] = 'Bearer ' + tk;
-      const r=await fetchComTimeout(SERVIDOR+'/api/analisar',{method:'POST',headers:hdrs,body:JSON.stringify({base64:b64d,mimeType:file.type||'application/pdf',nome:file.name,prompt:'Analise e retorne APENAS JSON sem markdown: {"tipo_documento":"","nome_cliente":"","cpf_cnpj":"","data_nascimento":"","endereco":"","tipo_acao":"","partes":"","numero_processo":"","tribunal":"","prazo":"","documentos_faltantes":[],"observacoes":""}'})},25000);
-      if(r.ok){const j=await r.json();if(!j.error)dados=j;}
-    }catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
-    if(!dados)dados={observacoes:'Servidor offline — preencha manualmente'};
+      // NOVO: usa analisarDocInteligente — transparente para PDFs grandes
+      dados = await analisarDocInteligente({
+        base64: b64d,
+        mimeType: file.type || 'application/pdf',
+        nome: file.name
+      }, (prog)=>{
+        if(prog && prog.msg) setProg(prog.msg);
+      });
+      if(dados && dados.error) dados = null;
+    }catch(e){
+      console.warn('[Lex] _pAnal falhou:', (e && e.message) ? e.message : e);
+      if(re){ re.style.display='block'; re.innerHTML='<span style="color:var(--red)">⚠ '+(e.message||'Falha na analise')+'</span>'; }
+    }
+    if(!dados){
+      dados={observacoes:'Analise nao disponivel — preencha manualmente'};
+    }
     if(sp)sp.style.display='none';
     const sv=(id,v)=>{const e=document.getElementById(id);if(e&&v&&!e.value)e.value=v;};
     sv('pn',dados.nome_cliente||dados.partes?.split(/\svs\s|\sx\s/i)?.[0]?.trim());
     sv('pt',dados.tipo_acao);sv('pp',dados.partes);sv('ptr',dados.tribunal);
     if((dados.documentos_faltantes||[]).length){const e=document.getElementById('pfl');if(e&&!e.value)e.value=dados.documentos_faltantes.join('\n');}
     if(re){re.style.display='block';re.innerHTML='✅ <strong>Análise concluída</strong><br>'+(dados.nome_cliente?`👤 ${dados.nome_cliente}<br>`:'')+( dados.tipo_acao?`⚖️ ${dados.tipo_acao}<br>`:'')+( dados.observacoes?`<span style="color:var(--text3);font-size:11px">${dados.observacoes}</span>`:'');}
+    // Guarda dados ultima analise p/ o agente Em Preparacao usar
+    try { window._pUltimaAnalise = { nome: file.name, dados, ts: Date.now() }; } catch(_){}
+    // Notifica o agente de intake (se a conversa estiver aberta)
+    try { if(typeof _pIntakeAgenteAnalisou==='function') _pIntakeAgenteAnalisou(file.name, dados); } catch(_){}
     toast('✓ Dados extraídos!','ok');
   }catch(e){if(sp)sp.style.display='none';if(re){re.style.display='block';re.innerHTML=`<span style="color:var(--red)">❌ ${e.message}</span>`;}}
 }
@@ -8086,15 +8321,84 @@ function abrirChat(id){
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// CHAT — ANEXO DE ARQUIVOS (PDF grandes, imagens, audio)
+// ════════════════════════════════════════════════════════════════════════════════
+async function chatAnexarArquivo(file) {
+  if (!file) return;
+  const prev = document.getElementById('chat-attach-preview');
+  if (!prev) return;
+  const isAudio = (file.type||'').startsWith('audio/') || /\.(mp3|ogg|wav|m4a|webm)$/i.test(file.name);
+  if (isAudio) {
+    prev.style.display='block';
+    prev.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>⏳</span><strong>🎵 '+file.name+'</strong> — transcrevendo audio...</div>';
+    try {
+      const b64 = await _pB64(file);
+      const b64d = b64.split(',')[1];
+      const tk = getAuthToken ? getAuthToken() : null;
+      const r = await fetchComTimeout(SERVIDOR+'/api/transcrever-audio', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'Authorization':'Bearer '+tk},
+        body: JSON.stringify({ base64: b64d, mimeType: file.type, nome: file.name })
+      }, 180000);
+      if (!r.ok) throw new Error('Transcricao indisponivel ('+r.status+')');
+      const j = await r.json();
+      const texto = j.texto || j.transcricao || '';
+      if (!texto) throw new Error('Audio sem texto transcrito');
+      window._chatAnexoAnalise = { nome:file.name, dados:{ tipo_documento:'audio_transcrito', transcricao: texto }, ts: Date.now() };
+      prev.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><strong>🎵 '+file.name+'</strong> <span style="color:var(--green);font-size:11px">✓ transcrito ('+texto.length+' car)</span><div style="font-size:11px;color:var(--text2);max-height:60px;overflow:auto;margin-top:4px">'+texto.substring(0,300).replace(/</g,'&lt;')+(texto.length>300?'…':'')+'</div></div><button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></div>';
+    } catch(e) {
+      prev.innerHTML = '<span style="color:var(--red)">❌ '+(e.message||'Erro transcrevendo audio')+'</span> <button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>';
+    }
+    return;
+  }
+  // PDF / imagem -> analisarDocInteligente (chunked se grande)
+  prev.style.display='block';
+  prev.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>⏳</span><strong>📎 '+file.name+'</strong> <span id="_chatAnxStatus" style="color:var(--text3);font-size:11px">preparando...</span></div>';
+  try {
+    const b64 = await _pB64(file);
+    const b64d = b64.split(',')[1];
+    const dados = await analisarDocInteligente({
+      base64: b64d,
+      nome: file.name,
+      mimeType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+    }, (prog)=>{
+      const st = document.getElementById('_chatAnxStatus');
+      if (st && prog && prog.msg) st.textContent = prog.msg;
+    });
+    if (!dados || dados.error) throw new Error(dados?.error || 'Falha na analise');
+    window._chatAnexoAnalise = { nome:file.name, dados, ts: Date.now() };
+    const resumo = [
+      dados.tipo_documento && ('📄 '+dados.tipo_documento),
+      dados.nome_cliente && ('👤 '+dados.nome_cliente),
+      dados.tipo_acao && ('⚖️ '+dados.tipo_acao),
+      dados.numero_processo && ('🔢 '+dados.numero_processo)
+    ].filter(Boolean).join(' · ');
+    prev.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><strong>📎 '+file.name+'</strong> <span style="color:var(--green);font-size:11px">✓ analisado</span><div style="font-size:11px;color:var(--text2);margin-top:2px">'+(resumo||'(sem dados estruturados)')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Agora escreva sua pergunta e envie.</div></div><button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></div>';
+  } catch(e) {
+    prev.innerHTML = '<span style="color:var(--red)">❌ '+(e.message||'Erro na analise')+'</span> <button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>';
+    window._chatAnexoAnalise = null;
+  }
+  const fi = document.getElementById('chat-file-input'); if (fi) fi.value = '';
+}
+function chatRemoverAnexo() {
+  window._chatAnexoAnalise = null;
+  const prev = document.getElementById('chat-attach-preview');
+  if (prev) { prev.style.display='none'; prev.innerHTML=''; }
+  const fi = document.getElementById('chat-file-input'); if (fi) fi.value = '';
+}
+
 async function enviarChat(){
   const inp=document.getElementById('chat-in');
   const txt=inp.value.trim();
-  if(!txt) return;
+  // Permite envio apenas com anexo
+  const temAnexo = !!window._chatAnexoAnalise;
+  if(!txt && !temAnexo) return;
   inp.value='';
 
   // ── INTERCEPTADOR PDF — SIM/NÃO ──
-  const msgLimpa=txt.toUpperCase().trim();
-  if(window._pdfPendente){
+  const msgLimpa=(txt||'').toUpperCase().trim();
+  if(window._pdfPendente && txt){
     addMsgEl('user',txt);
     if(['SIM','S','OK','CORRETO','SALVAR'].includes(msgLimpa)){
       if(typeof window._onChatSim==='function') window._onChatSim();
@@ -8112,8 +8416,19 @@ async function enviarChat(){
     return;
   }
 
-  addMsgEl('user',txt);
-  chatMsgsAtual.push({role:'user',content:txt});
+  addMsgEl('user',txt || '(enviou um anexo)');
+  // Injeta contexto do anexo analisado na mensagem do usuario p/ a IA
+  let msgParaIA = txt || 'Por favor analise o documento anexado acima.';
+  if (temAnexo) {
+    const a = window._chatAnexoAnalise;
+    msgParaIA += '\n\n=== DOCUMENTO ANEXADO: '+a.nome+' ===\n'
+      + JSON.stringify(a.dados, null, 2) + '\n=== FIM DO DOCUMENTO ===';
+    // Limpa preview apos envio
+    window._chatAnexoAnalise = null;
+    const prev = document.getElementById('chat-attach-preview');
+    if (prev) { prev.style.display='none'; prev.innerHTML=''; }
+  }
+  chatMsgsAtual.push({role:'user',content: msgParaIA});
   // Trava de memória — mantém as últimas 20 mensagens (10 trocas completas)
   // Descarta as mais antigas para não inflar o contexto da IA
   if(chatMsgsAtual.length > 20) chatMsgsAtual = chatMsgsAtual.slice(-20);

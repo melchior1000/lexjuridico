@@ -318,6 +318,9 @@ const FILA_MAX_CONCURRENT = 1;
 const CHUNK_RETRY_MAX = parseInt(process.env.CHUNK_RETRY_MAX || '4', 10);
 const CHUNK_TIMEOUT_MS = parseInt(process.env.CHUNK_TIMEOUT_MS || '180000', 10); // 180s para chunks grandes
 
+// Jobs de analise assincrona (PDFs grandes — cliente faz polling)
+const _jobsAnalise = {};
+
 // ── RATE LIMITING ANTHROPIC (ajustado para 5000 folhas) ──
 // 5000 folhas = ~100 chunks de 50 pg = ~2h de processamento total
 // Pausa aumentada para nao sobrecarregar a API
@@ -7845,11 +7848,28 @@ async function poll() {
 // ════════════════════════════════════════════════════════════════════════════
 // SERVIDOR HTTP + API REST
 // ════════════════════════════════════════════════════════════════════════════
+// FIX (PDF grandes): limite elevado para 150MB p/ aceitar base64 de PDFs com ate ~100MB.
+// base64 -> +33% overhead, entao 80MB brutos -> ~107MB, cabe em 150MB.
+// Rotas curtas (ex: /api/chat texto puro) continuam sendo rejeitadas corretamente.
+const LEX_MAX_BODY_BYTES = parseInt(process.env.LEX_MAX_BODY_MB || '150', 10) * 1024 * 1024;
 function lerBody(req) {
   return new Promise((res,rej)=>{
-    let d='';
-    req.on('data', c=>{d+=c; if(d.length>10*1024*1024) rej(new Error('Payload grande'));});
-    req.on('end', ()=>{try{res(JSON.parse(d));}catch(e){res({});}});
+    const chunks = [];
+    let tamanho = 0;
+    req.on('data', c=>{
+      chunks.push(c);
+      tamanho += c.length;
+      if(tamanho > LEX_MAX_BODY_BYTES) {
+        try { req.destroy(); } catch(_) {}
+        rej(new Error('Payload muito grande ('+Math.round(tamanho/1048576)+'MB > '+Math.round(LEX_MAX_BODY_BYTES/1048576)+'MB)'));
+      }
+    });
+    req.on('end', ()=>{
+      try{
+        const raw = Buffer.concat(chunks).toString('utf8');
+        res(raw ? JSON.parse(raw) : {});
+      }catch(e){ res({}); }
+    });
     req.on('error', rej);
   });
 }
@@ -8772,10 +8792,112 @@ const server = http.createServer(async (req, res) => {
       if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
       const buf = Buffer.from(b.base64,'base64');
       const isPdf = (b.mimeType||'').includes('pdf') || (b.nome||'').toLowerCase().endsWith('.pdf');
-      // FIX-07: usa _analisarDocEmChunks para PDFs grandes (>100 páginas)
       const analise = await _analisarDocEmChunks(buf, isPdf, b.nome||'documento', null, {});
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify(analise));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // Transcricao de audio (Whisper OpenAI) — usado pelo chat e pela preparacao
+  if(url==='/api/transcrever-audio' && req.method==='POST') {
+    try {
+      const tk = getToken(req);
+      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
+      const buf = Buffer.from(b.base64,'base64');
+      const r = await _transcreverAudioWhisper(buf, b.mimeType||'audio/ogg', b.nome||'audio.ogg');
+      if(r.ok) { res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ ok:true, texto: r.texto })); }
+      else { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ ok:false, error: r.erro || 'Falha na transcricao' })); }
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ANALISE ASSINCRONA — PDFs grandes (ate 5000pg / 80MB+)
+  // Cria um job, processa em background, cliente faz polling de /api/analisar-status
+  // ═══════════════════════════════════════════════════════════════════════
+  if(url==='/api/analisar-async' && req.method==='POST') {
+    try {
+      const tk = getToken(req);
+      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const b = await lerBody(req);
+      if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
+      const buf = Buffer.from(b.base64,'base64');
+      const isPdf = (b.mimeType||'').includes('pdf') || (b.nome||'').toLowerCase().endsWith('.pdf');
+      const jobId = Date.now()+'_'+Math.random().toString(36).slice(2,10);
+      const nomeArq = b.nome || 'documento';
+      _jobsAnalise[jobId] = {
+        status: 'processando',
+        nome: nomeArq,
+        iniciadoEm: Date.now(),
+        tamanhoMB: (buf.length/1048576).toFixed(1),
+        chunkAtual: 0,
+        totalChunks: 0,
+        resultado: null,
+        erro: null
+      };
+      // Dispara sem await
+      (async () => {
+        try {
+          const cbProg = async ({ chunkIdx, total }) => {
+            if(_jobsAnalise[jobId]) {
+              _jobsAnalise[jobId].chunkAtual = chunkIdx;
+              _jobsAnalise[jobId].totalChunks = total;
+            }
+          };
+          const r = await _analisarDocEmChunks(buf, isPdf, nomeArq, cbProg, {});
+          if(_jobsAnalise[jobId]) {
+            _jobsAnalise[jobId].status = 'concluido';
+            _jobsAnalise[jobId].resultado = r;
+            _jobsAnalise[jobId].concluidoEm = Date.now();
+          }
+        } catch(e) {
+          if(_jobsAnalise[jobId]) {
+            _jobsAnalise[jobId].status = 'erro';
+            _jobsAnalise[jobId].erro = e.message || String(e);
+          }
+        }
+      })();
+      res.writeHead(200,corsHeaders(req));
+      res.end(JSON.stringify({ok:true, jobId, status:'processando'}));
+    } catch(e) {
+      res.writeHead(500,corsHeaders(req));
+      res.end(JSON.stringify({error:e.message}));
+    }
+    return;
+  }
+
+  if(url.startsWith('/api/analisar-status/') && req.method==='GET') {
+    try {
+      const tk = getToken(req);
+      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const jobId = url.replace('/api/analisar-status/','').split('?')[0].trim();
+      const job = _jobsAnalise[jobId];
+      if(!job) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Job não encontrado'})); return; }
+      const resp = {
+        status: job.status,
+        nome: job.nome,
+        chunkAtual: job.chunkAtual,
+        totalChunks: job.totalChunks,
+        progresso: job.totalChunks>0 ? Math.round(job.chunkAtual/job.totalChunks*100) : (job.status==='concluido'?100:0),
+        tamanhoMB: job.tamanhoMB,
+        decorridoMs: Date.now() - job.iniciadoEm
+      };
+      if(job.status==='concluido') {
+        resp.resultado = job.resultado;
+        // Libera da memoria apos entregar
+        setTimeout(()=>{ delete _jobsAnalise[jobId]; }, 60000);
+      } else if(job.status==='erro') {
+        resp.erro = job.erro;
+        setTimeout(()=>{ delete _jobsAnalise[jobId]; }, 60000);
+      }
+      res.writeHead(200,corsHeaders(req));
+      res.end(JSON.stringify(resp));
+    } catch(e) {
+      res.writeHead(500,corsHeaders(req));
+      res.end(JSON.stringify({error:e.message}));
+    }
     return;
   }
 
@@ -9803,9 +9925,58 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(pfJuiz==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
       if(!b.nomeJuiz) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'nomeJuiz obrigatório'})); return; }
-      const perfil = await _analisarPerfilJuiz(b.nomeJuiz, b.tribunal||'', b.processoId||null, b.decisoes||null);
+      const extras = {
+        uf: b.uf || '',
+        municipio: b.municipio || '',
+        comarca: b.comarca || b.vara || '',
+        numero_processo: b.numero_processo || b.numeroProcesso || '',
+        pdfs: Array.isArray(b.pdfs) ? b.pdfs : []
+      };
+      const perfil = await _analisarPerfilJuiz(b.nomeJuiz, b.tribunal||'', b.processoId||null, b.decisoes||null, extras);
+
+      // Se vinculado a processo, salva o perfil junto ao processo (persistencia)
+      if(b.processoId && !perfil.erro_parse) {
+        try {
+          const idx = processos.findIndex(p => String(p.id) === String(b.processoId));
+          if(idx >= 0) {
+            processos[idx].perfil_juiz = perfil;
+            processos[idx].perfil_juiz_em = new Date().toISOString();
+            if(!processos[idx].juiz_relator && b.nomeJuiz) processos[idx].juiz_relator = b.nomeJuiz;
+            processos[idx].atualizado_em = new Date().toISOString();
+            try { await sbReq('PATCH', 'processos', { perfil_juiz: perfil, juiz_relator: processos[idx].juiz_relator }, { id: 'eq.'+b.processoId }); } catch(e) { /* opcional */ }
+            _auditarAcao(pfJuiz, 'perfil_juiz_vinculado', { processo_id: b.processoId, juiz: b.nomeJuiz });
+          }
+        } catch(e) { console.warn('[perfil-juiz] vincular processo falhou:', e.message); }
+      }
+
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(perfil));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // REFORM: Vincular perfil de juiz já analisado a um processo existente no Lex
+  // POST /api/juiz/vincular-processo { processoId, perfil }
+  // ════════════════════════════════════════════════════════════════════════
+  if(url==='/api/juiz/vincular-processo' && req.method==='POST') {
+    try {
+      const pfV = validarToken(getToken(req));
+      if(!pfV) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      if(pfV==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+      const b = await lerBody(req);
+      if(!b.processoId) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processoId obrigatório'})); return; }
+      if(!b.perfil || typeof b.perfil !== 'object') { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'perfil obrigatório'})); return; }
+      const idx = processos.findIndex(p => String(p.id) === String(b.processoId));
+      if(idx < 0) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
+      processos[idx].perfil_juiz = b.perfil;
+      processos[idx].perfil_juiz_em = new Date().toISOString();
+      if(b.perfil.nome && !processos[idx].juiz_relator) processos[idx].juiz_relator = b.perfil.nome;
+      processos[idx].atualizado_em = new Date().toISOString();
+      try { await sbReq('PATCH', 'processos', { perfil_juiz: b.perfil, juiz_relator: processos[idx].juiz_relator }, { id: 'eq.'+b.processoId }); } catch(e) {}
+      _auditarAcao(pfV, 'perfil_juiz_vinculado_manual', { processo_id: b.processoId });
+      res.writeHead(200, corsHeaders(req));
+      res.end(JSON.stringify({ ok:true, processo_id: b.processoId, juiz: processos[idx].juiz_relator }));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
@@ -10840,16 +11011,22 @@ Analise profundamente e responda em JSON com a estrutura:
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// NOVA FUNC 5: PERFIL PSICOLÓGICO DO JUIZ
-// Analisa padrão decisório de um juiz/relator e monta perfil estratégico:
-//   - Postura: conservador / inovador / pragmático
-//   - Estilo: formalista / flexível / principiológico
-//   - Extensão: detalhista / resumido / técnico
-//   - Receptividade por área do direito
-//   - Pontos de atenção para petições direcionadas
+// NOVA FUNC 5: PERFIL PSICOLÓGICO DO JUIZ — v2 REFORMADO
+// Analisa padrão decisório de um juiz/relator e monta perfil estratégico
+// COMPLETO: autores citados, doutrinadores, comportamento em audiência,
+// despacho pessoal, argumentos para peças, caminhos estratégicos.
+// Aceita: nome, tribunal, UF, município, comarca/vara, número do processo,
+// processoId (vincular ao processo do Lex), PDFs (base64) para análise.
 // ════════════════════════════════════════════════════════════════════════════
-async function _analisarPerfilJuiz(nomeJuiz, tribunal, processoId, decisoesTexto) {
-  // Busca processos com esse juiz no banco local para enriquecer contexto
+async function _analisarPerfilJuiz(nomeJuiz, tribunal, processoId, decisoesTexto, extras) {
+  extras = extras || {};
+  const uf = extras.uf || '';
+  const municipio = extras.municipio || '';
+  const comarca = extras.comarca || '';
+  const numeroProcesso = extras.numero_processo || '';
+  const pdfs = Array.isArray(extras.pdfs) ? extras.pdfs : [];
+
+  // 1) Busca processos com esse juiz no banco local para enriquecer contexto
   const processosDoJuiz = processos.filter(p =>
     p.juiz_relator && _normTexto(p.juiz_relator).includes(_normTexto(nomeJuiz))
   );
@@ -10859,23 +11036,72 @@ async function _analisarPerfilJuiz(nomeJuiz, tribunal, processoId, decisoesTexto
         `- ${p.nome} | ${p.area||'—'} | Status: ${p.status} | Resultado: ${p.resultado||'pendente'} | Desc: ${(p.descricao||'').substring(0,120)}`
       ).join('\n')
     : '';
+
+  // 2) Processa PDFs anexados (em chunks, respeita limite de 100pg por chamada via _analisarDocEmChunks)
+  let resumoPdfs = '';
+  const analisesPdfs = [];
+  for(let i = 0; i < pdfs.length; i++) {
+    const p = pdfs[i];
+    if(!p || !p.base64) continue;
+    try {
+      const buf = Buffer.from(p.base64, 'base64');
+      const isPdf = (p.mimeType||'').includes('pdf') || (p.nome||'').toLowerCase().endsWith('.pdf');
+      const analise = await _analisarDocEmChunks(buf, isPdf, p.nome||('doc_'+(i+1)), null, {});
+      analisesPdfs.push({ nome: p.nome||('doc_'+(i+1)), analise });
+      const resumo = (analise && (analise.resumo || analise.descricao)) || JSON.stringify(analise).slice(0,1500);
+      resumoPdfs += `\n--- PDF ${i+1}: ${p.nome||'(sem nome)'} ---\n`
+        + `Tipo: ${analise.tipo||'—'} | Tribunal: ${analise.tribunal||'—'} | Juiz extraído: ${analise.juiz_relator||'—'}\n`
+        + `Resumo: ${String(resumo).substring(0,2500)}\n`;
+    } catch(e) {
+      console.warn('[perfil-juiz] erro PDF '+i+':', e.message);
+      resumoPdfs += `\n--- PDF ${i+1}: ${p.nome||'(sem nome)'} — erro ao ler: ${e.message} ---\n`;
+    }
+  }
+
   const ctxDecisoes = decisoesTexto
-    ? `\n\nDECISÕES FORNECIDAS PARA ANÁLISE:\n${decisoesTexto.substring(0, 8000)}`
+    ? `\n\nDECISÕES FORNECIDAS EM TEXTO:\n${String(decisoesTexto).substring(0, 8000)}`
+    : '';
+  const ctxPdfs = resumoPdfs
+    ? `\n\nDECISÕES/DESPACHOS EXTRAÍDOS DOS PDFs ANEXADOS (${pdfs.length}):${resumoPdfs.substring(0, 12000)}`
     : '';
 
-  const prompt = `Você é um estrategista jurídico especializado em "judicial profiling" — análise do perfil decisório de magistrados para otimizar estratégias processuais.
+  // 3) Processo vinculado (se passado processoId)
+  const procVinc = processoId ? processos.find(p => String(p.id) === String(processoId)) : null;
+  const ctxProcVinc = procVinc
+    ? `\n\nPROCESSO VINCULADO À ANÁLISE:\nNome: ${procVinc.nome||'—'} | Nº: ${procVinc.numero||numeroProcesso||'—'} | Área: ${procVinc.area||'—'} | Tribunal: ${procVinc.tribunal||tribunal||'—'} | Status: ${procVinc.status||'—'}\nDescrição: ${(procVinc.descricao||'').substring(0,300)}`
+    : (numeroProcesso ? `\n\nPROCESSO INFORMADO (sem vínculo no Lex): Nº ${numeroProcesso}` : '');
 
-MAGISTRADO: ${nomeJuiz}
+  const localStr = [municipio, uf, comarca].filter(Boolean).join(' / ');
+
+  const prompt = `Você é um estrategista jurídico especializado em "judicial profiling" — análise PROFUNDA do perfil decisório de magistrados para otimizar estratégias processuais do advogado.
+
+MAGISTRADO ALVO: ${nomeJuiz}
 TRIBUNAL: ${tribunal||'não informado'}
+LOCALIZAÇÃO: ${localStr||'não informada'}
+${ctxProcVinc}
 ${ctxLocal}
 ${ctxDecisoes}
+${ctxPdfs}
 
-Com base nas informações disponíveis (processos locais, decisões fornecidas, e seu conhecimento geral sobre magistrados brasileiros), elabore um perfil estratégico detalhado.
+Com base em TODAS as informações disponíveis (processos locais, PDFs anexados, decisões fornecidas, e seu conhecimento geral sobre magistrados brasileiros), elabore um perfil ESTRATÉGICO-OPERACIONAL que o advogado possa usar IMEDIATAMENTE para:
+(a) redigir petições neste processo,
+(b) se portar em audiência,
+(c) despachar pessoalmente com o juiz,
+(d) escolher caminhos processuais.
 
-Responda em JSON:
+REGRAS:
+- Se os PDFs foram analisados, CITE doutrinadores e súmulas REAIS que apareceram neles.
+- Se não há material suficiente, marque nivel_confianca_perfil como "baixo" e explique na advertencia.
+- NUNCA invente autor jurídico, súmula ou decisão.
+
+Responda em JSON ÚNICO e válido:
 {
   "nome": "${nomeJuiz}",
   "tribunal": "${tribunal||'não informado'}",
+  "uf": "${uf}",
+  "municipio": "${municipio}",
+  "comarca": "${comarca}",
+  "numero_processo": "${numeroProcesso}",
   "postura_geral": "conservador|inovador|pragmático|imprevisível",
   "estilo_decisorio": "formalista|flexível|principiológico|casuístico",
   "extensao_decisoes": "detalhista|resumido|técnico|narrativo",
@@ -10891,19 +11117,29 @@ Responda em JSON:
   "pontos_de_atencao": ["o que evitar neste juízo", "..."],
   "perfil_em_liminares": "deferente|restritivo|criterioso|impulsivo",
   "perfil_em_recursos": "manutenção|reforma|técnico",
-  "linguagem_recomendada": "como redigir petições para este magistrado",
+  "linguagem_recomendada": "como redigir petições para este magistrado (tom, formalidade, extensão)",
   "estrategia_ouro": "a sacada principal para ter sucesso neste juízo",
+  "autores_juridicos_citados": ["lista de autores/juristas que o magistrado cita em decisões — nomes REAIS observados"],
+  "doutrinadores_para_citar": ["doutrinadores que o advogado deve citar nas peças para 'falar a mesma língua' deste juiz"],
+  "jurisprudencia_seguida": ["súmulas, temas de repercussão geral e julgados que o magistrado segue reiteradamente"],
+  "comportamento_em_audiencia": "orientação prática: tom de voz, formalidade, tempo de sustentação, postura, uso de apartes, como conduzir testemunhas",
+  "despacho_pessoal": "como tratar o juiz em despacho pessoal no gabinete: protocolo, formalidade, o que evitar, o que gosta de ouvir",
+  "argumentos_para_peticoes": ["tipos de argumento que funcionam (técnico-positivista, principiológico, consequencialista, humanitário) — com breve exemplo"],
+  "caminhos_estrategicos": ["rota processual recomendada: conciliar? instruir rápido? tutela? recorrer cedo? prequestionar?"],
   "nivel_confianca_perfil": "alto|médio|baixo",
-  "base_analise": "local+decisoes|só_local|só_conhecimento_geral",
-  "advertencia": "aviso de limitações da análise se nível de confiança for baixo"
+  "base_analise": "pdfs+local+conhecimento|só_local|só_conhecimento_geral",
+  "advertencia": "aviso de limitações da análise se nível de confiança for baixo",
+  "orientacao_advogado": "resumo executivo em 4-6 linhas direcionado ao advogado: como agir neste processo especificamente, considerando o perfil do juiz"
 }`;
 
-  const txt = await ia([{role:'user', content: prompt}], null, 3000);
+  const txt = await ia([{role:'user', content: prompt}], null, 4000);
   const m = txt.replace(/```json|```/g,'').trim().match(/\{[\s\S]*\}/);
   try {
     const perfil = JSON.parse(m ? m[0] : txt);
-    // Enriquece com dados locais
+    // Enriquece com dados locais e metadados
     perfil._processos_locais_encontrados = processosDoJuiz.length;
+    perfil._pdfs_analisados = analisesPdfs.length;
+    perfil._processo_vinculado = processoId || null;
     perfil._gerado_em = new Date().toLocaleString('pt-BR');
     return perfil;
   } catch(e) {
@@ -10912,6 +11148,7 @@ Responda em JSON:
       tribunal,
       erro_parse: true,
       texto_bruto: txt.substring(0, 2000),
+      _pdfs_analisados: analisesPdfs.length,
       _gerado_em: new Date().toLocaleString('pt-BR')
     };
   }
