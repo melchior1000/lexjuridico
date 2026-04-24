@@ -11324,10 +11324,12 @@ _agendarCobrador();
 
 // ════════════════════════════════════════════════════════════════════════════
 // MOTOR PROATIVO DO LEX — O gerente que NUNCA dorme
-// Roda a cada 2 horas, verifica TUDO e age
+// [ECONOMIA API] Intervalo aumentado de 2h para 6h (economia ~66% das rodadas).
+// Observacao: o motor nao chama a Anthropic diretamente — apenas itera 'processos'
+// em memoria e envia Telegram/SSE. Qualquer chamada IA futura deve usar MODELO_ECO.
 // ════════════════════════════════════════════════════════════════════════════
 let _motorUltimaExecucao = 0;
-const MOTOR_INTERVALO = 2 * 60 * 60 * 1000; // 2 horas
+const MOTOR_INTERVALO = 6 * 60 * 60 * 1000; // 6 horas (antes: 2h)
 
 async function _motorProativoLex() {
   if(Date.now() - _motorUltimaExecucao < MOTOR_INTERVALO) return;
@@ -11418,7 +11420,7 @@ async function _motorProativoLex() {
     
     if(alertas.length > 10) msg += `\n... e mais ${alertas.length-10} alertas.`;
     
-    msg += `\n\n💡 _Lex está monitorando. Próxima verificação em 2h._`;
+    msg += `\n\n💡 _Lex está monitorando. Próxima verificação em 6h._`;
     
     // Enviar pro Kleuber via Telegram
     try {
@@ -11448,17 +11450,17 @@ async function _motorProativoLex() {
   console.log('[LEX MOTOR] Verificação concluída. Alertas:', alertas.length, 'Ações:', acoes.length);
 }
 
-// Agendar motor proativo — checa a cada 30min, executa a cada 2h
+// Agendar motor proativo — checa a cada 60min, executa a cada 6h (economia API)
 setInterval(async () => {
   try { await _motorProativoLex(); } catch(e) { console.warn('[LEX MOTOR] erro:', e.message); }
-}, 30 * 60 * 1000);
+}, 60 * 60 * 1000);
 
 // Executar imediatamente na inicialização (após 60s pra dar tempo de carregar processos)
 setTimeout(() => {
   _motorProativoLex().catch(e => console.warn('[LEX MOTOR] erro inicial:', e.message));
 }, 60 * 1000);
 
-console.log('[LEX] Motor Proativo agendado — verificação a cada 2h, 7h-22h');
+console.log('[LEX] Motor Proativo agendado — verificação a cada 6h, 7h-22h (economia API)');
 
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -2383,13 +2383,45 @@ function manterServidorAcordado(){
 // [FIX_SETOR_PREP] Em vez de silenciar erros do servidor (retorno "offline" generico),
 // diagnostica a causa real (401 token expirado, 500 erro interno, rede, etc) e
 // expoe no console + retorna mensagem clara para o frontend renderizar.
+// [ECONOMIA API] Cache de respostas — mesma pergunta em 5min retorna cache (economia).
+const _chamarIA_cache = new Map(); // key -> {resp, ts}
+const _CHAMAR_IA_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+function _chamarIA_hash(messages, system, maxTokens){
+  try{
+    const s = JSON.stringify({m:messages, s:system||'', t:maxTokens||0});
+    // hash simples (djb2)
+    let h = 5381;
+    for(let i=0;i<s.length;i++) h = ((h<<5)+h) ^ s.charCodeAt(i);
+    return String(h);
+  }catch(_){ return null; }
+}
+function _chamarIA_cacheGet(key){
+  if(!key) return null;
+  const hit = _chamarIA_cache.get(key);
+  if(!hit) return null;
+  if(Date.now() - hit.ts > _CHAMAR_IA_CACHE_TTL){ _chamarIA_cache.delete(key); return null; }
+  return hit.resp;
+}
+function _chamarIA_cacheSet(key, resp){
+  if(!key || !resp) return;
+  // Limita a 50 entradas pra nao estourar memoria
+  if(_chamarIA_cache.size >= 50){
+    const firstKey = _chamarIA_cache.keys().next().value;
+    if(firstKey) _chamarIA_cache.delete(firstKey);
+  }
+  _chamarIA_cache.set(key, {resp, ts: Date.now()});
+}
 async function chamarIA(messages, system, maxTokens) {
+  // [ECONOMIA API] Verifica cache antes de chamar servidor
+  const _cacheKey = _chamarIA_hash(messages, system, maxTokens);
+  const _cached = _chamarIA_cacheGet(_cacheKey);
+  if(_cached){ console.log('[chamarIA] CACHE hit — economizou 1 chamada API'); return _cached; }
   let ultimoErroServidor = null;
   // Tentativa 1: servidor Render
   try {
     const r = await chamarServidor('/api/chat', {messages, system, maxTokens: maxTokens||1500});
     const texto = r && (r.text || r.resposta);
-    if(texto) return texto;
+    if(texto) { _chamarIA_cacheSet(_cacheKey, texto); return texto; }
     ultimoErroServidor = new Error('resposta vazia do servidor');
   } catch(e) {
     ultimoErroServidor = e;
@@ -2416,7 +2448,9 @@ async function chamarIA(messages, system, maxTokens) {
       }, 30000);
       const d = await res.json();
       if(d.error) throw new Error(d.error.message);
-      return d.content?.[0]?.text || '';
+      const _respLocal = d.content?.[0]?.text || '';
+      if(_respLocal) _chamarIA_cacheSet(_cacheKey, _respLocal);
+      return _respLocal;
     } catch(e) {
       const motivoSrv = ultimoErroServidor ? (ultimoErroServidor.message||ultimoErroServidor) : 'indisponivel';
       return '⚠️ Erro de conexao: '+(e.message||'verifique sua chave API')+' | servidor: '+motivoSrv;
@@ -3970,17 +4004,13 @@ window.onload=()=>{
   carregarTema();
   // URL do servidor fixada em SERVIDOR — salva no localStorage para compatibilidade
   setBotUrl(SERVIDOR);
-  // Acorda servidor imediatamente ao carregar a página — antes mesmo do login
+  // [ECONOMIA API] Ping unico na inicializacao (antes eram 2 pings duplicados).
+  // keep-alive periodico so e ativado em manterServidorAcordado() abaixo.
   fetch(SERVIDOR+'/api/ping',{method:'GET',signal:AbortSignal.timeout(8000)}).catch((e)=>{ console.warn('[ping] falha inicial:', e?.message || e); });
-  // Continua acordando a cada 4 minutos após login
   // SENHA OBRIGATÓRIA A CADA ACESSO — nunca auto-login
   // Sessão salva serve apenas para re-login silencioso (quando token expira DURANTE uso)
   // Ao abrir/recarregar a página: SEMPRE mostra tela de login
   const _sp=_loadSess();
-  // Apenas faz ping para acordar o Render enquanto usuário digita senha
-  if(_sp && _sp.token) {
-    fetch(SERVIDOR+'/api/ping',{method:'GET'}).catch(()=>{});
-  }
   // Relógio de Brasília ao vivo
   function _atualizarRelogioBrasilia(){
     const agora = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
@@ -10241,8 +10271,17 @@ function registrarAcaoSalvar(procId,acao){
 
 // ═══════════════ LEX CONSCIÊNCIA — INTERCEPTOR INTELIGENTE ═══════════════
 // Após qualquer andamento/edição, o Lex analisa e sugere setor/status/próxima ação
-async function lexConsciencia(procId, textoAndamento, tipoAcao){
+// [ECONOMIA API] DESATIVADO por padrão — cada chamada consome tokens Opus.
+// Ative via Config > Avancado ou localStorage.setItem('lex_consciencia_auto','1')
+// Quando desativado, so roda se chamado com forcarManual=true (usuario pediu).
+async function lexConsciencia(procId, textoAndamento, tipoAcao, forcarManual){
   if(!procId) return;
+  // [ECONOMIA API] Bloqueia chamadas automaticas — so roda se usuario pediu ou flag ativa
+  const _autoAtivo = (localStorage.getItem('lex_consciencia_auto')==='1');
+  if(!forcarManual && !_autoAtivo) {
+    console.log('[Lex Consciencia] automatico DESATIVADO (economia). procId='+procId);
+    return;
+  }
   const ps=getProcs();
   const p=ps.find(x=>x.id===procId||x.id==procId);
   if(!p) return;
