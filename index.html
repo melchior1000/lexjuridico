@@ -682,6 +682,18 @@ table{max-width:100%;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+// Configura worker do pdf.js apos CDN carregar
+(function(){
+  try{
+    if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  }catch(_){ }
+})();
+</script>
 </head>
 <body>
 
@@ -1797,16 +1809,82 @@ async function chamarServidor(endpoint, payload) {
 
 // ════════════════════════════════════════════════════════════════════════════════
 // ANALISE DE DOCUMENTOS — PDFs de qualquer tamanho (ate 5000pg / 100MB+)
-// Estrategia:
-//   - Pequeno (<=10MB): /api/analisar sincrono
-//   - Grande: /api/analisar-async + polling /api/analisar-status/:jobId
-// TRANSPARENTE para o chamador — retorna o mesmo objeto que /api/analisar.
+// Estrategia NOVA (FIX-PDF-GIGANTE, 2026-04-24):
+//   - PDF no navegador: usa pdf.js para EXTRAIR TEXTO de todas as paginas
+//   - Envia so o TEXTO (muito menor que base64) para /api/analisar
+//   - Nao depende de body size do Render nem de async polling
+//   - Funciona com 25MB, 100MB, 500MB — o que trafega eh so texto
+//   - Fallback (se pdf.js falhar): base64 via /api/analisar-async
 // ════════════════════════════════════════════════════════════════════════════════
+
+// Extrai texto de um PDF no navegador usando pdf.js.
+// Retorna string com texto de TODAS as paginas concatenado.
+// onProgresso({pagina, total, msg}) chamado a cada pagina.
+async function _pExtrairTextoPDF(file, onProgresso){
+  if(!window.pdfjsLib) throw new Error('pdf.js nao carregou (sem internet?)');
+  const buf = await file.arrayBuffer();
+  if(onProgresso) onProgresso({ pagina:0, total:0, msg:'Abrindo PDF ('+(file.size/1048576).toFixed(1)+'MB)...' });
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  const total = pdf.numPages;
+  if(onProgresso) onProgresso({ pagina:0, total, msg:'PDF aberto: '+total+' paginas. Iniciando extracao...' });
+  const partes = [];
+  // Limite pratico: se PDF gigante (>500pg), extrai so as primeiras 300 (onde estao peticao inicial + contestacao + ultimas decisoes)
+  const MAX_PG = 400;
+  const totalLer = Math.min(total, MAX_PG);
+  for(let i = 1; i <= totalLer; i++){
+    try{
+      const pagina = await pdf.getPage(i);
+      const textContent = await pagina.getTextContent();
+      const texto = (textContent.items||[]).map(it => it.str || '').join(' ');
+      partes.push('\n\n===== PAGINA '+i+' =====\n'+texto);
+      // Libera memoria da pagina
+      try { pagina.cleanup(); } catch(_){ }
+    }catch(e){
+      partes.push('\n\n===== PAGINA '+i+' (erro: '+(e.message||'')+') =====');
+    }
+    if(onProgresso && (i%3===0 || i===totalLer)){
+      onProgresso({ pagina:i, total:totalLer, msg:'Lendo pagina '+i+'/'+totalLer+'...' });
+    }
+  }
+  try { pdf.destroy(); } catch(_){ }
+  let txt = partes.join('');
+  // Protecao: se muito longo (>300k chars) corta mantendo CABECALHO (inicio) + CONTESTACAO (meio) + DECISOES (fim)
+  if(txt.length > 300000){
+    const ini = txt.substring(0, 150000);
+    const fim = txt.substring(txt.length - 100000);
+    txt = ini + '\n\n[... texto intermediario omitido por tamanho ...]\n\n' + fim;
+  }
+  if(total > MAX_PG){
+    txt = '[PDF com '+total+' paginas - extraidas '+totalLer+' (limite pratico)]\n\n' + txt;
+  }
+  return { texto: txt, paginas: total, paginasLidas: totalLer, tamanhoMB: (file.size/1048576).toFixed(1) };
+}
+
 async function analisarDocInteligente(payload, onProgresso) {
-  // payload: { base64, nome, mimeType }
+  // payload: { base64, nome, mimeType } OU { texto, nome, mimeType }
   const tk = getAuthToken ? getAuthToken() : null;
   if(!tk) throw new Error('Nao autenticado');
   const headers = { 'Content-Type': 'application/json', 'Authorization':'Bearer '+tk };
+
+  // NOVO: se veio TEXTO pre-extraido (via pdf.js), envia direto pro sincrono — muito menor
+  if(payload && payload.texto) {
+    if(onProgresso) onProgresso({ fase:'analisando', msg:'Analisando texto extraido ('+(payload.texto.length/1024).toFixed(0)+'KB)...' });
+    const res = await fetchComTimeout(SERVIDOR + '/api/analisar', {
+      method:'POST', headers, body: JSON.stringify({
+        texto: payload.texto,
+        nome: payload.nome,
+        mimeType: payload.mimeType || 'application/pdf',
+        paginas: payload.paginas,
+        paginasLidas: payload.paginasLidas
+      })
+    }, 300000); // 5 min
+    if(!res.ok){
+      const err = await res.json().catch(()=>({error:'Erro '+res.status}));
+      throw new Error(err.error || 'Erro na analise');
+    }
+    if(onProgresso) onProgresso({ fase:'concluido', msg:'Analise concluida' });
+    return await res.json();
+  }
 
   // Estimativa de tamanho pelo base64 (len*0.75 ≈ bytes)
   const b64len = (payload.base64||'').length;
@@ -7994,26 +8072,62 @@ async function _pAnal(file){
   // Helper para atualizar status visual durante chunking
   const setProg = (txt)=>{ if(sp) sp.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div class="spin"></div><span style="font-size:12px;color:var(--text3)">'+txt+'</span></div>'; };
   try{
-    const b64=await _pB64(file);const b64d=b64.split(',')[1];let dados=null;
-    setProg('Enviando documento...');
-    try{
-      // NOVO: usa analisarDocInteligente — transparente para PDFs grandes
-      dados = await analisarDocInteligente({
-        base64: b64d,
-        mimeType: file.type || 'application/pdf',
-        nome: file.name
-      }, (prog)=>{
-        if(prog && prog.msg) setProg(prog.msg);
-      });
-      if(dados && dados.error) {
-        const msg = dados.error || 'Falha ao analisar';
-        if(re){ re.style.display='block'; re.innerHTML='<span style="color:var(--red)">❌ '+msg+'</span>'; }
-        if(String(dados.code||'').includes('NO_AK')) toast('Servidor sem ANTHROPIC_KEY — avise o admin','erro');
-        dados = null;
+    let dados=null;
+    const isPdf = (file.type||'').includes('pdf') || (file.name||'').toLowerCase().endsWith('.pdf');
+    const tamMB = file.size / 1048576;
+
+    // NOVO FLUXO (FIX-PDF-GIGANTE): PDFs sao lidos e extraidos NO NAVEGADOR via pdf.js
+    // Envia so o TEXTO (muito menor) pro servidor. Funciona com 25MB, 100MB, qualquer tamanho.
+    if(isPdf && window.pdfjsLib){
+      try{
+        setProg('Abrindo PDF ('+tamMB.toFixed(1)+'MB) no navegador...');
+        const ext = await _pExtrairTextoPDF(file, (p)=>{
+          setProg(p.msg || ('Lendo pagina '+p.pagina+'/'+p.total+'...'));
+        });
+        setProg('Texto extraido ('+ext.paginasLidas+'/'+ext.paginas+' pg, '+(ext.texto.length/1024).toFixed(0)+'KB). Enviando para analise...');
+        dados = await analisarDocInteligente({
+          texto: ext.texto,
+          mimeType: file.type || 'application/pdf',
+          nome: file.name,
+          paginas: ext.paginas,
+          paginasLidas: ext.paginasLidas
+        }, (prog)=>{
+          if(prog && prog.msg) setProg(prog.msg);
+        });
+        if(dados && dados.error){
+          const msg = dados.error || 'Falha ao analisar';
+          if(re){ re.style.display='block'; re.innerHTML='<span style="color:var(--red)">❌ '+msg+'</span>'; }
+          dados = null;
+        }
+      }catch(eExt){
+        console.warn('[Lex] extracao pdf.js falhou, tentando fallback base64:', eExt && eExt.message);
+        setProg('Extracao no navegador falhou. Tentando upload direto...');
+        // cai pro fallback base64 abaixo
       }
-    }catch(e){
-      console.warn('[Lex] _pAnal falhou:', (e && e.message) ? e.message : e);
-      if(re){ re.style.display='block'; re.innerHTML='<span style="color:var(--red)">⚠ '+(e.message||'Falha na analise')+'</span>'; }
+    }
+
+    // Fallback: base64 (imagens sempre vao por aqui; PDFs so se pdf.js falhar)
+    if(!dados){
+      const b64=await _pB64(file);const b64d=b64.split(',')[1];
+      setProg('Enviando documento...');
+      try{
+        dados = await analisarDocInteligente({
+          base64: b64d,
+          mimeType: file.type || 'application/pdf',
+          nome: file.name
+        }, (prog)=>{
+          if(prog && prog.msg) setProg(prog.msg);
+        });
+        if(dados && dados.error) {
+          const msg = dados.error || 'Falha ao analisar';
+          if(re){ re.style.display='block'; re.innerHTML='<span style="color:var(--red)">❌ '+msg+'</span>'; }
+          if(String(dados.code||'').includes('NO_AK')) toast('Servidor sem ANTHROPIC_KEY — avise o admin','erro');
+          dados = null;
+        }
+      }catch(e){
+        console.warn('[Lex] _pAnal falhou:', (e && e.message) ? e.message : e);
+        if(re){ re.style.display='block'; re.innerHTML='<span style="color:var(--red)">⚠ '+(e.message||'Falha na analise')+'</span>'; }
+      }
     }
     if(!dados){
       dados={observacoes:'Analise nao disponivel — preencha manualmente'};

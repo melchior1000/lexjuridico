@@ -1596,6 +1596,89 @@ REGRAS DE OURO:
   }
 }
 
+// FIX-PDF-GIGANTE (2026-04-24): analisa um PDF a partir do TEXTO ja extraido no
+// navegador (via pdf.js). Muito mais barato e rapido que enviar base64 do PDF
+// inteiro para o Anthropic. Usado pelo /api/analisar quando req.body.texto existe.
+// Reusa o MESMO prompt/schema do analisarDoc.
+async function analisarDocTexto(textoExtraido, nome, meta){
+  const prompt=`Voce e o EXTRATOR JURIDICO ELITE do escritorio Camargos Advocacia. Leia com ATENCAO TOTAL AO CABECALHO do texto abaixo (extraido via OCR/parse do PDF "${nome||'documento'}") e extraia DADOS ESTRUTURADOS.
+
+PASSO 1 - CLASSIFIQUE:
+- JUDICIAL: peticao inicial, contestacao, replica, recurso, embargos, sentenca, acordao, decisao, despacho, intimacao, mandado, oficio judicial, procuracao, laudo, parecer.
+- ADMINISTRATIVO: notificacao fiscal, auto de infracao, decisao DRJ/CARF, PAD, intimacao administrativa, defesa/impugnacao, recurso administrativo, oficio nao-judicial.
+
+PASSO 2 - LEIA O CABECALHO:
+- Peticao inicial/contestacao: "EXMO. SR. DR. JUIZ DE DIREITO DA [VARA] DA COMARCA DE [COMARCA]" / "Processo no [CNJ]" / "[AUTOR] propoe em face de [REU]".
+- Sentenca/decisao: "Poder Judiciario - Tribunal de [UF]" / "[N VARA] da Comarca de [CIDADE]" / "Juiz(a): Dr(a). [NOME]" / "Autos: [NUMERO] - [AUTOR] x [REU]".
+- Administrativo: "[ORGAO]" / "Processo Administrativo no [NUMERO]" / "Auto de Infracao no ..." / "Contribuinte: [NOME]".
+
+Se um campo NAO aparecer no texto, devolva "". NUNCA invente.
+
+PASSO 3 - RESPONDA APENAS em JSON valido (sem markdown/crases) com TODOS os campos:
+
+{
+  "tipo":"peticao_inicial|contestacao|replica|recurso|sentenca|acordao|decisao|despacho|intimacao|mandado|procuracao|laudo|parecer|contrato|notificacao_administrativa|auto_infracao|decisao_administrativa|pad|defesa_administrativa|recurso_administrativo|oficio|outro",
+  "tipo_processo":"judicial|administrativo",
+  "numero_processo":"numero CNJ (0000000-00.0000.0.00.0000) OU numero do PA, EXATAMENTE como aparece",
+  "nome_caso":"identificador curto",
+  "nome_cliente":"nome do CLIENTE que o escritorio representa - geralmente autor na inicial, reu na contestacao",
+  "autor":"nome COMPLETO do autor/requerente/exequente/impetrante",
+  "reu":"nome COMPLETO do reu/requerido/executado/impetrado/Fazenda",
+  "partes":"'Autor vs Reu'",
+  "requerente":"em PA: requerente/interessado/contribuinte",
+  "requerido":"em PA: orgao/pessoa contra quem se requer",
+  "tribunal":"TJMG,TRF-6,STJ,TST,TRT-3,CARF 1a Secao etc",
+  "vara":"vara/juizo EXATO (ex: '3a Vara Civel'). Vazio se administrativo.",
+  "comarca":"comarca/secao/foro. Vazio se administrativo.",
+  "juiz_relator":"nome COMPLETO do juiz/desembargador/relator",
+  "orgao":"Administrativo: orgao EXATO. Vazio para judicial.",
+  "instancia":"1a|2a|STJ|STF|Turma Recursal|Juizado Especial|Administrativo 1a|Administrativo 2a",
+  "area":"Civel|Trabalhista|Tributario|Execucao Federal|Criminal|Previdenciario|Familia|Administrativo|Consumidor|Empresarial|Outro",
+  "area_direito":"mesmo que 'area'",
+  "setor_sugerido":"judicial|administrativo|cadastro",
+  "status":"URGENTE|ATIVO|RECURSAL|AGUARDANDO|EM_PREP",
+  "data_documento":"dd/mm/aaaa",
+  "prazo":"dd/mm/aaaa",
+  "proxima_acao":"1 FRASE",
+  "descricao":"3-4 linhas: o que esta em jogo, tese, pedido",
+  "frentes":"por virgula",
+  "valor":"SO NUMEROS ou vazio",
+  "andamentos":[{"data":"dd/mm/aaaa","txt":"descricao"}],
+  "resumo":"8-12 linhas: tipo, CABECALHO, fatos, prazos, recomendacao",
+  "eh_decisao":false,
+  "resposta_sugerida":"tipo de peca a gerar",
+  "custas_necessarias":false,
+  "documentos_necessarios":"lista por virgula",
+  "documentos_faltantes":["array"],
+  "jurisprudencia":"jurisprudencia real aplicavel se houver",
+  "tipo_acao":"tipo em 1 frase",
+  "observacoes":"notas livres",
+  "confianca_extracao":"alta|media|baixa"
+}
+
+REGRAS DE OURO:
+- NAO INVENTE. Se nao esta no texto: "".
+- Atencao MAXIMA ao CABECALHO (paginas iniciais).
+- ADMINISTRATIVO: preencha 'orgao', deixe 'vara'/'comarca' vazios.
+- JUDICIAL: preencha 'vara'/'comarca', deixe 'orgao' vazio.
+- Responda SOMENTE o JSON.
+
+${meta && meta.paginas ? '[METADADOS: PDF com '+meta.paginas+' paginas, lidas '+(meta.paginasLidas||meta.paginas)+']' : ''}
+
+TEXTO EXTRAIDO DO PDF:
+"""
+${String(textoExtraido||'').substring(0, 280000)}
+"""`;
+
+  const txt = await ia([{role:'user', content: prompt}], null, 3000, MODELO_TOP);
+  const m = txt.replace(/```json|```/g,'').trim().match(/\{[\s\S]*\}/);
+  try { return JSON.parse(m ? m[0] : txt); }
+  catch(parseErr){
+    console.warn('[analisarDocTexto] JSON invalido para "'+nome+'":', (m?m[0]:txt).substring(0,200));
+    throw new Error('IA retornou formato invalido ao analisar "'+nome+'". Tente novamente.');
+  }
+}
+
 function _extrairZipEntry(buffer, nomeEntrada) {
   try {
     const alvo = String(nomeEntrada||'').replace(/\\/g,'/');
@@ -8957,7 +9040,16 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const b = await lerBody(req);
-      if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
+      // NOVO (FIX-PDF-GIGANTE): aceita {texto} pre-extraido no navegador via pdf.js
+      // Bypass de limites de body/Anthropic: texto eh muito menor que base64.
+      if(b.texto && typeof b.texto === 'string' && b.texto.trim().length > 0) {
+        console.log('[analisar] TEXTO recebido:', b.nome||'(sem nome)', '('+(b.texto.length/1024).toFixed(1)+'KB texto, '+(b.paginas||'?')+'pg)');
+        const analise = await analisarDocTexto(b.texto, b.nome||'documento', { paginas: b.paginas, paginasLidas: b.paginasLidas });
+        console.log('[analisar] OK (texto):', b.nome, '- cliente=', analise?.nome_cliente||'?', 'numero=', analise?.numero_processo||'?');
+        res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify(analise));
+        return;
+      }
+      if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 ou texto obrigatório'})); return; }
       const buf = Buffer.from(b.base64,'base64');
       const isPdf = (b.mimeType||'').includes('pdf') || (b.nome||'').toLowerCase().endsWith('.pdf');
       console.log('[analisar] Recebido:', b.nome||'(sem nome)', '('+(buf.length/1024).toFixed(1)+'KB, pdf='+isPdf+')');
