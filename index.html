@@ -8156,7 +8156,16 @@ async function _pAnal(file){
     try { if(typeof _pIntakeAgenteAnalisou==='function') _pIntakeAgenteAnalisou(file.name, dados); } catch(_){}
     // CONFIRMACAO: se identificou partes ou numero, abre modal "Encontrei X,Y,Z. Confirma?"
     if(dados && (dados.nome_cliente || dados.autor || dados.numero_processo || dados.partes)){
-      _pConfirmarIntake(file.name, dados);
+      // DECISAO AUTOMATICA DO AGENTE (pedido CEO):
+      // A) Tem numero CNJ + peticao inicial + partes -> PROCESSO PRONTO p/ distribuir direto
+      // B) Tem numero MAS faltam docs -> Autuacao (fluxo atual)
+      // C) Sem numero -> Autuacao (fluxo atual)
+      const diag = _pDiagnosticarProntidao(dados);
+      if(diag.pronto){
+        _pConfirmarIntakeProcessoPronto(file.name, dados, diag);
+      } else {
+        _pConfirmarIntake(file.name, dados);
+      }
     }
     toast('✓ Dados extraídos!','ok');
   }catch(e){if(sp)sp.style.display='none';if(re){re.style.display='block';re.innerHTML=`<span style="color:var(--red)">❌ ${e.message}</span>`;}}
@@ -8164,27 +8173,50 @@ async function _pAnal(file){
 
 // Preenche TODOS os campos do modal de preparacao com dados da extracao IA
 // Consome o JSON estruturado que /api/analisar devolve (analisarDoc em bot.js)
+// Agora aceita AMBOS os formatos:
+//   - NOVO (rich): { autor:{nome,cpf,rg,...}, reu:{...}, processo:{...}, demanda:{...}, docs_identificados:[...] }
+//   - LEGADO (flat): { autor:"nome", reu:"nome", numero_processo:"...", ... }
 function _pPreencherCampos(dados){
   if(!dados) return;
   const sv = (id, v) => { const e = document.getElementById(id); if(e && v!=null && String(v).trim() && !e.value) e.value = String(v).trim(); };
-  // Nome do cliente: prefer nome_cliente -> autor (cliente=autor na inicial) -> primeira das partes
+
+  // ── NORMALIZACAO: extrai strings dos objects novos quando existir ──
+  const autorObj = (dados.autor && typeof dados.autor === 'object') ? dados.autor : null;
+  const reuObj   = (dados.reu   && typeof dados.reu   === 'object') ? dados.reu   : null;
+  const procObj  = (dados.processo && typeof dados.processo === 'object') ? dados.processo : null;
+  const demObj   = (dados.demanda  && typeof dados.demanda  === 'object') ? dados.demanda  : null;
+
+  const autorNome = autorObj ? (autorObj.nome||'') : (typeof dados.autor === 'string' ? dados.autor : '');
+  const reuNome   = reuObj   ? (reuObj.nome||'')   : (typeof dados.reu   === 'string' ? dados.reu   : '');
+  const numProc   = (procObj && procObj.numero) || dados.numero_processo || '';
+  const varaV     = (procObj && procObj.vara)    || dados.vara || '';
+  const comarcaV  = (procObj && procObj.comarca) || dados.comarca || '';
+  const tribV     = (procObj && procObj.tribunal)|| dados.tribunal || '';
+  const juizV     = (procObj && procObj.juiz)    || dados.juiz_relator || '';
+  const orgaoV    = (procObj && procObj.orgao)   || dados.orgao || '';
+  const instV     = (procObj && procObj.instancia)|| dados.instancia || '';
+  const valorV    = (procObj && procObj.valor_causa) || dados.valor || '';
+  const areaV     = (procObj && procObj.area_direito) || dados.area || dados.area_direito || '';
+  const tipoAcaoV = (demObj  && demObj.tipo)     || dados.tipo_acao || dados.tipo || '';
+
+  // Nome do cliente (geralmente = autor)
   const nomeCli = dados.nome_cliente
-    || dados.autor
+    || autorNome
     || (dados.partes && String(dados.partes).split(/\svs\.?\s|\sx\s|\s×\s/i)[0]?.trim())
     || (dados.requerente || '');
   sv('pn', nomeCli);
-  sv('pt', dados.tipo_acao || dados.tipo || '');
+  sv('pt', tipoAcaoV);
   const partesVal = dados.partes
-    || ((dados.autor && dados.reu) ? `${dados.autor} vs ${dados.reu}` : '')
+    || ((autorNome && reuNome) ? `${autorNome} vs ${reuNome}` : '')
     || ((dados.requerente && dados.requerido) ? `${dados.requerente} vs ${dados.requerido}` : '');
   sv('pp', partesVal);
   // Tribunal: se administrativo, usa orgao; senao tribunal + vara/comarca
-  const tribVal = dados.tribunal || dados.orgao || '';
-  const varaComarca = [dados.vara, dados.comarca].filter(Boolean).join(' — ');
+  const tribVal = tribV || orgaoV || '';
+  const varaComarca = [varaV, comarcaV].filter(Boolean).join(' — ');
   sv('ptr', tribVal + (tribVal && varaComarca ? ' — ' : '') + varaComarca);
   // Area: mapeia para as opcoes do select do modal
   const selArea = document.getElementById('pa');
-  if(selArea && dados.area){
+  if(selArea && areaV){
     const mapa = {
       'Civel':'Cível','Cível':'Cível','Civil':'Cível',
       'Trabalhista':'Trabalhista',
@@ -8194,9 +8226,9 @@ function _pPreencherCampos(dados){
       'Criminal':'Criminal','Penal':'Criminal',
       'Administrativo':'Administrativo',
       'Consumidor':'Cível','Empresarial':'Cível',
-      'Execucao Federal':'Tributário','Execução Federal':'Tributário'
+      'Execucao Federal':'Tributário','Execução Federal':'Tributário','Execucao':'Cível'
     };
-    const alvo = mapa[dados.area] || 'Outro';
+    const alvo = mapa[areaV] || 'Outro';
     const opts = Array.from(selArea.options).map(o=>o.value||o.text);
     if(opts.includes(alvo)) selArea.value = alvo;
   }
@@ -8211,30 +8243,313 @@ function _pPreencherCampos(dados){
   if(stSel && (dados.status === 'URGENTE' || /urgente|critico/i.test(dados.urgencia||''))){
     if(Array.from(stSel.options).some(o=>o.value==='URGENTE')) stSel.value = 'URGENTE';
   }
-  // Obs: concatena cabecalho estruturado + resumo + proxima acao
+  // ── Obs: RESUMO COMPLETO p/ levar contexto aos setores seguintes ──
   const obs = document.getElementById('pob');
   if(obs && !obs.value){
     const bloco = [];
-    if(dados.numero_processo) bloco.push('Nº PROCESSO: ' + dados.numero_processo);
-    if(dados.vara) bloco.push('VARA: ' + dados.vara);
-    if(dados.comarca) bloco.push('COMARCA: ' + dados.comarca);
-    if(dados.juiz_relator) bloco.push('JUIZ/RELATOR: ' + dados.juiz_relator);
-    if(dados.orgao) bloco.push('ORGAO: ' + dados.orgao);
-    if(dados.instancia) bloco.push('INSTANCIA: ' + dados.instancia);
+    // Cabecalho
+    if(numProc) bloco.push('Nº PROCESSO: ' + numProc);
+    if(varaV)    bloco.push('VARA: ' + varaV);
+    if(comarcaV) bloco.push('COMARCA: ' + comarcaV);
+    if(juizV)    bloco.push('JUIZ/RELATOR: ' + juizV);
+    if(orgaoV)   bloco.push('ORGAO: ' + orgaoV);
+    if(instV)    bloco.push('INSTANCIA: ' + instV);
     if(dados.tipo_processo) bloco.push('TIPO: ' + dados.tipo_processo);
     if(dados.data_documento) bloco.push('DATA DO DOCUMENTO: ' + dados.data_documento);
+    if(valorV)   bloco.push('VALOR DA CAUSA: R$ ' + valorV);
     if(dados.prazo) bloco.push('PRAZO: ' + dados.prazo);
     if(dados.proxima_acao) bloco.push('PROXIMA ACAO: ' + dados.proxima_acao);
-    if(dados.resumo) bloco.push('\nRESUMO:\n' + dados.resumo);
-    else if(dados.descricao) bloco.push('\nDESCRICAO:\n' + dados.descricao);
+
+    // Qualificacao completa do AUTOR
+    if(autorObj){
+      const linA = [];
+      if(autorObj.nome) linA.push('Nome: ' + autorObj.nome);
+      if(autorObj.cpf) linA.push('CPF: ' + autorObj.cpf);
+      if(autorObj.rg) linA.push('RG: ' + autorObj.rg);
+      if(autorObj.nacionalidade) linA.push('Nacionalidade: ' + autorObj.nacionalidade);
+      if(autorObj.estado_civil) linA.push('Estado civil: ' + autorObj.estado_civil);
+      if(autorObj.profissao) linA.push('Profissao: ' + autorObj.profissao);
+      if(autorObj.endereco) linA.push('Endereco: ' + autorObj.endereco);
+      if(autorObj.email) linA.push('Email: ' + autorObj.email);
+      if(autorObj.telefone) linA.push('Tel: ' + autorObj.telefone);
+      if(autorObj.advogado) linA.push('Advogado: ' + autorObj.advogado + (autorObj.oab?' ('+autorObj.oab+')':''));
+      if(linA.length) bloco.push('\n--- AUTOR ---\n' + linA.join('\n'));
+    }
+    // Qualificacao do REU
+    if(reuObj){
+      const linR = [];
+      if(reuObj.nome) linR.push('Nome: ' + reuObj.nome);
+      if(reuObj.cpf_cnpj) linR.push('CPF/CNPJ: ' + reuObj.cpf_cnpj);
+      if(reuObj.endereco) linR.push('Endereco: ' + reuObj.endereco);
+      if(reuObj.advogado) linR.push('Advogado: ' + reuObj.advogado + (reuObj.oab?' ('+reuObj.oab+')':''));
+      if(linR.length) bloco.push('\n--- REU ---\n' + linR.join('\n'));
+    }
+    // Demanda estruturada
+    if(demObj){
+      if(demObj.tipo) bloco.push('\n--- TIPO DE ACAO ---\n' + demObj.tipo);
+      if(demObj.resumo_fatos) bloco.push('\n--- FATOS ---\n' + demObj.resumo_fatos);
+      if(Array.isArray(demObj.pedidos) && demObj.pedidos.length){
+        bloco.push('\n--- PEDIDOS ---\n' + demObj.pedidos.map((p,i)=>(i+1)+') '+p).join('\n'));
+      }
+      if(Array.isArray(demObj.defesa_reu) && demObj.defesa_reu.length){
+        bloco.push('\n--- DEFESA DO REU ---\n' + demObj.defesa_reu.map((p,i)=>(i+1)+') '+p).join('\n'));
+      }
+      if(Array.isArray(demObj.provas_indicadas) && demObj.provas_indicadas.length){
+        bloco.push('\n--- PROVAS INDICADAS ---\n' + demObj.provas_indicadas.join(', '));
+      }
+    }
+    // Docs identificados (o que ja tem vs o que falta)
+    if(Array.isArray(dados.docs_identificados) && dados.docs_identificados.length){
+      bloco.push('\n--- DOCS IDENTIFICADOS NO PDF ---\n' + dados.docs_identificados.map(d=>'✓ '+d).join('\n'));
+    }
+    // Resumo gerado pela IA (o "resumo completo p/ subir aos setores")
+    if(dados.resumo) bloco.push('\n--- RESUMO DO CASO ---\n' + dados.resumo);
+    else if(dados.descricao) bloco.push('\n--- DESCRICAO ---\n' + dados.descricao);
     if(dados.resposta_sugerida) bloco.push('\nPECA SUGERIDA: ' + dados.resposta_sugerida);
     if(dados.jurisprudencia) bloco.push('\nJURISPRUDENCIA: ' + dados.jurisprudencia);
     if(bloco.length) obs.value = bloco.join('\n');
   }
-  // Valor
-  if(dados.valor){
+  // Valor da causa
+  if(valorV){
     const el = document.getElementById('pvl');
-    if(el && !el.value) el.value = String(dados.valor).replace(/[^0-9]/g,'');
+    if(el && !el.value) el.value = String(valorV).replace(/[^0-9]/g,'');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DECISAO AUTOMATICA DO AGENTE INTAKE (pedido CEO):
+// Apos extrair dados do PDF, diagnostica se o processo:
+//   A) PRONTO: tem numero CNJ + peticao inicial + autor + reu  -> DISTRIBUI DIRETO
+//   B) INCOMPLETO: tem numero mas faltam docs/procuracao        -> AUTUACAO
+//   C) SEM_NUMERO: caso novo                                     -> AUTUACAO
+// Retorna: { pronto:bool, motivo:str, setorSugerido:'judicial'|'administrativo', faltam:[str] }
+// ═══════════════════════════════════════════════════════════════════════════
+function _pDiagnosticarProntidao(dados){
+  const out = { pronto:false, motivo:'', setorSugerido:'judicial', faltam:[] };
+  if(!dados) { out.motivo='sem dados'; return out; }
+  // 1) Tem numero CNJ/PA?
+  const num = String(dados.numero_processo || (dados.processo && dados.processo.numero) || '').trim();
+  if(!num){ out.motivo='sem numero de processo'; return out; }
+  // 2) Tem peticao inicial (indicador direto da IA) E contestacao (caso ja contestado)?
+  const temInicial = dados.tem_peticao_inicial === true
+    || (dados.tipo === 'peticao_inicial')
+    || (dados.demanda && dados.demanda.resumo_fatos && String(dados.demanda.resumo_fatos).length>30);
+  if(!temInicial){ out.motivo='sem peticao inicial identificada'; return out; }
+  // 3) Partes qualificadas (autor + reu com algum dado)
+  const autorObj = dados.autor && typeof dados.autor==='object' ? dados.autor : null;
+  const reuObj = dados.reu && typeof dados.reu==='object' ? dados.reu : null;
+  const autorNome = (autorObj && autorObj.nome) || (typeof dados.autor==='string'?dados.autor:'') || dados.nome_cliente || '';
+  const reuNome = (reuObj && reuObj.nome) || (typeof dados.reu==='string'?dados.reu:'') || dados.requerido || '';
+  if(!autorNome || !reuNome){ out.motivo='partes incompletas'; return out; }
+  // 4) Documentos faltantes? Se tem, ainda pode distribuir (agente oferece opcao autuacao)
+  const faltas = Array.isArray(dados.documentos_faltantes) ? dados.documentos_faltantes.filter(Boolean) : [];
+  out.faltam = faltas;
+  // 5) Setor sugerido baseado em tipo_processo + area
+  const tipoProc = String(dados.tipo_processo || '').toLowerCase();
+  const area = String(dados.area || dados.area_direito || (dados.processo && dados.processo.area_direito) || '').toLowerCase();
+  if(tipoProc === 'administrativo' || /administrativ|tribut|previden/.test(area)){
+    out.setorSugerido = 'administrativo';
+  } else {
+    out.setorSugerido = 'judicial';
+  }
+  out.pronto = true;
+  out.motivo = 'Processo com numero CNJ + peticao inicial + partes qualificadas';
+  return out;
+}
+
+// Modal especifico quando o agente detectou PROCESSO PRONTO: oferece 3 destinos
+function _pConfirmarIntakeProcessoPronto(nomeArq, dados, diag){
+  if(!dados) return;
+  document.getElementById('_pIntakeConfirm')?.remove();
+  window._pIntakeDadosPend = { nomeArq, dados };
+  const num = String(dados.numero_processo || (dados.processo && dados.processo.numero) || '').trim();
+  const autorObj = dados.autor && typeof dados.autor==='object' ? dados.autor : null;
+  const reuObj = dados.reu && typeof dados.reu==='object' ? dados.reu : null;
+  const autorNome = (autorObj && autorObj.nome) || (typeof dados.autor==='string'?dados.autor:'') || dados.nome_cliente || '';
+  const reuNome = (reuObj && reuObj.nome) || (typeof dados.reu==='string'?dados.reu:'') || dados.requerido || '';
+  const setorSugerido = diag.setorSugerido || 'judicial';
+  const setorLabel = setorSugerido==='administrativo' ? 'ADMINISTRATIVO' : 'JUDICIAL';
+  const linhas = [
+    ['🔢 Nº Processo', num],
+    ['⚖️ Autor', autorNome + (autorObj && autorObj.cpf ? ' — CPF '+autorObj.cpf : '')],
+    ['🛡️ Réu', reuNome + (reuObj && reuObj.cpf_cnpj ? ' — '+reuObj.cpf_cnpj : '')],
+    ['🏛️ Vara / Órgão', dados.vara || dados.orgao || (dados.processo && (dados.processo.vara||dados.processo.orgao)) || '—'],
+    ['📍 Comarca', dados.comarca || (dados.processo && dados.processo.comarca) || '—'],
+    ['👨‍⚖️ Juiz', dados.juiz_relator || (dados.processo && dados.processo.juiz) || '—'],
+    ['📌 Tipo', (dados.demanda && dados.demanda.tipo) || dados.tipo_acao || '—'],
+    ['📂 Área', dados.area || dados.area_direito || '—'],
+    ['💰 Valor da causa', dados.valor ? ('R$ '+Number(String(dados.valor).replace(/[^0-9]/g,'')||0).toLocaleString('pt-BR')) : '—']
+  ];
+  const linhasHtml = linhas.map(function(kv){var k=kv[0],v=kv[1];return '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div style="width:140px;color:var(--text3);flex-shrink:0">'+k+'</div><div style="flex:1;color:var(--text);font-weight:600;word-break:break-word">'+String(v||'—').replace(/</g,'&lt;')+'</div></div>';}).join('');
+  const resumoCurto = (dados.resumo || (dados.demanda && dados.demanda.resumo_fatos) || dados.descricao || '').substring(0, 600);
+  const faltamHtml = (diag.faltam && diag.faltam.length)
+    ? '<div style="background:var(--orange-soft,#fef3c7);border:1px solid color-mix(in srgb, var(--orange,#f59e0b) 25%, transparent);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--text2);line-height:1.5"><strong style="color:var(--orange,#f59e0b)">⚠ Documentos pendentes:</strong> '+diag.faltam.map(function(f){return String(f).replace(/</g,'&lt;');}).join(', ')+' — se quiser cobrar antes, envie para <b>Autuação</b>.</div>'
+    : '<div style="background:color-mix(in srgb, var(--green,#10b981) 10%, transparent);border:1px solid color-mix(in srgb, var(--green,#10b981) 25%, transparent);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--text2)">✅ <b>Sem pendências detectadas.</b> Processo pronto para distribuição direta.</div>';
+  const outroSetor = setorSugerido==='judicial' ? 'administrativo' : 'judicial';
+  const outroLabel = outroSetor==='judicial' ? 'JUDICIAL' : 'ADMINISTRATIVO';
+  const outroIcon = outroSetor==='judicial' ? '⚖️' : '🏛️';
+  const sugIcon = setorSugerido==='judicial' ? '⚖️' : '🏛️';
+  const sugGrad = setorSugerido==='judicial' ? '#1a73e8,#1557b0' : '#9333ea,#6b21a8';
+  const ov = document.createElement('div');
+  ov.id = '_pIntakeConfirm';
+  ov.style.cssText = 'position:fixed;inset:0;background:#000000aa;z-index:600;display:flex;align-items:center;justify-content:center;padding:12px';
+  ov.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;padding:22px">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
+    +'<div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:var(--text)">🤖 Agente Intake — Processo Pronto para Distribuição</div>'
+    +'</div>'
+    +'<div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:10px 14px;border-radius:10px;margin:10px 0 12px;font-size:12px;line-height:1.5">'
+    +'<b>✅ Detectei que este processo JÁ ESTÁ PRONTO.</b><br>'
+    +'Possui nº CNJ <b>'+num.replace(/</g,'&lt;')+'</b>, petição inicial, e qualificação de autor e réu.<br>'
+    +'<b>Sugestão do agente:</b> enviar direto para o setor <b>'+setorLabel+'</b> (baseado em '+(dados.area||dados.area_direito||'área detectada')+').'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Arquivo: <b>'+(nomeArq||'arquivo').replace(/</g,'&lt;')+'</b></div>'
+    +'<div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px">'+linhasHtml+'</div>'
+    +(resumoCurto ? '<div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;color:var(--text3);letter-spacing:1px;margin-bottom:4px">📝 RESUMO DO CASO</div><div style="font-size:11px;line-height:1.5;color:var(--text2);white-space:pre-wrap">'+resumoCurto.replace(/</g,'&lt;')+((dados.resumo||'').length>600?'...':'')+'</div></div>' : '')
+    +faltamHtml
+    +'<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Escolha o destino — o resumo completo (fatos, pedidos, partes, defesa) vai junto:</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px">'
+    +'<button onclick="_pDistribuirDireto(\''+setorSugerido+'\')" style="padding:12px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,'+sugGrad+');color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;cursor:pointer;text-align:left">'
+    +sugIcon+' Enviar direto para <b>'+setorLabel+'</b> (sugerido) <span style="opacity:.8;font-weight:400">— status DISTRIBUIDO</span>'
+    +'</button>'
+    +'<button onclick="_pDistribuirDireto(\''+outroSetor+'\')" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:left">'
+    +outroIcon+' Enviar para <b>'+outroLabel+'</b> <span style="color:var(--text3);font-weight:400">— status DISTRIBUIDO</span>'
+    +'</button>'
+    +'<button onclick="_pConfirmarEnviarAutuacao()" style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:left">'
+    +'📋 Enviar para <b>AUTUAÇÃO</b> <span style="color:var(--text3);font-weight:400">— cobrar documentos antes de distribuir</span>'
+    +'</button>'
+    +'<button class="btn-cancel" onclick="document.getElementById(\'_pIntakeConfirm\')?.remove()" style="padding:8px;margin-top:4px">✎ Revisar / Editar manualmente</button>'
+    +'</div>'
+    +'</div>';
+  ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+// Cria o processo direto no Lex com status DISTRIBUIDO (bypass Autuacao)
+// Usado quando o agente intake detectou processo PRONTO e usuario confirmou destino.
+async function _pDistribuirDireto(setor){
+  document.getElementById('_pIntakeConfirm')?.remove();
+  const pend = window._pIntakeDadosPend || {};
+  const dados = pend.dados || {};
+  const nomeArq = pend.nomeArq || 'documento';
+  if(!dados || !Object.keys(dados).length){ toast('Dados da análise perdidos — reanalise o PDF','erro'); return; }
+  setor = (setor==='administrativo')?'administrativo':'judicial';
+  const tipo = setor;
+  const setorLabel = setor==='administrativo'?'Administrativo':'Judicial';
+  const autorObj = dados.autor && typeof dados.autor==='object' ? dados.autor : null;
+  const reuObj = dados.reu && typeof dados.reu==='object' ? dados.reu : null;
+  const autorNome = (autorObj && autorObj.nome) || (typeof dados.autor==='string'?dados.autor:'') || dados.nome_cliente || '';
+  const reuNome = (reuObj && reuObj.nome) || (typeof dados.reu==='string'?dados.reu:'') || dados.requerido || '';
+  const nomeCaso = dados.nome_caso || dados.nome_cliente || autorNome || ('Caso ' + String(dados.numero_processo||'').slice(0,15));
+  const num = String(dados.numero_processo || (dados.processo && dados.processo.numero) || '').trim();
+  const area = dados.area || dados.area_direito || (dados.processo && dados.processo.area_direito) || 'Cível';
+  const partes = (autorNome && reuNome) ? (autorNome+' vs '+reuNome) : (dados.partes || '');
+  const tribunal = dados.tribunal || (dados.processo && dados.processo.tribunal)
+    || [dados.vara || (dados.processo && dados.processo.vara), dados.comarca || (dados.processo && dados.processo.comarca)].filter(Boolean).join(' — ')
+    || dados.orgao || (dados.processo && dados.processo.orgao) || '';
+  const valor = String(dados.valor || (dados.processo && dados.processo.valor_causa) || '').replace(/[^0-9]/g,'');
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  // Monta descricao COMPLETA (fatos + pedidos + defesa + partes qualificadas) — vai junto p/ o setor
+  const blocos = [];
+  blocos.push('═══ DISTRIBUICAO DIRETA — Agente Intake ═══');
+  blocos.push('Arquivo origem: ' + nomeArq);
+  if(num) blocos.push('Nº CNJ: ' + num);
+  if(autorObj){
+    blocos.push('\n👤 AUTOR:');
+    if(autorObj.nome) blocos.push('  Nome: ' + autorObj.nome);
+    if(autorObj.cpf) blocos.push('  CPF: ' + autorObj.cpf);
+    if(autorObj.rg) blocos.push('  RG: ' + autorObj.rg);
+    if(autorObj.endereco) blocos.push('  Endereço: ' + autorObj.endereco);
+    if(autorObj.estado_civil) blocos.push('  Estado civil: ' + autorObj.estado_civil);
+    if(autorObj.profissao) blocos.push('  Profissão: ' + autorObj.profissao);
+    if(autorObj.advogado) blocos.push('  Advogado: ' + autorObj.advogado + (autorObj.oab?' ('+autorObj.oab+')':''));
+  }
+  if(reuObj){
+    blocos.push('\n🛡️ RÉU:');
+    if(reuObj.nome) blocos.push('  Nome: ' + reuObj.nome);
+    if(reuObj.cpf_cnpj) blocos.push('  CPF/CNPJ: ' + reuObj.cpf_cnpj);
+    if(reuObj.endereco) blocos.push('  Endereço: ' + reuObj.endereco);
+    if(reuObj.advogado) blocos.push('  Advogado: ' + reuObj.advogado + (reuObj.oab?' ('+reuObj.oab+')':''));
+  }
+  if(dados.demanda){
+    blocos.push('\n⚖️ DEMANDA:');
+    if(dados.demanda.tipo) blocos.push('  Tipo: ' + dados.demanda.tipo);
+    if(dados.demanda.resumo_fatos) blocos.push('\n  FATOS:\n  ' + String(dados.demanda.resumo_fatos).replace(/\n/g,'\n  '));
+    if(Array.isArray(dados.demanda.pedidos) && dados.demanda.pedidos.length){
+      blocos.push('\n  PEDIDOS:');
+      dados.demanda.pedidos.forEach(function(p){blocos.push('  - '+p);});
+    }
+    if(Array.isArray(dados.demanda.defesa_reu) && dados.demanda.defesa_reu.length){
+      blocos.push('\n  DEFESA DO RÉU:');
+      dados.demanda.defesa_reu.forEach(function(d){blocos.push('  - '+d);});
+    }
+    if(Array.isArray(dados.demanda.provas_indicadas) && dados.demanda.provas_indicadas.length){
+      blocos.push('\n  PROVAS INDICADAS: ' + dados.demanda.provas_indicadas.join(', '));
+    }
+  }
+  if(dados.resumo){
+    blocos.push('\n📝 RESUMO GERAL:\n' + dados.resumo);
+  }
+  if(Array.isArray(dados.docs_identificados) && dados.docs_identificados.length){
+    blocos.push('\n📎 DOCUMENTOS NO PDF: ' + dados.docs_identificados.join(', '));
+  }
+  if(Array.isArray(dados.documentos_faltantes) && dados.documentos_faltantes.length){
+    blocos.push('\n⚠ DOCS PENDENTES: ' + dados.documentos_faltantes.join(', '));
+  }
+  const descricao = blocos.join('\n');
+  const novoId = Date.now();
+  try{
+    const ps = getProcs();
+    ps.push({
+      id: novoId,
+      nome: nomeCaso,
+      grupo: area || 'Outros',
+      numero: num,
+      partes: partes,
+      area: area,
+      tipo: tipo,
+      setor: setor,
+      tribunal: tribunal,
+      status: 'DISTRIBUIDO',
+      prazo: dados.prazo || '',
+      prazoReal: dados.prazo || '',
+      proxacao: (dados.proxima_acao || ('Acompanhar — setor '+setorLabel)),
+      valor: valor,
+      descricao: descricao,
+      frentes: [],
+      provas: (dados.demanda && Array.isArray(dados.demanda.provas_indicadas)) ? dados.demanda.provas_indicadas : [],
+      atualizado_em: new Date().toISOString().slice(0,10),
+      ultima_atualizacao: new Date().toISOString().slice(0,10),
+      dias_parado: 0,
+      andamentos: [{
+        data: hoje,
+        txt: '📤 DISTRIBUÍDO DIRETO pelo Agente Intake → Setor '+setorLabel+(num?' · Nº '+num:'')+'\nProcesso chegou PRONTO (com petição inicial e partes qualificadas).'
+      }],
+      arquivos: [],
+      // Metadados extras da extracao (preservar JSON completo p/ consulta futura)
+      intake_meta: {
+        arquivo: nomeArq,
+        extraido_em: new Date().toISOString(),
+        autor: autorObj,
+        reu: reuObj,
+        processo: dados.processo,
+        demanda: dados.demanda,
+        documentos_faltantes: dados.documentos_faltantes || [],
+        docs_identificados: dados.docs_identificados || []
+      }
+    });
+    saveProcs(ps);
+    // Integra com cicloStatus se existir (garante consistencia de estado)
+    try { if(typeof cicloStatus === 'function') cicloStatus(novoId, 'distribuir', { skipRender: true }); } catch(_){}
+    try { if(typeof atualizarUrgentes === 'function') atualizarUrgentes(); } catch(_){}
+    try { if(typeof lexConsciencia === 'function') lexConsciencia(novoId, 'Processo distribuído DIRETO pelo Agente Intake para setor '+setorLabel+'. Cliente: '+nomeCaso+'. Nº CNJ '+num+'. Área: '+area+'. Partes: '+partes, 'Distribuição Direta (Intake)'); } catch(_){}
+    toast('✓ Processo cadastrado e distribuído → '+setorLabel,'ok');
+    // Fecha o modal de preparacao se estiver aberto
+    document.getElementById('_pMOv')?.remove();
+    // Vai direto para Processos
+    setTimeout(function(){ try { ir('processos', document.querySelector('.nav-btn[onclick*="processos"]')); } catch(_){} }, 500);
+  }catch(e){
+    console.error('[_pDistribuirDireto]', e);
+    toast('Erro ao distribuir direto: '+(e.message||e),'erro');
   }
 }
 
@@ -8245,29 +8560,63 @@ function _pConfirmarIntake(nomeArq, dados){
   document.getElementById('_pIntakeConfirm')?.remove();
   // Guarda no window para _pConfirmarEnviarAutuacao acessar
   window._pIntakeDadosPend = { nomeArq, dados };
+
+  // Normaliza: aceita formato NOVO (objects) e LEGADO (strings)
+  const autorObj = (dados.autor && typeof dados.autor === 'object') ? dados.autor : null;
+  const reuObj   = (dados.reu   && typeof dados.reu   === 'object') ? dados.reu   : null;
+  const procObj  = (dados.processo && typeof dados.processo === 'object') ? dados.processo : null;
+  const demObj   = (dados.demanda  && typeof dados.demanda  === 'object') ? dados.demanda  : null;
+  const autorNome = autorObj ? (autorObj.nome||'') : (typeof dados.autor === 'string' ? dados.autor : '');
+  const reuNome   = reuObj   ? (reuObj.nome||'')   : (typeof dados.reu   === 'string' ? dados.reu   : '');
+  const numProc   = (procObj && procObj.numero) || dados.numero_processo || '';
+  const varaV     = (procObj && procObj.vara)    || dados.vara || '';
+  const comarcaV  = (procObj && procObj.comarca) || dados.comarca || '';
+  const juizV     = (procObj && procObj.juiz)    || dados.juiz_relator || '';
+  const orgaoV    = (procObj && procObj.orgao)   || dados.orgao || '';
+  const valorV    = (procObj && procObj.valor_causa) || dados.valor || '';
+  const tipoAcaoV = (demObj  && demObj.tipo)     || dados.tipo_acao || dados.tipo || '';
+  const areaV     = (procObj && procObj.area_direito) || dados.area || '';
+
   const linhas = [
-    ['👤 Cliente', dados.nome_cliente || dados.autor || '(não identificado)'],
-    ['⚖️ Autor', dados.autor || '—'],
-    ['🛡️ Réu', dados.reu || dados.requerido || '—'],
-    ['🔢 Nº Processo', dados.numero_processo || '(sem número — em preparação)'],
-    ['🏛️ Vara / Órgão', dados.vara || dados.orgao || '—'],
-    ['📍 Comarca', dados.comarca || '—'],
-    ['👨‍⚖️ Juiz', dados.juiz_relator || '—'],
-    ['📌 Tipo', dados.tipo_acao || dados.tipo || '—'],
-    ['📂 Área', dados.area || '—'],
+    ['👤 Cliente', dados.nome_cliente || autorNome || '(não identificado)'],
+    ['⚖️ Autor', (autorNome + (autorObj && autorObj.cpf ? ' ('+autorObj.cpf+')' : '')) || '—'],
+    ['🛡️ Réu', (reuNome + (reuObj && reuObj.cpf_cnpj ? ' ('+reuObj.cpf_cnpj+')' : '')) || dados.requerido || '—'],
+    ['🔢 Nº Processo', numProc || '(sem número — em preparação)'],
+    ['🏛️ Vara / Órgão', varaV || orgaoV || '—'],
+    ['📍 Comarca', comarcaV || '—'],
+    ['👨‍⚖️ Juiz', juizV || '—'],
+    ['💰 Valor da Causa', valorV ? 'R$ ' + valorV : '—'],
+    ['📌 Tipo', tipoAcaoV || '—'],
+    ['📂 Área', areaV || '—'],
+    ['⚖️ Adv. Autor', (autorObj && autorObj.advogado) ? (autorObj.advogado + (autorObj.oab?' ('+autorObj.oab+')':'')) : '—'],
+    ['🛡️ Adv. Réu', (reuObj && reuObj.advogado) ? (reuObj.advogado + (reuObj.oab?' ('+reuObj.oab+')':'')) : '—'],
     ['⏰ Prazo', dados.prazo || '(sem prazo identificado)'],
     ['🎯 Setor', (dados.setor_sugerido || (dados.tipo_processo==='administrativo'?'administrativo':'autuacao'))]
   ];
   const linhasHtml = linhas.map(([k,v])=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div style="width:130px;color:var(--text3);flex-shrink:0">${k}</div><div style="flex:1;color:var(--text);font-weight:600;word-break:break-word">${String(v||'—').replace(/</g,'&lt;')}</div></div>`).join('');
-  const resumoCurto = (dados.resumo || dados.descricao || '').substring(0, 500);
+
+  // Blocos extras (pedidos, defesa, docs) - so se houver
+  const pedidos = (demObj && Array.isArray(demObj.pedidos)) ? demObj.pedidos : [];
+  const defesa  = (demObj && Array.isArray(demObj.defesa_reu)) ? demObj.defesa_reu : [];
+  const docs    = Array.isArray(dados.docs_identificados) ? dados.docs_identificados : [];
+  const blocoExtra = (pedidos.length||defesa.length||docs.length) ?
+    `<div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:11px;line-height:1.5;color:var(--text2)">
+      ${pedidos.length?`<div><b style="color:var(--text)">📋 Pedidos do autor:</b><ul style="margin:4px 0 8px 16px;padding:0">${pedidos.slice(0,6).map(p=>`<li>${String(p).replace(/</g,'&lt;')}</li>`).join('')}</ul></div>`:''}
+      ${defesa.length?`<div><b style="color:var(--text)">🛡️ Defesa do réu:</b><ul style="margin:4px 0 8px 16px;padding:0">${defesa.slice(0,6).map(p=>`<li>${String(p).replace(/</g,'&lt;')}</li>`).join('')}</ul></div>`:''}
+      ${docs.length?`<div><b style="color:var(--text)">📎 Docs no PDF:</b> <span style="color:var(--text3)">${docs.slice(0,10).map(d=>String(d).replace(/</g,'&lt;')).join(', ')}</span></div>`:''}
+    </div>` : '';
+
+  const resumoCurto = String(dados.resumo || (demObj && demObj.resumo_fatos) || dados.descricao || '').substring(0, 800);
+  const totalResumo = String(dados.resumo || (demObj && demObj.resumo_fatos) || dados.descricao || '').length;
   const ov = document.createElement('div');
   ov.id = '_pIntakeConfirm';
   ov.style.cssText = 'position:fixed;inset:0;background:#000000aa;z-index:600;display:flex;align-items:center;justify-content:center;padding:12px';
-  ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;padding:22px">
+  ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto;padding:22px">
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;margin-bottom:4px;color:var(--text)">🤖 Agente Intake — Confirmação</div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Extraí os seguintes dados de <b>${(nomeArq||'arquivo').replace(/</g,'&lt;')}</b>. Confira antes de cadastrar.</div>
     <div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px">${linhasHtml}</div>
-    ${resumoCurto ? `<div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;color:var(--text3);letter-spacing:1px;margin-bottom:4px">📝 RESUMO</div><div style="font-size:11px;line-height:1.5;color:var(--text2);white-space:pre-wrap">${resumoCurto.replace(/</g,'&lt;')}${(dados.resumo||dados.descricao||'').length>500?'...':''}</div></div>` : ''}
+    ${blocoExtra}
+    ${resumoCurto ? `<div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;color:var(--text3);letter-spacing:1px;margin-bottom:4px">📝 RESUMO DO CASO (sobe para os setores)</div><div style="font-size:11px;line-height:1.5;color:var(--text2);white-space:pre-wrap">${resumoCurto.replace(/</g,'&lt;')}${totalResumo>800?'...':''}</div></div>` : ''}
     <div style="font-size:11px;color:var(--text3);margin-bottom:10px">⚠ Os campos do formulário já foram preenchidos. Você pode editar antes de salvar, ou confirmar que está tudo certo e enviar para o setor de Autuação (onde serão cobrados os documentos faltantes).</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-cancel" style="flex:1" onclick="document.getElementById('_pIntakeConfirm')?.remove()">✎ Revisar / Editar</button>

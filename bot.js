@@ -1599,69 +1599,119 @@ REGRAS DE OURO:
 // FIX-PDF-GIGANTE (2026-04-24): analisa um PDF a partir do TEXTO ja extraido no
 // navegador (via pdf.js). Muito mais barato e rapido que enviar base64 do PDF
 // inteiro para o Anthropic. Usado pelo /api/analisar quando req.body.texto existe.
-// Reusa o MESMO prompt/schema do analisarDoc.
+// Reusa o MESMO prompt/schema do analisarDoc + EXTRACAO COMPLETA pedida pelo CEO:
+// autor/reu/processo/demanda/docs estruturados para levar contexto aos setores seguintes.
 async function analisarDocTexto(textoExtraido, nome, meta){
-  const prompt=`Voce e o EXTRATOR JURIDICO ELITE do escritorio Camargos Advocacia. Leia com ATENCAO TOTAL AO CABECALHO do texto abaixo (extraido via OCR/parse do PDF "${nome||'documento'}") e extraia DADOS ESTRUTURADOS.
+  const prompt=`Voce e o EXTRATOR JURIDICO ELITE do escritorio Camargos Advocacia. Sua missao: ler o texto abaixo (extraido via pdf.js do arquivo "${nome||'documento'}") e EXTRAIR TUDO que esta nas PRIMEIRAS PAGINAS da peticao inicial E na contestacao, de forma ESTRUTURADA E COMPLETA. Esse JSON vai subir para os setores de Autuacao, Judicial e Administrativo - sem ele o processo chega la SEM CONTEXTO.
 
-PASSO 1 - CLASSIFIQUE:
-- JUDICIAL: peticao inicial, contestacao, replica, recurso, embargos, sentenca, acordao, decisao, despacho, intimacao, mandado, oficio judicial, procuracao, laudo, parecer.
-- ADMINISTRATIVO: notificacao fiscal, auto de infracao, decisao DRJ/CARF, PAD, intimacao administrativa, defesa/impugnacao, recurso administrativo, oficio nao-judicial.
+FOCO DE LEITURA:
+1) PETICAO INICIAL (primeiras paginas, cabecalho + qualificacao + fatos + pedidos + valor da causa):
+   - Cabecalho: "EXMO. SR. DR. JUIZ DE DIREITO DA [VARA] DA COMARCA DE [COMARCA]" / "Processo no [CNJ]".
+   - Qualificacao do AUTOR: nome completo, nacionalidade, estado civil, profissao, RG, CPF, endereco completo, email/telefone se houver.
+   - Advogado do autor: nome, OAB (numero + seccional), endereco do escritorio.
+   - Qualificacao do REU: nome/razao social, CPF ou CNPJ, endereco.
+   - DOS FATOS: o que aconteceu (resumo em 4-8 linhas).
+   - DOS PEDIDOS: cada pedido como item separado (indenizacao danos morais R$X, danos materiais R$Y, rescisao, revisao, tutela de urgencia, inversao onus da prova etc).
+   - VALOR DA CAUSA: numero exato.
+2) CONTESTACAO (quando presente):
+   - Qualificacao do REU (novamente, com RG/CPF/CNPJ/endereco).
+   - Advogado do reu: nome + OAB.
+   - Argumentos de defesa: cada tese como item separado (preliminar de ilegitimidade, merito: inexistencia de dano, culpa exclusiva da vitima, etc).
+3) DOCUMENTOS ANEXOS: lista dos docs presentes no PDF (procuracao, RG, comprovante de residencia, contrato, notas fiscais, boletim de ocorrencia, laudos etc).
 
-PASSO 2 - LEIA O CABECALHO:
-- Peticao inicial/contestacao: "EXMO. SR. DR. JUIZ DE DIREITO DA [VARA] DA COMARCA DE [COMARCA]" / "Processo no [CNJ]" / "[AUTOR] propoe em face de [REU]".
-- Sentenca/decisao: "Poder Judiciario - Tribunal de [UF]" / "[N VARA] da Comarca de [CIDADE]" / "Juiz(a): Dr(a). [NOME]" / "Autos: [NUMERO] - [AUTOR] x [REU]".
-- Administrativo: "[ORGAO]" / "Processo Administrativo no [NUMERO]" / "Auto de Infracao no ..." / "Contribuinte: [NOME]".
+Se um campo NAO aparecer: "" para string, [] para array, null para objeto. NUNCA invente.
 
-Se um campo NAO aparecer no texto, devolva "". NUNCA invente.
-
-PASSO 3 - RESPONDA APENAS em JSON valido (sem markdown/crases) com TODOS os campos:
+RESPONDA APENAS em JSON valido (sem markdown/crases) com ESTE SCHEMA EXATO:
 
 {
   "tipo":"peticao_inicial|contestacao|replica|recurso|sentenca|acordao|decisao|despacho|intimacao|mandado|procuracao|laudo|parecer|contrato|notificacao_administrativa|auto_infracao|decisao_administrativa|pad|defesa_administrativa|recurso_administrativo|oficio|outro",
   "tipo_processo":"judicial|administrativo",
-  "numero_processo":"numero CNJ (0000000-00.0000.0.00.0000) OU numero do PA, EXATAMENTE como aparece",
-  "nome_caso":"identificador curto",
-  "nome_cliente":"nome do CLIENTE que o escritorio representa - geralmente autor na inicial, reu na contestacao",
-  "autor":"nome COMPLETO do autor/requerente/exequente/impetrante",
-  "reu":"nome COMPLETO do reu/requerido/executado/impetrado/Fazenda",
+  "tem_peticao_inicial": true,
+  "tem_contestacao": true,
+
+  "autor": {
+    "nome":"nome completo",
+    "cpf":"000.000.000-00",
+    "rg":"MG-00.000.000",
+    "endereco":"logradouro, numero, complemento, bairro, cidade/UF, CEP",
+    "estado_civil":"solteiro|casado|divorciado|viuvo|uniao estavel",
+    "nacionalidade":"brasileiro(a) etc",
+    "profissao":"profissao",
+    "email":"",
+    "telefone":"",
+    "advogado":"nome do advogado do autor",
+    "oab":"OAB/MG 00000"
+  },
+  "reu": {
+    "nome":"nome completo ou razao social",
+    "cpf_cnpj":"CPF ou CNPJ formatado",
+    "endereco":"endereco completo",
+    "advogado":"nome do advogado do reu (vazio se nao houver contestacao)",
+    "oab":"OAB/... (vazio se nao houver contestacao)"
+  },
+  "processo": {
+    "numero":"numero CNJ ou do PA",
+    "vara":"ex: '3a Vara Civel'",
+    "comarca":"ex: 'Comarca de Unai/MG'",
+    "tribunal":"TJMG|TRF-6|STJ etc",
+    "juiz":"nome do juiz/relator",
+    "orgao":"Administrativo: orgao EXATO; judicial: vazio",
+    "instancia":"1a|2a|STJ|STF|Turma Recursal|Juizado Especial|Administrativo 1a|Administrativo 2a",
+    "valor_causa":"SO NUMEROS, sem R$ nem pontos",
+    "area_direito":"Civel|Trabalhista|Tributario|Previdenciario|Familia|Criminal|Administrativo|Consumidor|Empresarial|Execucao|Outro",
+    "data_distribuicao":"dd/mm/aaaa se identificar"
+  },
+  "demanda": {
+    "tipo":"tipo da acao em 1 frase (ex: 'Acao de indenizacao por danos morais e materiais', 'Beneficio previdenciario BPC/LOAS', 'Mandado de seguranca contra ato fiscal')",
+    "resumo_fatos":"6-10 linhas descrevendo O QUE ACONTECEU segundo a peticao inicial - contexto factual completo",
+    "pedidos":["indenizacao danos morais R$X","danos materiais R$Y","rescisao contratual","tutela de urgencia para Z","inversao do onus da prova","justica gratuita"],
+    "defesa_reu":["preliminar: ilegitimidade passiva","merito: inexistencia de dano","culpa exclusiva da vitima"],
+    "provas_indicadas":["testemunhal","documental","pericial"]
+  },
+  "docs_identificados":["procuracao","RG do autor","comprovante de residencia","contrato","notas fiscais","boletim de ocorrencia"],
+
+  "nome_caso":"identificador curto (ex: 'Joao Silva vs INSS - BPC')",
+  "nome_cliente":"cliente que o escritorio representa (geralmente autor)",
   "partes":"'Autor vs Reu'",
-  "requerente":"em PA: requerente/interessado/contribuinte",
-  "requerido":"em PA: orgao/pessoa contra quem se requer",
-  "tribunal":"TJMG,TRF-6,STJ,TST,TRT-3,CARF 1a Secao etc",
-  "vara":"vara/juizo EXATO (ex: '3a Vara Civel'). Vazio se administrativo.",
-  "comarca":"comarca/secao/foro. Vazio se administrativo.",
-  "juiz_relator":"nome COMPLETO do juiz/desembargador/relator",
-  "orgao":"Administrativo: orgao EXATO. Vazio para judicial.",
-  "instancia":"1a|2a|STJ|STF|Turma Recursal|Juizado Especial|Administrativo 1a|Administrativo 2a",
-  "area":"Civel|Trabalhista|Tributario|Execucao Federal|Criminal|Previdenciario|Familia|Administrativo|Consumidor|Empresarial|Outro",
-  "area_direito":"mesmo que 'area'",
-  "setor_sugerido":"judicial|administrativo|cadastro",
   "status":"URGENTE|ATIVO|RECURSAL|AGUARDANDO|EM_PREP",
-  "data_documento":"dd/mm/aaaa",
   "prazo":"dd/mm/aaaa",
   "proxima_acao":"1 FRASE",
-  "descricao":"3-4 linhas: o que esta em jogo, tese, pedido",
-  "frentes":"por virgula",
-  "valor":"SO NUMEROS ou vazio",
-  "andamentos":[{"data":"dd/mm/aaaa","txt":"descricao"}],
-  "resumo":"8-12 linhas: tipo, CABECALHO, fatos, prazos, recomendacao",
-  "eh_decisao":false,
-  "resposta_sugerida":"tipo de peca a gerar",
+  "resposta_sugerida":"peca a gerar (ex: 'Contestacao','Replica','Recurso de Apelacao')",
+  "setor_sugerido":"judicial|administrativo|cadastro",
   "custas_necessarias":false,
-  "documentos_necessarios":"lista por virgula",
-  "documentos_faltantes":["array"],
+  "documentos_faltantes":["cada doc que o cliente ainda precisa fornecer"],
   "jurisprudencia":"jurisprudencia real aplicavel se houver",
-  "tipo_acao":"tipo em 1 frase",
-  "observacoes":"notas livres",
-  "confianca_extracao":"alta|media|baixa"
+
+  "resumo":"RESUMO COMPLETO DO CASO em 10-15 linhas: identifica as partes (com qualificacao essencial), conta O QUE ACONTECEU segundo a peticao inicial, lista OS PEDIDOS do autor, descreve a DEFESA do reu (se houver contestacao), indica PROXIMOS PASSOS. Esse texto SOBE para os setores de Autuacao/Judicial/Administrativo - tem que dar contexto suficiente para o advogado do setor seguinte entender o caso sem reabrir o PDF.",
+  "observacoes":"qualidade da extracao / paginas ilegiveis / campos incertos",
+  "confianca_extracao":"alta|media|baixa",
+
+  "// CAMPOS LEGADOS (manter para compat, preencher se identificar)":"",
+  "numero_processo":"copia de processo.numero",
+  "vara":"copia de processo.vara",
+  "comarca":"copia de processo.comarca",
+  "tribunal":"copia de processo.tribunal",
+  "juiz_relator":"copia de processo.juiz",
+  "orgao":"copia de processo.orgao",
+  "area":"copia de processo.area_direito",
+  "area_direito":"copia de processo.area_direito",
+  "tipo_acao":"copia de demanda.tipo",
+  "descricao":"3-4 linhas - copia comprimida de demanda.resumo_fatos",
+  "valor":"copia de processo.valor_causa",
+  "requerente":"em PA: autor.nome",
+  "requerido":"em PA: reu.nome",
+  "data_documento":"dd/mm/aaaa"
 }
 
 REGRAS DE OURO:
-- NAO INVENTE. Se nao esta no texto: "".
-- Atencao MAXIMA ao CABECALHO (paginas iniciais).
-- ADMINISTRATIVO: preencha 'orgao', deixe 'vara'/'comarca' vazios.
-- JUDICIAL: preencha 'vara'/'comarca', deixe 'orgao' vazio.
-- Responda SOMENTE o JSON.
+- NAO INVENTE. Campo ausente = "" ou [] ou null.
+- Atencao MAXIMA ao CABECALHO da peticao inicial (paginas 1-5 normalmente).
+- Extraia CPF/CNPJ com a formatacao EXATA do documento (000.000.000-00 ou 00.000.000/0000-00).
+- PEDIDOS e DEFESA_REU como arrays de strings curtas, uma tese por item.
+- DEMANDA.resumo_fatos e RESUMO (campo raiz) sao OBRIGATORIOS quando houver peticao inicial - sem eles o setor seguinte fica cego.
+- ADMINISTRATIVO: preencha processo.orgao, deixe processo.vara/comarca vazios.
+- JUDICIAL: preencha processo.vara/comarca, deixe processo.orgao vazio.
+- Responda SOMENTE o JSON, sem nenhum texto antes ou depois.
 
 ${meta && meta.paginas ? '[METADADOS: PDF com '+meta.paginas+' paginas, lidas '+(meta.paginasLidas||meta.paginas)+']' : ''}
 
@@ -1670,13 +1720,91 @@ TEXTO EXTRAIDO DO PDF:
 ${String(textoExtraido||'').substring(0, 280000)}
 """`;
 
-  const txt = await ia([{role:'user', content: prompt}], null, 3000, MODELO_TOP);
+  // maxTok subiu para 5000: o schema agora tem autor/reu/processo/demanda + resumo longo
+  const txt = await ia([{role:'user', content: prompt}], null, 5000, MODELO_TOP);
   const m = txt.replace(/```json|```/g,'').trim().match(/\{[\s\S]*\}/);
-  try { return JSON.parse(m ? m[0] : txt); }
+  let obj;
+  try { obj = JSON.parse(m ? m[0] : txt); }
   catch(parseErr){
     console.warn('[analisarDocTexto] JSON invalido para "'+nome+'":', (m?m[0]:txt).substring(0,200));
     throw new Error('IA retornou formato invalido ao analisar "'+nome+'". Tente novamente.');
   }
+  // Pos-processamento: garante que campos legados flat estejam preenchidos a partir dos nested
+  // (a IA deve fazer, mas garantimos no servidor p/ nao quebrar _pPreencherCampos antigo)
+  try {
+    if(obj.processo){
+      if(!obj.numero_processo && obj.processo.numero) obj.numero_processo = obj.processo.numero;
+      if(!obj.vara && obj.processo.vara) obj.vara = obj.processo.vara;
+      if(!obj.comarca && obj.processo.comarca) obj.comarca = obj.processo.comarca;
+      if(!obj.tribunal && obj.processo.tribunal) obj.tribunal = obj.processo.tribunal;
+      if(!obj.juiz_relator && obj.processo.juiz) obj.juiz_relator = obj.processo.juiz;
+      if(!obj.orgao && obj.processo.orgao) obj.orgao = obj.processo.orgao;
+      if(!obj.area && obj.processo.area_direito) obj.area = obj.processo.area_direito;
+      if(!obj.area_direito && obj.processo.area_direito) obj.area_direito = obj.processo.area_direito;
+      if(!obj.valor && obj.processo.valor_causa) obj.valor = obj.processo.valor_causa;
+    }
+    if(obj.autor){
+      if(!obj.autor_nome && obj.autor.nome) obj.autor_nome = obj.autor.nome;
+      if(!obj.autor && obj.autor.nome) obj.autor = obj.autor.nome; // mantem compat - mas aqui obj.autor ja eh objeto, tratamos abaixo
+    }
+    if(obj.reu && typeof obj.reu === 'object' && obj.reu.nome){
+      obj.reu_nome = obj.reu.nome;
+    }
+    if(obj.demanda){
+      if(!obj.tipo_acao && obj.demanda.tipo) obj.tipo_acao = obj.demanda.tipo;
+      if(!obj.descricao && obj.demanda.resumo_fatos) obj.descricao = String(obj.demanda.resumo_fatos).substring(0,400);
+    }
+  } catch(_){}
+  return obj;
+}
+
+// CEO-FIX (2026-04-24): converte formato flat LEGADO do analisarDoc (autor/reu strings,
+// numero_processo/vara flat) para formato NOVO com objects aninhados (autor:{nome,cpf,...}).
+// Garante que o frontend sempre receba o mesmo shape, venha do path texto ou base64.
+// Nao destroi campos flat existentes (mantem compat).
+function _normalizarAnaliseFlat2Nested(obj){
+  if(!obj || typeof obj !== 'object') return;
+  // autor -> {nome}
+  if(typeof obj.autor === 'string'){
+    const nome = obj.autor;
+    obj.autor = { nome, cpf:'', rg:'', endereco:'', estado_civil:'', nacionalidade:'', profissao:'', email:'', telefone:'', advogado:'', oab:'' };
+  } else if(!obj.autor || typeof obj.autor !== 'object'){
+    obj.autor = { nome: obj.nome_cliente||obj.requerente||'', cpf:'', rg:'', endereco:'', estado_civil:'', nacionalidade:'', profissao:'', email:'', telefone:'', advogado:'', oab:'' };
+  }
+  // reu -> {nome}
+  if(typeof obj.reu === 'string'){
+    const nome = obj.reu;
+    obj.reu = { nome, cpf_cnpj:'', endereco:'', advogado:'', oab:'' };
+  } else if(!obj.reu || typeof obj.reu !== 'object'){
+    obj.reu = { nome: obj.requerido||'', cpf_cnpj:'', endereco:'', advogado:'', oab:'' };
+  }
+  // processo {}
+  if(!obj.processo || typeof obj.processo !== 'object'){
+    obj.processo = {
+      numero: obj.numero_processo||'',
+      vara: obj.vara||'',
+      comarca: obj.comarca||'',
+      tribunal: obj.tribunal||'',
+      juiz: obj.juiz_relator||'',
+      orgao: obj.orgao||'',
+      instancia: obj.instancia||'',
+      valor_causa: obj.valor||'',
+      area_direito: obj.area_direito||obj.area||'',
+      data_distribuicao: ''
+    };
+  }
+  // demanda {}
+  if(!obj.demanda || typeof obj.demanda !== 'object'){
+    obj.demanda = {
+      tipo: obj.tipo_acao||'',
+      resumo_fatos: obj.descricao||'',
+      pedidos: [],
+      defesa_reu: [],
+      provas_indicadas: []
+    };
+  }
+  // docs_identificados []
+  if(!Array.isArray(obj.docs_identificados)) obj.docs_identificados = [];
 }
 
 function _extrairZipEntry(buffer, nomeEntrada) {
@@ -9054,6 +9182,8 @@ const server = http.createServer(async (req, res) => {
       const isPdf = (b.mimeType||'').includes('pdf') || (b.nome||'').toLowerCase().endsWith('.pdf');
       console.log('[analisar] Recebido:', b.nome||'(sem nome)', '('+(buf.length/1024).toFixed(1)+'KB, pdf='+isPdf+')');
       const analise = await _analisarDocEmChunks(buf, isPdf, b.nome||'documento', null, {});
+      // CEO-FIX (2026-04-24): garante nested autor/reu/processo/demanda a partir dos flat p/ consistencia com path texto
+      try { _normalizarAnaliseFlat2Nested(analise); } catch(_){}
       console.log('[analisar] OK:', b.nome, '- cliente=', analise?.nome_cliente||'?', 'numero=', analise?.numero_processo||'?');
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify(analise));
     } catch(e) {
