@@ -4945,8 +4945,18 @@ function salvarProc(){
   const _editedId=document.getElementById('modal').getAttribute('data-edit');saveProcs(ps); atualizarUrgentes(); fecharModal(); setTimeout(sincronizarComBot,500);
   if(_editedId) {
     registrarAcaoSalvar(parseInt(_editedId),'Processo editado');
+    // SOBERANIA: registrarAcaoSalvar -> cicloStatus('andamento') força ATIVO.
+    // Reaplicamos o status escolhido pelo usuário no formulário (vence sobre 'andamento').
+    try {
+      if(typeof cicloStatus==='function'){
+        cicloStatus(parseInt(_editedId), 'set', {status: (statusVal||'ATIVO').toUpperCase(), skipRender:true});
+      } else {
+        const _ps2=getProcs(); const _ix=_ps2.findIndex(x=>x.id==_editedId);
+        if(_ix>-1){ _ps2[_ix].status=(statusVal||'ATIVO').toUpperCase(); saveProcs(_ps2); }
+      }
+    } catch(e){ console.warn('[salvarProc] reapply status falhou:', e&&e.message); }
     // Lex Consciência — analisa a edição
-    const _ep=ps.find(x=>x.id==_editedId);
+    const _ep=getProcs().find(x=>x.id==_editedId);
     lexConsciencia(parseInt(_editedId), 'Processo editado: '+nome+' | Área: '+(document.getElementById('f-area')?.value||'?')+' | Setor: '+(document.getElementById('f-setor')?.value||'?')+' | Status: '+(_ep?.status||'?'), 'Edição de processo');
   }
   toast('✓ Processo salvo com sucesso!');
