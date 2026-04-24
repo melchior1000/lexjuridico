@@ -9491,7 +9491,22 @@ if(url==='/api/memoria' && req.method==='GET') {
   // quando qualquer processo muda ou comando chega
   // ════════════════════════════════════════════════════════════════════════
   if(url==='/api/sse' && req.method==='GET') {
-    const pfSse = validarToken(getToken(req));
+    // SSE: valida token com regra relaxada (assinatura válida, sem check de idle)
+    // porque EventSource reconecta automaticamente e token pode ter sido criado há >30min
+    const tkSse = getToken(req);
+    let pfSse = null;
+    try {
+      if(tkSse) {
+        const { p, ts, sig } = JSON.parse(Buffer.from(tkSse,'base64url').toString());
+        const esperado = CRYPTO.createHmac('sha256', AUTH_SECRET).update(p+'|'+ts).digest('hex').slice(0,16);
+        if(sig === esperado && PERMS[p]) {
+          pfSse = p;
+          // Registra atividade (mantém sessão viva pra outras rotas)
+          if(!global._sessaoAtividade) global._sessaoAtividade = new Map();
+          global._sessaoAtividade.set(tkSse, Date.now());
+        }
+      }
+    } catch(e) {}
     if(!pfSse) { res.writeHead(401,corsHeaders(req)); res.end('data: {"error":"Não autenticado"}\n\n'); return; }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
