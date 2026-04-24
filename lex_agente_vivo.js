@@ -855,30 +855,68 @@ async function handlerAplicar(req, res, body, deps) {
     if (!processo) return jsonResponse(res, 404, { error: 'processo não encontrado' }, deps.CORS);
 
     const antes = JSON.parse(JSON.stringify(processo));
+    const hoje = new Date().toISOString().slice(0, 10);
+    // Status considerados "finais" — não voltam para ATIVO sozinhos
+    const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
+    // Detecta "houve trabalho" — qualquer campo substantivo preenchido conta
+    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer);
 
     if (proposta.andamento) {
       processo.andamentos = processo.andamentos || [];
-      const hoje = new Date().toISOString().slice(0, 10);
       processo.andamentos.push({
         data: hoje,
         texto: proposta.andamento,
         origem: 'gestor_ia',
         justificativa: proposta.justificativa || ''
       });
+    }
+
+    // Regra CEO CENTRAL: se proposta mudou qualquer coisa, atualiza timestamps + zera dias_parado
+    if (teveTrabalho) {
       processo.ultima_atualizacao = hoje;
       processo.atualizado_em = hoje;
-      // Atualização = houve trabalho = reseta dias parado
       processo.dias_parado = 0;
       processo.diasParado = 0;
-      // Regra CEO: qualquer atualização = volta ATIVO (a menos que proposta mude pra outro status)
-      if (!proposta.status) processo.status = 'ATIVO';
+      // Limpa prazo vencendo (≤5d) — alerta de prazo DEVE sumir quando houve andamento
+      if (proposta.andamento && processo.prazo && !proposta.prazo) {
+        try {
+          const pr = String(processo.prazo).trim();
+          // Aceita DD/MM/YYYY ou YYYY-MM-DD
+          let dt = null;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(pr)) dt = new Date(pr);
+          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(pr)) {
+            const [d,m,a] = pr.split('/').map(Number);
+            dt = new Date(a, m-1, d);
+          }
+          if (dt) {
+            const dRest = Math.ceil((dt - new Date()) / 86400000);
+            if (dRest !== null && dRest <= 5) {
+              console.log('[VIVO] Prazo cumprido (andamento aplicado), limpando:', pr);
+              processo.prazo = '';
+              processo.prazoReal = '';
+            }
+          }
+        } catch(_) {}
+      }
     }
+
+    // Aplica status: se proposta trouxe status explícito, respeita. Senão, se houve trabalho, ATIVO.
     if (proposta.status) {
       const stUp = String(proposta.status).toUpperCase().trim();
-      if ((typeof STATUS_VALIDOS !== 'undefined' ? STATUS_VALIDOS : ['URGENTE','ATIVO','MONITORAR','AGUARDANDO','VENCIDO','CONCLUIDO']).includes(stUp)) {
+      if ((typeof STATUS_VALIDOS !== 'undefined' ? STATUS_VALIDOS : ['URGENTE','ATIVO','DISTRIBUIDO','MONITORAR','AGUARDANDO','VENCIDO','CONCLUIDO','ENTREGUE']).includes(stUp)) {
         processo.status = stUp;
       } else {
         console.warn('[VIVO] Status inválido ignorado:', proposta.status);
+        // Fallback: se teve trabalho mas status inválido, força ATIVO
+        if (teveTrabalho && !FINAIS.includes(String(processo.status||'').toUpperCase())) {
+          processo.status = 'ATIVO';
+        }
+      }
+    } else if (teveTrabalho) {
+      // Sem status explícito mas houve trabalho → ATIVO (exceto finais e EM_PREP)
+      const stAtual = String(processo.status||'').toUpperCase();
+      if (!FINAIS.includes(stAtual) && stAtual !== 'EM_PREP') {
+        processo.status = 'ATIVO';
       }
     }
     if (typeof proposta.dias_parado === 'number' && proposta.dias_parado >= 0) {

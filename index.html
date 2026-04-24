@@ -572,10 +572,9 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
     <button class="nav-btn" onclick="ir('peticao',this)"><span class="nav-icon">✎</span> Gerador de Peça</button>
     <button class="nav-btn" onclick="ir('juizes',this)"><span class="nav-icon">◉</span> Perfil de Juízes</button>
     <div class="nav-section">Sistema</div>
-    <button class="nav-btn" onclick="exportarBackup()"><span class="nav-icon">↓</span> Exportar Backup</button>
-    <button class="nav-btn" onclick="document.getElementById('import-file').click()"><span class="nav-icon">↑</span> Importar Backup</button>
+    <button class="nav-btn" onclick="abrirCentroDados()"><span class="nav-icon">💾</span> Centro de Dados</button>
     <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>
-    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importarBackup(this)">
+    <input type="file" id="import-file" accept=".json,.zip" style="display:none" onchange="importarBackup(this)">
     <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram Bot</button>
     <button class="nav-btn" onclick="ir('mensagens',this)"><span class="nav-icon">💬</span> Central Mensagens</button>
     <button class="nav-btn" onclick="ir('agenda',this)"><span class="nav-icon">📇</span> Agenda / Contatos</button>
@@ -587,7 +586,7 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
     <div class="urgente-pill"><div class="pulse"></div><span id="urg-count" style="font-size:12px;color:var(--text2)">— urgentes</span></div>
     <div style="font-size:11px;color:var(--accent);margin-bottom:4px;" id="perfil-label"></div>
     <div class="oab" id="topbar-oab"></div>
-    <button onclick="exportarDados()" title="Baixar todos os dados do escrítório" style="margin-top:8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:8px 12px;color:var(--text2);font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;width:100%;font-weight:600;">⬇ Exportar Dados</button>
+    <button onclick="abrirCentroDados()" title="Gerenciar dados do escritório" style="margin-top:8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:8px 12px;color:var(--text2);font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;width:100%;font-weight:600;">💾 Centro de Dados</button>
     <button onclick="sair()" style="margin-top:6px;background:var(--red-soft);border:1px solid var(--red);border-radius:6px;padding:8px 12px;color:var(--red);font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;width:100%;font-weight:700;">↩ Sair do Sistema</button>
   </div>
 </div>
@@ -3414,6 +3413,84 @@ _normalizarTiposProcessosLocais();
 function parsePrazo(s){if(!s||!s.includes('/'))return null;const[d,m,a]=s.split('/').map(Number);if(!d||!m||!a)return null;return new Date(a,m-1,d);}
 function diasRestantes(s){const dt=parsePrazo(s);if(!dt)return null;const h=new Date();h.setHours(0,0,0,0);return Math.ceil((dt-h)/86400000);}
 function calcAjustado(s){const dt=parsePrazo(s);if(!dt)return{prazo:'',prazoReal:''};const aj=new Date(dt);aj.setDate(aj.getDate()-3);const fmt=d=>d.toLocaleDateString('pt-BR');return{prazo:fmt(aj),prazoReal:fmt(dt)};}
+// ═══════════════════════════════════════════════════════════════════════
+// CICLO DE STATUS — fonte ÚNICA de verdade para mudanças de status
+// Regra CEO (ordem de prioridade):
+//   evento='andamento'     → ATIVO (exceto CONCLUIDO/ENTREGUE/ARQUIVADO/EM_PREP), zera dias_parado, limpa prazo <=5d
+//   evento='parado_5d'     → URGENTE (só se status atual = ATIVO)
+//   evento='prazo_critico' → URGENTE (ATIVO ou AGUARDANDO)
+//   evento='distribuir'    → DISTRIBUIDO
+//   evento='concluir'      → CONCLUIDO
+//   evento='entregar'      → ENTREGUE
+//   evento='arquivar'      → ARQUIVADO
+//   evento='set'           → opts.status explícito (proposta IA com status definido)
+// opts.skipRender=true → não re-renderiza (útil em loops)
+// opts.skipSave=true   → não chama saveProcs (caller salva em lote)
+// Retorna o processo atualizado (ou null se não achou).
+// ═══════════════════════════════════════════════════════════════════════
+function cicloStatus(procId, evento, opts){
+  opts = opts || {};
+  const ps = getProcs();
+  const idx = ps.findIndex(x => String(x.id) === String(procId));
+  if(idx < 0) { console.warn('[cicloStatus] proc não encontrado:', procId); return null; }
+  const p = ps[idx];
+  const stAtual = String(p.status || '').toUpperCase();
+  const hoje = new Date().toISOString().slice(0,10);
+  const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
+  switch(evento){
+    case 'andamento':
+      if(!FINAIS.includes(stAtual) && stAtual !== 'EM_PREP') p.status = 'ATIVO';
+      p.atualizado_em = hoje;
+      p.ultima_atualizacao = hoje;
+      p.dias_parado = 0;
+      p.diasParado = 0;
+      if(p.prazo){
+        const dRest = diasRestantes(p.prazo);
+        if(dRest !== null && dRest <= 5){ p.prazo = ''; p.prazoReal = ''; }
+      }
+      break;
+    case 'parado_5d':
+      if(stAtual === 'ATIVO') p.status = 'URGENTE';
+      break;
+    case 'prazo_critico':
+      if(stAtual === 'ATIVO' || stAtual === 'AGUARDANDO') p.status = 'URGENTE';
+      break;
+    case 'distribuir':
+      p.status = 'DISTRIBUIDO';
+      p.atualizado_em = hoje;
+      p.dias_parado = 0; p.diasParado = 0;
+      break;
+    case 'concluir':
+      p.status = 'CONCLUIDO'; p.atualizado_em = hoje; break;
+    case 'entregar':
+      p.status = 'ENTREGUE'; p.atualizado_em = hoje; break;
+    case 'arquivar':
+      p.status = 'ARQUIVADO'; p.atualizado_em = hoje; break;
+    case 'set': {
+      if(opts.status){
+        const stNovo = String(opts.status).toUpperCase().trim();
+        const VALIDOS = ['URGENTE','ATIVO','DISTRIBUIDO','MONITORAR','AGUARDANDO','VENCIDO','CONCLUIDO','ENTREGUE','ARQUIVADO','EM_PREP','GANHO','PERDIDO','RECURSAL'];
+        if(VALIDOS.includes(stNovo)){
+          p.status = stNovo;
+          p.atualizado_em = hoje;
+          if(stNovo === 'ATIVO'){ p.dias_parado = 0; p.diasParado = 0; }
+        } else { console.warn('[cicloStatus] status inválido:', opts.status); }
+      }
+      break;
+    }
+    default:
+      console.warn('[cicloStatus] evento desconhecido:', evento);
+      return null;
+  }
+  ps[idx] = p;
+  if(!opts.skipSave) saveProcs(ps);
+  if(!opts.skipRender){
+    try { if(typeof atualizarUrgentes === 'function') atualizarUrgentes(); } catch(e){}
+    try { if(typeof renderPainel === 'function') renderPainel(); } catch(e){}
+    try { if(typeof renderProcessos === 'function') renderProcessos(); } catch(e){}
+  }
+  return p;
+}
 function fmtPrazo(p){if(!p.prazo)return{txt:'Monitorar',cor:'var(--text3)'};const d=diasRestantes(p.prazo);if(d===null)return{txt:p.prazo,cor:'var(--text3)'};if(d<0)return{txt:'Vencido',cor:'var(--text3)'};if(d===0)return{txt:'HOJE!',cor:'var(--red)'};if(d<=3)return{txt:`${d}d — ${p.prazo}`,cor:'var(--red)'};if(d<=7)return{txt:`${d}d — ${p.prazo}`,cor:'var(--orange)'};return{txt:p.prazo,cor:'var(--text2)'};}
 function alertasPrazo(){return getProcs().filter(p=>p.prazo && !['CONCLUIDO','ENTREGUE','ARQUIVADO'].includes(p.status)).map(p=>({...p,d:diasRestantes(p.prazo)})).filter(p=>p.d!==null&&p.d>=0&&p.d<=5).sort((a,b)=>a.d-b.d);}
 
@@ -4854,16 +4931,11 @@ function salvarProc(){
     const idx=ps.findIndex(x=>x.id==editId);
     if(idx>-1) {
       ps[idx]={...ps[idx],...dados};
-      // Atualização manual = houve trabalho = reseta urgência
-      const hoje = new Date().toISOString().slice(0,10);
-      ps[idx].atualizado_em = hoje;
-      ps[idx].ultima_atualizacao = hoje;
-      ps[idx].dias_parado = 0;
-      ps[idx].diasParado = 0;
-      // Regra CEO: qualquer edição manual = ATIVO (exceto se definiu status especial: CONCLUIDO, EM_PREP)
-      const stAtual = (dados.status || ps[idx].status || '').toUpperCase();
-      if(stAtual !== 'CONCLUIDO' && stAtual !== 'EM_PREP') {
-        ps[idx].status = 'ATIVO';
+      // Atualização manual = houve trabalho — delegamos para cicloStatus via registrarAcaoSalvar abaixo.
+      // Aqui só garantimos que EM_PREP/CONCLUIDO/ARQUIVADO explícitos no form sejam preservados.
+      const stForm = (dados.status || '').toUpperCase();
+      if(stForm === 'EM_PREP' || stForm === 'CONCLUIDO' || stForm === 'ENTREGUE' || stForm === 'ARQUIVADO'){
+        ps[idx].status = stForm;
       }
     }
   }
@@ -7758,6 +7830,19 @@ async function aplicarPropostaGestor() {
         console.log('[LEX] Processo atualizado localmente — status:', local.status, 'setor:', local.setor);
         if(typeof saveProcs === 'function') saveProcs(ps);
         else localStorage.setItem('lex_procs', JSON.stringify(ps));
+
+        // CICLO CEO: aplica regra centralizada após merge
+        // - Se proposta trouxe status explícito → cicloStatus('set')
+        // - Se proposta trouxe andamento (houve trabalho) sem status → 'andamento' (ATIVO)
+        try {
+          const statusProp = propostaNormalizada.status;
+          const teveAndamento = !!propostaNormalizada.andamento;
+          if(statusProp){
+            cicloStatus(d.processo.id, 'set', {status: statusProp, skipRender: true});
+          } else if(teveAndamento){
+            cicloStatus(d.processo.id, 'andamento', {skipRender: true});
+          }
+        } catch(e){ console.warn('[Lex] cicloStatus falhou:', e && e.message); }
       } else {
         console.warn('[LEX] Processo não encontrado no localStorage! id:', d.processo.id);
       }
@@ -8144,29 +8229,11 @@ function registrarAcaoSalvar(procId,acao){
   const idx=ps.findIndex(p=>p.id===procId||p.id==procId);
   if(idx<0)return;
   const p=ps[idx];
-  // Regra CEO: qualquer atualização = ATIVO (exceto CONCLUIDO/ENTREGUE)
-  const stAtual = (p.status||'').toUpperCase();
-  if(stAtual !== 'CONCLUIDO' && stAtual !== 'ENTREGUE') {
-    p.status='ATIVO';
-  }
-  // Limpar prazo vencendo se houve andamento (prazo cumprido)
-  if(p.prazo) {
-    const dRest = diasRestantes(p.prazo);
-    if(dRest !== null && dRest <= 5) {
-      p.prazo = '';
-      p.prazoReal = '';
-    }
-  }
-  const hoje = new Date().toISOString().slice(0,10);
-  p.atualizado_em = hoje;
-  p.ultima_atualizacao = hoje;
-  p.dias_parado = 0;
-  p.diasParado = 0;
   p._ultimaAcao=acao||'Salvo';
   p._ultimaAtualiz=new Date().toISOString();
   saveProcs(ps);
-  atualizarUrgentes();
-  renderPainel(); renderProcessos();
+  // Regra CEO centralizada: delega ciclo de status (ATIVO + zera dias + limpa prazo vencido)
+  cicloStatus(procId, 'andamento');
   toast('✓ Processo atualizado — status ATIVO','ok');
   if(typeof renderPainel==='function'&&document.getElementById('page-title')?.textContent==='Painel Geral')renderPainel();
 }
@@ -8346,13 +8413,14 @@ function _lexAplicarSugestao(procId, dados){
   const setorAnterior = ps[idx].setor;
   const statusAnterior = ps[idx].status;
   let mudancas=[];
+  let statusSugerido = null;
   
   if(dados.mudar_setor && dados.setor_sugerido && dados.setor_sugerido !== setorAnterior){
     ps[idx].setor=dados.setor_sugerido;
     mudancas.push('📁 Movido: '+(setorLabels[setorAnterior]||setorAnterior)+' → '+(setorLabels[dados.setor_sugerido]||dados.setor_sugerido));
   }
   if(dados.mudar_status && dados.status_sugerido && dados.status_sugerido !== statusAnterior){
-    ps[idx].status=dados.status_sugerido;
+    statusSugerido = dados.status_sugerido;
     mudancas.push('🔄 Status: '+statusAnterior+' → '+dados.status_sugerido);
   }
   if(dados.proxima_acao){
@@ -8367,13 +8435,14 @@ function _lexAplicarSugestao(procId, dados){
       data:new Date().toLocaleDateString('pt-BR'),
       txt:'🤖 LEX MOVIMENTAÇÃO:\n'+mudancas.join('\n')+(dados.motivo_setor && dados.mudar_setor ? '\nMotivo: '+dados.motivo_setor : '')
     });
-    ps[idx].atualizado_em = new Date().toISOString().slice(0,10);
-    ps[idx].dias_parado = 0;
   }
-  
   saveProcs(ps);
-  atualizarUrgentes();
-  renderPainel();renderProcessos();
+  // Delega ciclo de status — se a IA sugeriu status específico, respeita; senão ATIVO (houve trabalho)
+  if(statusSugerido){
+    cicloStatus(procId, 'set', {status: statusSugerido});
+  } else if(mudancas.length){
+    cicloStatus(procId, 'andamento');
+  }
   toast('✓ Lex movimentou o processo!','ok');
   
   // Re-abrir processo se estava aberto
@@ -8388,14 +8457,16 @@ function cicloAtualizacaoInteligente(){
 
   ps.forEach(p=>{
     const d=diasRestantes(p.prazo);
+    // PROTEÇÃO CEO: processo atualizado HOJE (dias_parado=0) NUNCA é revertido para URGENTE neste ciclo.
+    const atualizadoHoje = (p.dias_parado === 0 || p.diasParado === 0);
 
     // URGENTE + prazo vencido >7d → ATIVO
     if(p.status==='URGENTE'&&d!==null&&d<-7){
       mudancas.push(`${p.nome}: URGENTE → ATIVO (prazo vencido há ${Math.abs(d)}d)`);
       p.status='ATIVO';n++;
     }
-    // ATIVO + prazo ≤5d → URGENTE
-    if(p.status==='ATIVO'&&d!==null&&d>=0&&d<=5){
+    // ATIVO + prazo ≤5d → URGENTE (só se NÃO foi atualizado hoje, pois atualização zera prazo crítico)
+    if(p.status==='ATIVO'&&d!==null&&d>=0&&d<=5&&!atualizadoHoje){
       mudancas.push(`${p.nome}: ATIVO → URGENTE (prazo em ${d}d)`);
       p.status='URGENTE';n++;
     }
@@ -8404,15 +8475,15 @@ function cicloAtualizacaoInteligente(){
       mudancas.push(`${p.nome}: AGUARDANDO → ATIVO (prazo passou)`);
       p.status='ATIVO';n++;
     }
-    // ATIVO + 8 dias sem andamento → URGENTE
-    if(p.status==='ATIVO'&&(p.andamentos||[]).length){
+    // ATIVO + 10+ dias sem andamento → URGENTE (regra CEO: só MUITOS dias parado)
+    if(p.status==='ATIVO'&&(p.andamentos||[]).length&&!atualizadoHoje){
       const[dd,mm,aa]=(p.andamentos[0].data||'').split('/').map(Number);
       if(aa){
         const dias=Math.ceil((new Date()-new Date(aa,mm-1,dd))/86400000);
-        if(dias>=8){mudancas.push(`${p.nome}: ATIVO → URGENTE (${dias}d sem andamento)`);p.status='URGENTE';n++;}
+        if(dias>=10){mudancas.push(`${p.nome}: ATIVO → URGENTE (${dias}d sem andamento)`);p.status='URGENTE';n++;}
       }
     }
-    // NOVO: URGENTE + andamento recente (≤3d) + prazo folgado (>5d ou sem prazo) → ATIVO
+    // URGENTE + andamento recente (≤3d) + prazo folgado (>5d ou sem prazo) → ATIVO
     if(p.status==='URGENTE'&&(p.andamentos||[]).length){
       const[dd2,mm2,aa2]=(p.andamentos[0].data||'').split('/').map(Number);
       if(aa2){
@@ -9497,17 +9568,9 @@ async function atualizarAndamentoProcessoExistente(){
   if(!ps[idx].andamentos) ps[idx].andamentos = [];
   const hoje = new Date().toISOString().slice(0,10);
   ps[idx].andamentos.unshift({data:hoje, txt});
-  // Atualização manual = houve trabalho = reseta urgência
-  ps[idx].atualizado_em = hoje;
-  ps[idx].ultima_atualizacao = hoje;
-  ps[idx].dias_parado = 0;
-  ps[idx].diasParado = 0;
-  // Regra CEO: qualquer atualização manual = ATIVO (exceto CONCLUIDO/EM_PREP)
-  const stManual = (ps[idx].status || '').toUpperCase();
-  if(stManual !== 'CONCLUIDO' && stManual !== 'EM_PREP') ps[idx].status = 'ATIVO';
   saveProcs(ps);
-  atualizarUrgentes();
-  renderPainel(); renderProcessos();
+  // Regra CEO centralizada: ATIVO + zera dias + limpa prazo cumprido
+  cicloStatus(chatCtx.id, 'andamento');
   try{
     const tk = (typeof getAuthToken==='function' ? (getAuthToken()||'') : '');
     const headers = {'Content-Type':'application/json', 'X-Aparelho-Id': getAparelhoId()};

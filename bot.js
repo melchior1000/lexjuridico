@@ -4318,6 +4318,8 @@ function _processosParaCobrar() {
     if(!limiar) continue;
     const dias = _diasSemAtualizacao(p);
     if(dias === null) continue; // sem data base, pula
+    // PROTEÇÃO CEO: se atualizado hoje (dias=0), pula — não gera cobrança nem muda status.
+    if(dias === 0 || p.dias_parado === 0 || p.diasParado === 0) continue;
     if(setor !== 'autuacao' && dias >= COBRADOR_LIMIARES_DIAS.ATIVO && st !== 'URGENTE') {
       p.status = 'URGENTE';
       p.atualizado_em = new Date().toISOString();
@@ -10505,34 +10507,38 @@ async function _motorProativoLex() {
     const setor = String(p.setor||'').toLowerCase();
     const dias = _diasSemAtualizacao(p);
     const nome = p.nome || 'Sem nome';
-    
-    // 1. PROCESSOS PARADOS (sem atualização)
-    if(st === 'ATIVO' && dias >= 5) {
+
+    // PROTEÇÃO CEO: se processo foi atualizado HOJE (dias_parado=0 ou diasParado=0),
+    // o motor NÃO pode mudar status nem gerar alerta de parado.
+    const atualizadoHoje = (p.dias_parado === 0) || (p.diasParado === 0) || (dias !== null && dias === 0);
+
+    // 1. PROCESSOS PARADS (sem atualização)
+    if(st === 'ATIVO' && !atualizadoHoje && dias !== null && dias >= 5) {
       alertas.push(`⚠️ *${nome}* — ${dias} dias parado no setor ${setor}. Precisa de atenção!`);
-      // Marca como urgente automaticamente se > 10 dias
-      if(dias >= 10 && st !== 'URGENTE') {
+      // Regra CEO: só marca URGENTE se >=10 dias E status atual ainda é ATIVO
+      if(dias >= 10 && st === 'ATIVO') {
         p.status = 'URGENTE';
         acoes.push(`🔴 ${nome} → URGENTE (${dias}d parado)`);
       }
     }
     
     // 2. DISTRIBUÍDOS sem movimentação > 3 dias
-    if(st === 'DISTRIBUIDO' && dias >= 3) {
+    if(st === 'DISTRIBUIDO' && !atualizadoHoje && dias !== null && dias >= 3) {
       alertas.push(`📤 *${nome}* — Distribuído há ${dias} dias e SEM MOVIMENTAÇÃO. Verificar se foi recebido pelo setor ${setor}.`);
     }
     
     // 3. EM_PREP há mais de 7 dias
-    if((st === 'EM_PREP' || setor === 'autuacao') && dias >= 7) {
+    if((st === 'EM_PREP' || setor === 'autuacao') && !atualizadoHoje && dias !== null && dias >= 7) {
       alertas.push(`📋 *${nome}* — Em preparação há ${dias} dias. Precisa ser distribuído ou tem docs pendentes?`);
     }
     
     // 4. URGENTE há mais de 3 dias sem ação
-    if(st === 'URGENTE' && dias >= 3) {
+    if(st === 'URGENTE' && !atualizadoHoje && dias !== null && dias >= 3) {
       alertas.push(`🚨 *${nome}* — URGENTE há ${dias} dias SEM AÇÃO! Prioridade máxima!`);
     }
     
-    // 5. Prazo vencendo
-    if(p.prazo) {
+    // 5. Prazo vencendo — NÃO alerta se atualizado hoje (atualização limpa prazo cumprido)
+    if(p.prazo && !atualizadoHoje) {
       try {
         const parts = p.prazo.includes('/') ? p.prazo.split('/').reverse().join('-') : p.prazo;
         const dprazo = Math.ceil((new Date(parts) - agora) / (1000*60*60*24));
@@ -10543,7 +10549,7 @@ async function _motorProativoLex() {
     }
     
     // 6. Atualizar dias_parado
-    if(dias > 0) {
+    if(dias !== null && dias > 0) {
       p.dias_parado = dias;
       p.diasParado = dias;
     }
