@@ -10105,7 +10105,8 @@ async function _processarMarcadoresChat(texto, perfil='assessor') {
           const novoPz = {id:Date.now(), descricao:'Conferir atualização: '+m[2]+' → '+m[3], data:em5dias, tipo:'conferencia', status:'pendente'};
           processos[idx].prazos.push(novoPz);
           // Atualiza prazo principal do processo
-          if(!processos[idx].prazo || new Date(processos[idx].prazo.split('/').reverse().join('-')) > new Date(em5dias)) {
+          // Atualiza prazo principal APENAS se não tinha prazo (conferência não sobrescreve prazo real)
+          if(!processos[idx].prazo) {
             processos[idx].prazo = em5dias.split('-').reverse().join('/');
             try { await sbReq('PATCH', 'processos', { prazo: processos[idx].prazo }, { id: 'eq.' + m[1] }); } catch(e) {}
           }

@@ -3375,7 +3375,7 @@ function parsePrazo(s){if(!s||!s.includes('/'))return null;const[d,m,a]=s.split(
 function diasRestantes(s){const dt=parsePrazo(s);if(!dt)return null;const h=new Date();h.setHours(0,0,0,0);return Math.ceil((dt-h)/86400000);}
 function calcAjustado(s){const dt=parsePrazo(s);if(!dt)return{prazo:'',prazoReal:''};const aj=new Date(dt);aj.setDate(aj.getDate()-3);const fmt=d=>d.toLocaleDateString('pt-BR');return{prazo:fmt(aj),prazoReal:fmt(dt)};}
 function fmtPrazo(p){if(!p.prazo)return{txt:'Monitorar',cor:'var(--text3)'};const d=diasRestantes(p.prazo);if(d===null)return{txt:p.prazo,cor:'var(--text3)'};if(d<0)return{txt:'Vencido',cor:'var(--text3)'};if(d===0)return{txt:'HOJE!',cor:'var(--red)'};if(d<=3)return{txt:`${d}d — ${p.prazo}`,cor:'var(--red)'};if(d<=7)return{txt:`${d}d — ${p.prazo}`,cor:'var(--orange)'};return{txt:p.prazo,cor:'var(--text2)'};}
-function alertasPrazo(){return getProcs().filter(p=>p.prazo).map(p=>({...p,d:diasRestantes(p.prazo)})).filter(p=>p.d!==null&&p.d>=0&&p.d<=5).sort((a,b)=>a.d-b.d);}
+function alertasPrazo(){return getProcs().filter(p=>p.prazo && !['CONCLUIDO','ENTREGUE','ARQUIVADO'].includes(p.status)).map(p=>({...p,d:diasRestantes(p.prazo)})).filter(p=>p.d!==null&&p.d>=0&&p.d<=5).sort((a,b)=>a.d-b.d);}
 
 // ═══════════════ ESTADO ═══════════════
 let pag='painel', procAtivo=null, chatCtx=null, chatMsgsAtual=[];
@@ -7705,6 +7705,15 @@ async function aplicarPropostaGestor() {
           if(d.processo[campo] !== undefined) local[campo] = d.processo[campo];
         }
         local.id = idOriginal;
+        // Se houve andamento e prazo antigo já passou/vencendo, limpar (prazo cumprido)
+        if(local.prazo && !d.processo.prazo) {
+          const dRest = diasRestantes(local.prazo);
+          if(dRest !== null && dRest <= 5) {
+            console.log('[LEX] Prazo antigo cumprido, limpando:', local.prazo);
+            local.prazo = '';
+            local.prazoReal = '';
+          }
+        }
         ps[idx] = local;
         console.log('[LEX] Processo atualizado localmente — status:', local.status, 'setor:', local.setor);
         if(typeof saveProcs === 'function') saveProcs(ps);
@@ -8088,16 +8097,25 @@ function limparMsgCiclo(){
   window._cicloPend=[];
 }
 
-// Registra ação de salvar — tira processo de URGENTE→ATIVO
+// Registra ação de salvar — QUALQUER atualização = ATIVO + limpa prazo cumprido
 function registrarAcaoSalvar(procId,acao){
   if(!procId)return;
   const ps=getProcs();
   const idx=ps.findIndex(p=>p.id===procId||p.id==procId);
   if(idx<0)return;
   const p=ps[idx];
-  const d=p.prazo?diasRestantes(p.prazo):null;
-  if(d===null || d>7){
+  // Regra CEO: qualquer atualização = ATIVO (exceto CONCLUIDO/ENTREGUE)
+  const stAtual = (p.status||'').toUpperCase();
+  if(stAtual !== 'CONCLUIDO' && stAtual !== 'ENTREGUE') {
     p.status='ATIVO';
+  }
+  // Limpar prazo vencendo se houve andamento (prazo cumprido)
+  if(p.prazo) {
+    const dRest = diasRestantes(p.prazo);
+    if(dRest !== null && dRest <= 5) {
+      p.prazo = '';
+      p.prazoReal = '';
+    }
   }
   const hoje = new Date().toISOString().slice(0,10);
   p.atualizado_em = hoje;
@@ -8109,7 +8127,7 @@ function registrarAcaoSalvar(procId,acao){
   saveProcs(ps);
   atualizarUrgentes();
   renderPainel(); renderProcessos();
-  toast(p.status==='ATIVO'?'✓ Processo salvo — status ATIVO':'✓ Processo salvo','ok');
+  toast('✓ Processo atualizado — status ATIVO','ok');
   if(typeof renderPainel==='function'&&document.getElementById('page-title')?.textContent==='Painel Geral')renderPainel();
 }
 
