@@ -580,10 +580,48 @@ table{max-width:100%;}
   .sidebar-bottom{padding:12px 18px 14px!important;}
 }
 
+/* DESKTOP PEQUENO/MÉDIO (notebook 1366x768 etc) — cabe sem estourar */
+@media(min-width:1025px) and (max-width:1366px){
+  #sidebar{width:200px!important;}
+  #main{margin-left:200px!important;max-width:calc(100vw - 200px)!important;}
+  .content{padding:14px 16px!important;max-width:100%!important;}
+  .topbar{padding:9px 16px!important;}
+  .stats-row{grid-template-columns:repeat(4,1fr)!important;gap:10px!important;}
+  .stat-num{font-size:19px!important;}
+  .stat-card{padding:10px 12px!important;}
+  .logo-area{padding:14px 14px 12px!important;}
+  .logo-name{font-size:17px!important;}
+  .page-title{font-size:13px!important;}
+  .nav-btn{font-size:11px!important;padding:7px 10px!important;}
+  .modal-box{max-width:min(520px,calc(100vw - 32px))!important;}
+  #lex-welcome-box{padding:24px 22px!important;max-width:min(400px,calc(100vw - 40px))!important;}
+  #lex-welcome-box h1{font-size:22px!important;}
+}
+
 /* DESKTOP GRANDE — limitar conteúdo central */
-@media(min-width:1200px){
-  .content{max-width:1180px!important;margin:0 auto!important;padding:20px 24px!important;}
+@media(min-width:1367px){
+  .content{max-width:1180px!important;margin:0 auto!important;padding:18px 22px!important;}
   .stats-row{grid-template-columns:repeat(4,1fr)!important;}
+}
+
+/* CAP GLOBAL em font-sizes inline gigantes que vêm dos template literals JS.
+   Uso de seletores de atributo para alcançar divs inline gerados no runtime. */
+@media(min-width:769px){
+  [style*="font-size:36px"]{font-size:22px!important;}
+  [style*="font-size:32px"]{font-size:20px!important;}
+  [style*="font-size:30px"]{font-size:20px!important;}
+  [style*="font-size:28px"]{font-size:19px!important;}
+  [style*="font-size:26px"]{font-size:18px!important;}
+  [style*="font-size:24px"]{font-size:16px!important;}
+  [style*="font-size:22px"]{font-size:15px!important;}
+  /* Reduzir proporcionalmente containers inline com width fixo grande */
+  [style*="width:400px"]{max-width:min(400px,calc(100vw - 32px))!important;}
+  [style*="width:440px"]{max-width:min(440px,calc(100vw - 32px))!important;}
+  [style*="width:480px"]{max-width:min(480px,calc(100vw - 32px))!important;}
+  [style*="width:520px"]{max-width:min(520px,calc(100vw - 32px))!important;}
+  [style*="width:560px"]{max-width:min(560px,calc(100vw - 32px))!important;}
+  [style*="width:640px"]{max-width:min(640px,calc(100vw - 32px))!important;}
+  [style*="width:680px"]{max-width:min(680px,calc(100vw - 32px))!important;}
 }
 
 /* MOBILE — ultra compacto */
