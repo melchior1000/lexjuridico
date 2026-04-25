@@ -3367,6 +3367,14 @@ async function _processarClassificacaoIntakePerfil(perfil, fatos, dados, origem)
   if(classificacao?.fundamentacao_inicial) {
     _registrarHistoricoConversa(perfil, 'sistema', '[classificacao-'+(origem||'intake')+'] '+classificacao.area+' '+(classificacao.subarea||'')+' - '+classificacao.fundamentacao_inicial);
   }
+  perfil.classificacao_juridica_auto = {
+    area: classificacao?.area || '',
+    subarea: classificacao?.subarea || '',
+    confianca: classificacao?.confianca || 0,
+    fundamentacao_inicial: classificacao?.fundamentacao_inicial || '',
+    origem: origem || 'intake',
+    atualizado_em: new Date().toISOString()
+  };
   let analisePrev = null;
   if(classificacao?.area === 'previdenciario' || perfil.caso_tipo === 'previdenciario' || ehDocPrev) {
     if(!perfil.caso_tipo) perfil.caso_tipo = 'previdenciario';
@@ -3384,6 +3392,7 @@ async function _processarClassificacaoIntakePerfil(perfil, fatos, dados, origem)
     if((analisePrev.fundamentacao||'').trim()) {
       perfil.direitos_orientados = [...new Set([...(perfil.direitos_orientados||[]), analisePrev.fundamentacao.substring(0,180)])].slice(0,6);
     }
+    perfil.analise_previdenciaria = { ...analisePrev, atualizado_em: new Date().toISOString() };
     _registrarHistoricoConversa(perfil, 'sistema', '[analise-previdenciaria] beneficio='+(analisePrev.beneficio_provavel||'')+' faltantes='+(analisePrev.requisitos_faltantes||[]).slice(0,3).join(' | '));
   }
   return {
@@ -4068,6 +4077,8 @@ function _perfilClienteNovo(chatId, canal, nomeUsuario) {
     risco_prescricional: null,
     prazo_limite_caso: '',
     direitos_orientados: [],
+    classificacao_juridica_auto: null,
+    analise_previdenciaria: null,
     ultimo_contato: new Date().toISOString(),
     data_primeiro_contato: new Date().toISOString(),
     perguntou_fechamento: false,
@@ -5351,6 +5362,20 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
     if(tipoEntrada === 'imagem') {
       const dados = await _extrairDadosImagem(conteudo.buffer, conteudo.mime);
       _mesclarDadosExtraidos(perfil, dados.extraido, dados.tipo_documento);
+      const fatosImagem = [perfil.caso_descricao||'', dados?.extraido?.outros_dados||'', String(dados?.observacoes||'')].join(' ').trim();
+      try {
+        const procClass = await _processarClassificacaoIntakePerfil(
+          perfil,
+          fatosImagem,
+          { ...dados, nome: conteudo?.nome || '' },
+          'imagem'
+        );
+        if(procClass?.mensagem_cliente) {
+          _registrarHistoricoConversa(perfil, 'sistema', '[classificacao-cliente] '+procClass.mensagem_cliente.substring(0,240));
+        }
+      } catch(e) {
+        console.warn('[classificacao-imagem] erro:', e.message);
+      }
       // Registra o arquivo
       if(!perfil.documentos_anexos) perfil.documentos_anexos = [];
       // Avisa cliente com ack imediato (natural)
@@ -5399,6 +5424,18 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
             perfil.caso_descricao = (perfil.caso_descricao || '') + '\n[PDF] ' + (analise.descricao || analise.resumo || '');
             perfil.caso_descricao = perfil.caso_descricao.trim().substring(0,3000);
           }
+          let msgClassifPdf = '';
+          try {
+            const procClass = await _processarClassificacaoIntakePerfil(
+              perfil,
+              (analise.descricao || analise.resumo || perfil.caso_descricao || ''),
+              { ...(analise||{}), nome: conteudo?.nome || '' },
+              'pdf'
+            );
+            if(procClass?.mensagem_cliente) msgClassifPdf = '\n\n' + procClass.mensagem_cliente;
+          } catch(e) {
+            console.warn('[classificacao-pdf] erro:', e.message);
+          }
           // Registra como probatório se for doc processual
           if(!perfil.probatorios_anexos) perfil.probatorios_anexos = [];
           perfil.probatorios_anexos.push({
@@ -5415,7 +5452,7 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
             analise.numero_processo && ('🔢 ' + analise.numero_processo),
             analise.nome_cliente && ('👤 ' + analise.nome_cliente),
           ].filter(Boolean).join('\n');
-          await env('✅ PDF analisado!\n' + (resumoPdf || 'Dados extraídos com sucesso.') + '\n\nSe tiver mais documentos, pode enviar.', ctx);
+          await env('✅ PDF analisado!\n' + (resumoPdf || 'Dados extraídos com sucesso.') + msgClassifPdf + '\n\nSe tiver mais documentos, pode enviar.', ctx);
         }
       } catch(e) {
         console.warn('[cadastrador-pdf] erro:', e.message);
@@ -5441,6 +5478,11 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
           if(conteudo.length > 20) {
             perfil.caso_descricao = (perfil.caso_descricao || '') + ' ' + conteudo.substring(0,500);
             perfil.caso_descricao = perfil.caso_descricao.trim().substring(0,2000);
+          }
+          try {
+            await _processarClassificacaoIntakePerfil(perfil, conteudo, { tipo: 'audio_transcrito', nome: conteudo?.nome || '' }, 'audio');
+          } catch(e) {
+            console.warn('[classificacao-audio] erro:', e.message);
           }
           _tentarExtrairDadosTextoLivre(perfil, conteudo);
           _detectarUrgenciaLegal(perfil, conteudo);
@@ -5480,6 +5522,19 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
       else if(/^famil/.test(lc)) perfil.caso_tipo = 'familia';
       else if(/^penal/.test(lc) || /^criminal/.test(lc)) perfil.caso_tipo = 'penal';
       else if(/^administ/.test(lc)) perfil.caso_tipo = 'administrativo';
+      try {
+        const procClassTxt = await _processarClassificacaoIntakePerfil(
+          perfil,
+          conteudo,
+          { tipo: 'texto_cliente', descricao: conteudo, nome: '' },
+          'texto'
+        );
+        if(procClassTxt?.mensagem_cliente) {
+          _registrarHistoricoConversa(perfil, 'sistema', '[classificacao-texto] '+procClassTxt.mensagem_cliente.substring(0,240));
+        }
+      } catch(e) {
+        console.warn('[classificacao-texto] erro:', e.message);
+      }
       _tentarExtrairDadosTextoLivre(perfil, conteudo);
       _detectarUrgenciaLegal(perfil, conteudo);
     }
@@ -8799,14 +8854,67 @@ async function _processarImagem(ctx, mem, img) {
     const base64 = img.buffer.toString('base64');
     const resposta = await ia([{role:'user', content:[
       {type:'image', source:{type:'base64', media_type:img.mime||'image/jpeg', data:base64}},
-      {type:'text', text:'Analise esta imagem juridicamente. Se for decisão, despacho, sentença ou documento processual: identifique tipo, partes, número do processo, conteúdo, prazo e próxima ação. Senão, descreva e como pode ser relevante. Português, objetivo, técnico.'}
-    ]}], null, 1500, MODELO_MID); // Cadastrador/análise imagem → Sonnet
-    await env(resposta, ctx);
+      {type:'text', text:`Analise esta imagem COMPLETAMENTE. Extraia:
+1. Se for DOCUMENTO PROCESSUAL (decisão, despacho, sentença, intimação, citação): tipo, número do processo, partes (autor/réu com CPF se visível), tribunal/vara, juiz, conteúdo da decisão, prazo, próxima ação.
+2. Se for DOCUMENTO PESSOAL (RG, CPF, CNH, comprovante de residência): nome completo, número do documento, endereço completo, data de nascimento.
+3. Se for LAUDO MÉDICO: nome do paciente, CRM do médico, diagnóstico (CID), prognóstico, data, limitações funcionais.
+4. Se for CONTRATO: partes, objeto, valor, prazo, cláusulas relevantes.
+5. Se for FOTO/PROVA: descreva o que vê e como pode ser usado como prova.
+
+Responda em JSON:
+{
+  "tipo_documento": "processual/pessoal/laudo/contrato/foto/outro",
+  "dados_extraidos": {objeto com todos os dados encontrados},
+  "processo_vinculavel": true/false,
+  "numero_processo": "se identificou",
+  "partes": "se identificou",
+  "resumo": "resumo em 2-3 frases",
+  "acao_sugerida": "o que fazer com este documento"
+}
+Se não conseguir extrair como JSON, descreva normalmente.`}
+    ]}], null, 2000, MODELO_MID);
+
+    // Tenta extrair JSON da resposta
+    let dados = null;
+    try { const m = resposta.match(/\{[\s\S]*\}/); if(m) dados = JSON.parse(m[0]); } catch(_){}
+
+    if(dados && dados.processo_vinculavel && dados.numero_processo) {
+      // Tenta vincular a processo existente
+      const procMatch = processos.find(p => p.numero && dados.numero_processo && _normTexto(p.numero).includes(_normTexto(dados.numero_processo)));
+      if(procMatch) {
+        // Atualiza andamento
+        if(!Array.isArray(procMatch.andamentos)) procMatch.andamentos = [];
+        procMatch.andamentos.push({
+          data: horaBrasilia().toLocaleDateString('pt-BR'),
+          texto: '[Imagem] ' + (dados.tipo_documento||'documento') + ': ' + (dados.resumo||resposta.substring(0,200)),
+          canal: ctx.canal||'telegram'
+        });
+        procMatch.atualizado_em = new Date().toISOString();
+        try { await _persistirProcessosCache(); } catch(_){}
+        await env('📷 Imagem analisada e vinculada ao processo "' + procMatch.nome + '" (Nº ' + procMatch.numero + ').\n\n' + (dados.resumo||resposta.substring(0,500)), ctx);
+      } else {
+        await env('📷 Imagem analisada:\n' + (dados.resumo||resposta.substring(0,500)) + '\n\n🔎 Processo Nº ' + dados.numero_processo + ' não encontrado no Lex. Deseja criar um novo processo?', ctx);
+      }
+    } else if(dados && dados.tipo_documento === 'pessoal' && dados.dados_extraidos) {
+      // Extrai dados pessoais para o cadastro de cliente
+      const d = dados.dados_extraidos;
+      const resumoPessoal = [
+        d.nome && ('👤 ' + d.nome),
+        d.cpf && ('📋 CPF: ' + d.cpf),
+        d.rg && ('📋 RG: ' + d.rg),
+        d.endereco && ('📍 ' + d.endereco),
+        d.data_nascimento && ('🎂 ' + d.data_nascimento),
+      ].filter(Boolean).join('\n');
+      await env('📷 Documento pessoal identificado:\n' + resumoPessoal + '\n\n' + (dados.acao_sugerida||'Dados salvos para cadastro.'), ctx);
+    } else {
+      await env('📷 ' + (dados?.resumo || resposta.substring(0,500)), ctx);
+    }
+
     mem.hist.push({role:'user', content:'[Imagem]'});
-    mem.hist.push({role:'assistant', content:'[Análise: '+resposta.substring(0,200)+']'});
+    mem.hist.push({role:'assistant', content:'[Análise: '+(dados?.resumo||resposta.substring(0,200))+']'});
     salvarMemoria(ctx.chatId, ctx.threadId);
-    if(mem.casoAtual) await lembrarDoCaso(mem.casoAtual, 'observacao', 'Imagem analisada: '+resposta.substring(0,400), ctx.canal);
-    logAtividade('juridico', ctx.chatId, 'imagem_analisada', 'OK');
+    if(mem.casoAtual) await lembrarDoCaso(mem.casoAtual, 'observacao', 'Imagem analisada: '+(dados?.resumo||resposta.substring(0,400)), ctx.canal);
+    logAtividade('juridico', ctx.chatId, 'imagem_analisada', dados?.tipo_documento||'OK');
   } catch(e) { await env('Erro ao analisar imagem: '+e.message, ctx); }
 }
 
@@ -10500,6 +10608,34 @@ const server = http.createServer(async (req, res) => {
     } catch(e) {
       console.error('[analisar] ERRO:', e.message||e);
       res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message}));
+    }
+    return;
+  }
+
+  if(url==='/api/cliente/relatorio' && req.method==='POST') {
+    try {
+      const tk = getToken(req);
+      const pf = validarToken(tk);
+      if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const b = await lerBody(req);
+      const chatId = String(b.chat_id || '').trim();
+      const processoId = String(b.processo_id || '').trim();
+      if(!chatId && !processoId) {
+        res.writeHead(400,corsHeaders(req));
+        res.end(JSON.stringify({error:'chat_id ou processo_id obrigatório'}));
+        return;
+      }
+      const rel = await _gerarRelatorioCliente(chatId || null, processoId || null);
+      if(!rel?.ok) {
+        res.writeHead(404,corsHeaders(req));
+        res.end(JSON.stringify({ok:false, error: rel?.erro || 'Cliente/processo não encontrado'}));
+        return;
+      }
+      res.writeHead(200,corsHeaders(req));
+      res.end(JSON.stringify({ ok: true, relatorio: rel.relatorio, nome_arquivo: rel.nome_arquivo }));
+    } catch(e) {
+      res.writeHead(500,corsHeaders(req));
+      res.end(JSON.stringify({ok:false,error:e.message}));
     }
     return;
   }
