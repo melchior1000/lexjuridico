@@ -3211,7 +3211,7 @@ async function _assessorDiagnostico(ctx, mem, proc, conteudoParaAnalisar, tipoCo
       (conteudoParaAnalisar||'(Kleuber não forneceu conteúdo direto; usar contexto do processo acima)')+
       '\n\nExecute o DIAGNÓSTICO conforme a fase atual.'
     }];
-    const resposta = await ia(msg, sys, 2500);
+    const resposta = await ia(msg, sys, 2500, MODELO_MID); // Assessor diagnóstico → Sonnet (economia)
     mem.aguardando = 'assessor_estrategia';
     mem.dadosColetados.assessorProcId = proc?.id || null;
     mem.dadosColetados.assessorConteudo = conteudoParaAnalisar;
@@ -3251,7 +3251,7 @@ async function _assessorEstrategia(ctx, mem, escolhaKleuber) {
       'ESCOLHA/ORIENTAÇÃO DE KLEUBER:\n'+escolhaKleuber+
       '\n\nExecute a ESTRATÉGIA conforme fase atual. Lembre: estabilidade da lide, red team, [VERIFICAR] em jurisprudência.'
     }];
-    const resposta = await ia(msg, sys, 3000);
+    const resposta = await ia(msg, sys, 3000, MODELO_MID); // Assessor estratégia → Sonnet (economia)
     mem.aguardando = 'assessor_autorizacao';
     mem.dadosColetados.assessorEscolha = escolhaKleuber;
     mem.dadosColetados.assessorEstrategia = resposta;
@@ -3286,7 +3286,7 @@ async function _assessorRedacao(ctx, mem) {
     const msg = [{role:'user', content:
       'KLEUBER AUTORIZOU a redação com a estratégia acima.\n\nEXECUTE A REDAÇÃO FINAL da peça conforme a fase atual. Marque [VERIFICAR] em toda jurisprudência sem fonte confirmada. Marque [CALCULAR] em contas pendentes.'
     }];
-    const resposta = await ia(msg, sys, 4000);
+    const resposta = await ia(msg, sys, 4000); // Assessor redação final → Opus (qualidade CRÍTICA)
 
     // Envia o texto da peça
     const nomeArq = 'peca_'+(proc?.nome||'novo').replace(/\s+/g,'_').substring(0,20)+
@@ -3398,7 +3398,7 @@ LEMBRE: cálculos vêm da calculadora determinística. Você DESCREVE, não calc
 
   try {
     const msg = [{role:'user', content: 'INSTRUÇÕES DE KLEUBER:\n'+instrucoes+'\n\nElabore o laudo pericial completo conforme estrutura acima.'}];
-    const texto = await ia(msg, sys, 4000);
+    const texto = await ia(msg, sys, 4000); // Perícia/laudo → Opus (qualidade CRÍTICA)
     const nomeArq = 'laudo_pericial_'+(proc?.nome||'novo').replace(/\s+/g,'_').substring(0,20)+
       '_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.txt';
     await envArq(Buffer.from(texto,'utf8'), nomeArq, ctx, 'text/plain');
@@ -3433,7 +3433,7 @@ Seja objetivo, técnico, direto. Linguagem jurídica formal.`;
 
   try {
     const msg = [{role:'user', content: 'PEÇA PARA SUBMETER AO RED TEAM:\n\n'+pecaTexto.substring(0, 8000)}];
-    const analise = await ia(msg, sys, 2000);
+    const analise = await ia(msg, sys, 2000, MODELO_MID); // Red team peça → Sonnet (economia)
     await env('🎯 RED TEAM — análise adversarial:\n\n'+analise, ctx);
     return analise;
   } catch(e) {
@@ -6630,7 +6630,7 @@ async function _conversaInteligente(ctx, mem, txt, low) {
 
   try {
     if(txt.length > 80) await env('...', ctx);
-    const resposta = await ia(mem.hist, sys, 2500);
+    const resposta = await ia(mem.hist, sys, 2500, MODELO_MID); // Chat principal Lex → Sonnet (economia)
     mem.hist.push({role:'assistant', content:resposta});
     salvarMemoria(ctx.chatId, ctx.threadId);
 
@@ -8771,7 +8771,7 @@ Analise:
 8. DOCUMENTOS QUE FALTAM
 9. PRAZOS PRESCRICIONAIS
 10. VALOR ESTIMADO DA CAUSA`;
-  const analiseTexto = await ia([{role:'user', content:promptAnalise}], null, 2800);
+  const analiseTexto = await ia([{role:'user', content:promptAnalise}], null, 2800, MODELO_MID); // Perícia análise → Sonnet (economia)
   estado.analise_texto = analiseTexto;
   estado.relatorio_texto = _montarRelatorioEstrategico(analiseTexto);
   estado.tipo_peca = _extrairTipoPecaDaAnalise(analiseTexto, area);
@@ -8805,7 +8805,7 @@ Caso: ${JSON.stringify({
 Estrategia aprovada: ${estado.estrategia_aprovada || estado.analise_texto || ''}
 Legislacao: ${(cat.legislacao_base || []).join('; ')}
 Jurisprudencia: ${estado.analise_texto || ''}`;
-  const peca = await ia([{role:'user', content:promptElaboracao}], null, 4000);
+  const peca = await ia([{role:'user', content:promptElaboracao}], null, 4000); // Perícia elaboração → Opus (qualidade CRÍTICA)
   estado.peca_texto = peca;
   estado.peca_versao = Number(estado.peca_versao || 0) + 1;
 }
@@ -8834,7 +8834,7 @@ Responda com:
 2) fundamento jurisprudencial
 3) risco residual e mitigacao
 4) se necessario, ajuste textual sugerido para a peca.`;
-  return await ia([{role:'user', content:prompt}], null, 1600);
+  return await ia([{role:'user', content:prompt}], null, 1600, MODELO_MID); // Red team → Sonnet (economia)
 }
 
 async function _pipelineElaboracao(processo, etapa, input, acao) {
@@ -8943,7 +8943,7 @@ Objetivos:
 - reforcar jurisprudencia util e verificavel
 - ajustar riscos de sumulas/restricoes
 - manter coerencia tecnica`;
-    estado.peca_texto = await ia([{role:'user', content: promptReanalise}], null, 3800);
+    estado.peca_texto = await ia([{role:'user', content: promptReanalise}], null, 3800); // Perícia reanalise → Opus (peça final)
     estado.peca_versao = Number(estado.peca_versao || 0) + 1;
     estado.ciclos_reanalise = Number(estado.ciclos_reanalise || 0) + 1;
     estado.etapa_atual = ETAPAS_PIPELINE.REVISAO_2;
@@ -9410,7 +9410,7 @@ const server = http.createServer(async (req, res) => {
       const b = await lerBody(req);
       if(!b.messages) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'messages obrigatório'})); return; }
     const sysPrompt = b.system || sysAssessor(null, null);
-    const txt = await ia(b.messages, sysPrompt, b.maxTokens||4096);
+    const txt = await ia(b.messages, sysPrompt, b.maxTokens||4096, MODELO_MID); // Chat API → Sonnet (economia)
       // Pós-processamento: marcadores de atualização de processo
       const acoes = await _processarMarcadoresChat(txt);
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
@@ -10887,7 +10887,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!b.messages || !Array.isArray(b.messages)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'messages obrigatorio'})); return; }
       const resumoProcs = processos.slice(0,30).map(p=>`[${p.id}] ${p.titulo||p.nome||'?'} (${p.area||'?'}) - ${p.status||'?'} - Cliente: ${p.cliente||'?'}`).join('\n');
       const sysGestor = sysAssessor(null, null) + '\n\n## Processos ativos no escritório:\n' + (resumoProcs || '(nenhum processo cadastrado)') + '\n\nVocê tem acesso direto aos dados acima. Responda como gestor do escritório.';
-      const txt = await ia(b.messages, sysGestor, b.maxTokens||4096);
+      const txt = await ia(b.messages, sysGestor, b.maxTokens||4096, MODELO_MID); // Gestor chat → Sonnet (economia)
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, resposta:txt, text:txt}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
