@@ -810,7 +810,7 @@ table{max-width:100%;}
       <!-- MENU AÇÕES MOBILE (visível só no celular) -->
       <button class="topbar-mobile-menu-btn" onclick="toggleTopbarMenu()" style="display:none;background:var(--accent);border:none;border-radius:8px;padding:7px 12px;color:#fff;font-size:13px;cursor:pointer;font-weight:700;">⚡</button>
       <span id="lex-conn-indicator" title="Verificando conexão..." style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#888;flex-shrink:0;cursor:default;transition:background .4s;"></span>
-      <input type="file" id="pdf-upload-input" accept=".pdf" style="display:none" onchange="abrirPdfParaCadastro(this)">
+      <input type="file" id="pdf-upload-input" accept=".pdf" multiple style="display:none" onchange="abrirPdfParaCadastro(this)">
       <span id="lex-last-sync" style="font-size:9px;color:var(--text3);white-space:nowrap;display:none;"></span>
     </div>
   </div>
@@ -860,7 +860,7 @@ table{max-width:100%;}
   <div id="chat-attach-preview" style="display:none;padding:6px 10px;margin:0 8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:12px"></div>
   <div class="chat-foot">
     <textarea id="chat-in" placeholder="Pergunte sobre o processo, peça análise, jurisprudência..."></textarea>
-    <input type="file" id="chat-file-input" accept=".pdf,image/*,audio/*" style="display:none" onchange="chatAnexarArquivo(this.files[0])">
+    <input type="file" id="chat-file-input" accept=".pdf,image/*,audio/*" multiple style="display:none" onchange="chatAnexarArquivo(this.files)">
     <button class="chat-mic-btn" type="button" aria-label="Anexar arquivo" title="Anexar PDF/imagem/audio" onclick="document.getElementById('chat-file-input').click()" style="font-size:18px">📎</button>
     <button id="chat-mic-btn" class="chat-mic-btn" type="button" aria-label="Gravar voz no chat" title="Falar">
       <span class="mic-icon">🎤</span>
@@ -9059,7 +9059,7 @@ const AGENTES_PADRAO=[
 // Anexa ao processo e permite download DOCX/PDF
 // ═══════════════════════════════════════════════════════════════════
 window._periciaState = window._periciaState || {
-  docs: [],           // [{nome, texto}]
+  docs: [],           // [{nome, texto, mimeType, base64, verificado}]
   processo_id: null,
   objetivo: '',
   tipo: 'contabil',
@@ -9149,7 +9149,7 @@ function _periciaRenderDocsList(){
   const docs = window._periciaState.docs||[];
   if(!docs.length) return '<div style="color:var(--text2);">Nenhum doc anexado ainda.</div>';
   return docs.map((d,i)=>`<div style="padding:6px 8px;background:var(--bg);border-radius:6px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
-    <span>📎 ${d.nome} <span style="color:var(--text2);font-size:11px;">(${(d.texto||'').length} car)</span></span>
+    <span>📎 ${d.nome} <span style="color:var(--text2);font-size:11px;">(${(d.texto||'').length} car)</span> <span style="font-size:11px;color:${d.verificado?'#10b981':'#f59e0b'};">${d.verificado?'✓ verificado':'⚠ pendente'}</span></span>
     <button onclick="_periciaRmDoc(${i})" style="background:transparent;border:none;color:var(--red-soft);cursor:pointer;">✕</button>
   </div>`).join('');
 }
@@ -9161,31 +9161,38 @@ function _periciaRmDoc(i){
 }
 
 async function _periciaUp(input){
-  const files = Array.from(input.files||[]);
+  const files = Array.from(input.files||[]).slice(0,50);
   if(!files.length) return;
   for(const f of files){
     try {
       toast('Processando '+f.name+'...','info');
       let texto = '';
+      let base64 = '';
+      const mimeType = f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'text/plain');
       if(f.type==='application/pdf' || f.name.toLowerCase().endsWith('.pdf')){
-        // Usa o mesmo extrator do Em Preparacao se existir
-        if(typeof extrairTextoPdf==='function'){
-          texto = await extrairTextoPdf(f);
+        // Usa o extrator em browser (pdf.js)
+        if(typeof _pExtrairTextoPDF==='function'){
+          const ext = await _pExtrairTextoPDF(f);
+          texto = ext?.texto || '';
         } else {
           const ab = await f.arrayBuffer();
           texto = '(PDF binario — '+ab.byteLength+' bytes, extrator nao disponivel)';
         }
+        try {
+          base64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result||'').split(',').pop()||''); r.onerror=rej; r.readAsDataURL(f); });
+        } catch(_){}
       } else if(f.type.startsWith('image/')){
         // Envia para /api/analisar como imagem
         try {
           const b64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
           const r = await chamarServidor('/api/analisar', {tipo:'image', mime:f.type, base64:b64});
           texto = r?.texto || r?.analise || JSON.stringify(r).slice(0,2000);
+          base64 = b64;
         } catch(e){ texto = '(Imagem nao processada: '+(e.message||e)+')'; }
       } else {
         texto = await f.text();
       }
-      window._periciaState.docs.push({nome: f.name, texto: texto||''});
+      window._periciaState.docs.push({nome: f.name, texto: texto||'', mimeType, base64, verificado:false});
     } catch(e){
       toast('Falha '+f.name+': '+(e.message||e),'erro');
     }
@@ -9205,10 +9212,28 @@ async function _periciaTriagem(){
   try {
     const res = await chamarServidor('/api/pericia/triagem', {
       objetivo: st.objetivo,
-      docs: st.docs.map(d=>({nome:d.nome, texto:d.texto}))
+      docs: st.docs.map(d=>({nome:d.nome, texto:d.texto, mimeType:d.mimeType, base64:d.base64, verificado:!!d.verificado}))
     });
     if(res?.error){ throw new Error(res.error); }
-    st.triagem = res.triagem;
+    if(Array.isArray(res.verificacao)){
+      const okByName = new Map();
+      res.verificacao.forEach(v=>okByName.set(String(v.nome||''), !!v.legivel));
+      st.docs = st.docs.map(d=>({
+        ...d,
+        verificado: okByName.has(String(d.nome||'')) ? okByName.get(String(d.nome||'')) : !!d.verificado
+      }));
+      const el = document.getElementById('per_docs_list');
+      if(el) el.innerHTML = _periciaRenderDocsList();
+    }
+    st.triagem = Object.assign({}, res.triagem || {
+      pronto_para_pericia: false,
+      motivo: res.motivo || 'Triagem bloqueada na verificacao de legibilidade.'
+    }, {
+      verificacao: Array.isArray(res.verificacao) ? res.verificacao : [],
+      todos_legiveis: !!res.todos_legiveis,
+      prontos_para_pericia: Number(res.prontos_para_pericia || 0),
+      total: Number(res.total || (Array.isArray(st.docs)?st.docs.length:0))
+    });
     _periciaRenderTriagem();
   } catch(e){
     r.innerHTML = '<div style="padding:14px;background:#fee;color:#c00;border-radius:8px;">Erro triagem: '+(e.message||e)+'</div>';
@@ -9220,6 +9245,7 @@ function _periciaRenderTriagem(){
   const t = st.triagem; if(!t) return;
   const r = document.getElementById('per_resultado');
   if(!r) return;
+  const ver = Array.isArray(t.verificacao) ? t.verificacao : [];
   const recebidos = Array.isArray(t.docs_recebidos) ? t.docs_recebidos : [];
   const faltantes = Array.isArray(t.docs_faltantes) ? t.docs_faltantes : [];
   const perguntas = Array.isArray(t.perguntas_perito) ? t.perguntas_perito : [];
@@ -9227,6 +9253,7 @@ function _periciaRenderTriagem(){
   r.innerHTML = `
   <div style="background:var(--card);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:12px;">
     <div style="font-weight:700;margin-bottom:8px;">🔍 Resultado da Triagem</div>
+    ${ver.length?`<div style="margin-bottom:8px;"><b>Verificação de legibilidade:</b><ul style="margin:4px 0 0 16px;">${ver.map(v=>`<li>${v.nome||'?'} — ${v.legivel?'✅':'❌'} (${v.qualidade||'?'}) ${v.paginas_legiveis||0}/${v.paginas_total||0}pg ${v.motivo?('- '+v.motivo):''}</li>`).join('')}</ul></div>`:''}
     <div style="margin-bottom:8px;"><b>Tipo sugerido:</b> ${t.tipo_pericia_sugerido||'?'} — <i>${t.justificativa_tipo||''}</i></div>
     <div style="margin-bottom:8px;"><b>Pronto para pericia:</b> ${t.pronto_para_pericia?'<span style=color:#10b981>SIM</span>':'<span style=color:#f59e0b>NAO — '+(t.motivo||'faltam docs')+'</span>'}</div>
     ${recebidos.length?`<div style="margin-bottom:8px;"><b>Docs recebidos:</b><ul style="margin:4px 0 0 16px;">${recebidos.map(d=>`<li>${d.doc||'?'} — ${d.descricao||''} <span style="color:var(--text2);">(${d.relevancia||'?'})</span></li>`).join('')}</ul></div>`:''}
@@ -9242,6 +9269,10 @@ async function _periciaGerarLaudo(){
   st.objetivo = document.getElementById('per_obj')?.value || st.objetivo;
   st.tipo = document.getElementById('per_tipo')?.value || st.tipo;
   if(!st.objetivo){ toast('Informe o objetivo da pericia','erro'); return; }
+  if((st.docs||[]).some(d => !d.verificado)) {
+    toast('Execute a triagem/verificacao de legibilidade antes de gerar o laudo.','erro');
+    return;
+  }
   const r = document.getElementById('per_resultado');
   r.innerHTML = '<div style="padding:14px;background:var(--card);border-radius:8px;">📋 Gerando laudo pericial com Opus 4 (pode levar 60-120s)...</div>';
   try {
@@ -9250,7 +9281,7 @@ async function _periciaGerarLaudo(){
     const res = await chamarServidor('/api/pericia/gerar', {
       objetivo: st.objetivo,
       tipo_pericia: st.tipo,
-      docs: st.docs.map(d=>({nome:d.nome, texto:d.texto})),
+      docs: st.docs.map(d=>({nome:d.nome, texto:d.texto, mimeType:d.mimeType, base64:d.base64, verificado:!!d.verificado})),
       processo: proc ? {id:proc.id, titulo:proc.titulo||proc.nome, cliente:proc.cliente, numero:proc.numero, vara:proc.vara, juiz:proc.juiz, area:proc.area} : null
     });
     if(res?.error){ throw new Error(res.error); }
@@ -10039,14 +10070,33 @@ function abrirChat(id){
 // ════════════════════════════════════════════════════════════════════════════════
 // CHAT — ANEXO DE ARQUIVOS (PDF grandes, imagens, audio)
 // ════════════════════════════════════════════════════════════════════════════════
-async function chatAnexarArquivo(file) {
+async function chatAnexarArquivo(filesOrFile) {
+  const lista = Array.isArray(filesOrFile)
+    ? filesOrFile
+    : (filesOrFile && typeof filesOrFile.length === 'number' && typeof filesOrFile.item === 'function')
+      ? Array.from(filesOrFile)
+      : (filesOrFile ? [filesOrFile] : []);
+  if (!lista.length) return;
+  const limite = 50;
+  const anexos = lista.slice(0, limite);
+  if (lista.length > limite && typeof toast === 'function') {
+    toast('Limite de 50 arquivos por envio no chat.', 'erro');
+  }
+  for (let i = 0; i < anexos.length; i++) {
+    await _chatAnexarArquivoUnico(anexos[i], i, anexos.length);
+  }
+  const fi = document.getElementById('chat-file-input'); if (fi) fi.value = '';
+}
+
+async function _chatAnexarArquivoUnico(file, idx, total) {
   if (!file) return;
   const prev = document.getElementById('chat-attach-preview');
   if (!prev) return;
+  const prefixo = total > 1 ? '['+(idx+1)+'/'+total+'] ' : '';
   const isAudio = (file.type||'').startsWith('audio/') || /\.(mp3|ogg|wav|m4a|webm)$/i.test(file.name);
   if (isAudio) {
     prev.style.display='block';
-    prev.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>⏳</span><strong>🎵 '+file.name+'</strong> — transcrevendo audio...</div>';
+    prev.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>⏳</span><strong>'+prefixo+'🎵 '+file.name+'</strong> — transcrevendo audio...</div>';
     try {
       const b64 = await _pB64(file);
       const b64d = b64.split(',')[1];
@@ -10061,7 +10111,7 @@ async function chatAnexarArquivo(file) {
       const texto = j.texto || j.transcricao || '';
       if (!texto) throw new Error('Audio sem texto transcrito');
       window._chatAnexoAnalise = { nome:file.name, dados:{ tipo_documento:'audio_transcrito', transcricao: texto }, ts: Date.now() };
-      prev.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><strong>🎵 '+file.name+'</strong> <span style="color:var(--green);font-size:11px">✓ transcrito ('+texto.length+' car)</span><div style="font-size:11px;color:var(--text2);max-height:60px;overflow:auto;margin-top:4px">'+texto.substring(0,300).replace(/</g,'&lt;')+(texto.length>300?'…':'')+'</div></div><button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></div>';
+      prev.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><strong>'+prefixo+'🎵 '+file.name+'</strong> <span style="color:var(--green);font-size:11px">✓ transcrito ('+texto.length+' car)</span><div style="font-size:11px;color:var(--text2);max-height:60px;overflow:auto;margin-top:4px">'+texto.substring(0,300).replace(/</g,'&lt;')+(texto.length>300?'…':'')+'</div></div><button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></div>';
     } catch(e) {
       prev.innerHTML = '<span style="color:var(--red)">❌ '+(e.message||'Erro transcrevendo audio')+'</span> <button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>';
     }
@@ -10069,7 +10119,7 @@ async function chatAnexarArquivo(file) {
   }
   // PDF / imagem -> analisarDocInteligente (chunked se grande)
   prev.style.display='block';
-  prev.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>⏳</span><strong>📎 '+file.name+'</strong> <span id="_chatAnxStatus" style="color:var(--text3);font-size:11px">preparando...</span></div>';
+  prev.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>⏳</span><strong>'+prefixo+'📎 '+file.name+'</strong> <span id="_chatAnxStatus" style="color:var(--text3);font-size:11px">preparando...</span></div>';
   try {
     const b64 = await _pB64(file);
     const b64d = b64.split(',')[1];
@@ -10089,12 +10139,11 @@ async function chatAnexarArquivo(file) {
       dados.tipo_acao && ('⚖️ '+dados.tipo_acao),
       dados.numero_processo && ('🔢 '+dados.numero_processo)
     ].filter(Boolean).join(' · ');
-    prev.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><strong>📎 '+file.name+'</strong> <span style="color:var(--green);font-size:11px">✓ analisado</span><div style="font-size:11px;color:var(--text2);margin-top:2px">'+(resumo||'(sem dados estruturados)')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Agora escreva sua pergunta e envie.</div></div><button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></div>';
+    prev.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><strong>'+prefixo+'📎 '+file.name+'</strong> <span style="color:var(--green);font-size:11px">✓ analisado</span><div style="font-size:11px;color:var(--text2);margin-top:2px">'+(resumo||'(sem dados estruturados)')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Agora escreva sua pergunta e envie.</div></div><button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></div>';
   } catch(e) {
     prev.innerHTML = '<span style="color:var(--red)">❌ '+(e.message||'Erro na analise')+'</span> <button onclick="chatRemoverAnexo()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>';
     window._chatAnexoAnalise = null;
   }
-  const fi = document.getElementById('chat-file-input'); if (fi) fi.value = '';
 }
 function chatRemoverAnexo() {
   window._chatAnexoAnalise = null;
@@ -12923,7 +12972,7 @@ function _centralAjustarPlaceholder(){
 
 async function _centralCarregarContatos(){
   try {
-    const r = await fetchComTimeout(BASE+'/api/mensagens/contatos',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens/contatos',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     const box = document.getElementById('_centralContatos');
     if(!box) return;
@@ -12952,7 +13001,7 @@ async function _centralCarregarMsgs(){
   if(!_centralContatoAtivo) return;
   try {
     const canal = _centralContatoAtivo.canal;
-    const r = await fetchComTimeout(BASE+'/api/mensagens?canal='+canal+'&limite=100',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens?canal='+canal+'&limite=100',{headers:{'Authorization':'Bearer '+token}});
     const d = await r.json();
     const chatBox = document.getElementById('_centralChat');
     if(!chatBox || !d.ok) return;
@@ -12987,7 +13036,7 @@ async function _centralEnviar(){
   input.value = '';
   input.disabled = true;
   try {
-    const r = await fetchComTimeout(BASE+'/api/mensagens/enviar',{
+    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens/enviar',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
       body:JSON.stringify({ canal:_centralContatoAtivo.canal, destino:_centralContatoAtivo.chatId, texto })
