@@ -4785,6 +4785,65 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
       }[dados.tipo_documento] || 'documento';
       await env(`📸 Recebi seu ${tipoLegivel}. Processando...`, ctx);
       _registrarHistoricoConversa(perfil, 'cliente', '[imagem:'+tipoLegivel+']');
+    } else if(tipoEntrada === 'pdf') {
+      // ═══ PDF no cadastro de cliente — extrai TODOS os dados do documento ═══
+      await env('📄 Recebi seu PDF. Analisando o documento...', ctx);
+      try {
+        const analise = await _analisarDocEmChunks(conteudo.buffer, true, conteudo.nome || 'documento.pdf', null, { canal: ctx.canal });
+        if(analise) {
+          // Mescla dados do autor (que pode ser o cliente) no perfil
+          const autorDados = analise.autor || {};
+          const dadosParaMesclar = {
+            nome: autorDados.nome || analise.nome_cliente || '',
+            cpf: autorDados.cpf || '',
+            rg: autorDados.rg || '',
+            data_nascimento: autorDados.data_nascimento || '',
+            nacionalidade: autorDados.nacionalidade || '',
+            estado_civil: autorDados.estado_civil || '',
+            profissao: autorDados.profissao || '',
+            endereco_rua: autorDados.endereco || autorDados.endereco_rua || '',
+            endereco_cidade: autorDados.cidade || autorDados.endereco_cidade || '',
+            endereco_uf: autorDados.uf || autorDados.endereco_uf || '',
+            endereco_cep: autorDados.cep || autorDados.endereco_cep || '',
+            telefone: autorDados.telefone || '',
+            email: autorDados.email || '',
+          };
+          _mesclarDadosExtraidos(perfil, dadosParaMesclar, analise.tipo_documento || 'pdf_processual');
+          // Salva dados processuais completos no perfil para uso futuro
+          if(analise.numero_processo) perfil.numero_processo = analise.numero_processo;
+          if(analise.tribunal) perfil.tribunal = analise.tribunal;
+          if(analise.area) perfil.caso_tipo = analise.area;
+          if(analise.tipo_acao) perfil.tipo_acao = analise.tipo_acao;
+          if(analise.demanda) perfil.demanda_extraida = analise.demanda;
+          if(analise.reu) perfil.reu_extraido = analise.reu;
+          if(analise.evidencias) perfil.evidencias_extraidas = analise.evidencias;
+          if(analise.descricao || analise.resumo) {
+            perfil.caso_descricao = (perfil.caso_descricao || '') + '\n[PDF] ' + (analise.descricao || analise.resumo || '');
+            perfil.caso_descricao = perfil.caso_descricao.trim().substring(0,3000);
+          }
+          // Registra como probatório se for doc processual
+          if(!perfil.probatorios_anexos) perfil.probatorios_anexos = [];
+          perfil.probatorios_anexos.push({
+            nome: conteudo.nome || 'documento.pdf',
+            tipo: analise.tipo_documento || 'pdf_processual',
+            partes: analise.partes || '',
+            numero: analise.numero_processo || '',
+            recebido_em: new Date().toISOString()
+          });
+          _registrarHistoricoConversa(perfil, 'cliente', '[pdf:' + (conteudo.nome||'doc') + '] partes:' + (analise.partes||'?') + ' numero:' + (analise.numero_processo||'?'));
+          const resumoPdf = [
+            analise.tipo_documento && ('📄 ' + analise.tipo_documento),
+            analise.partes && ('⚖️ ' + analise.partes),
+            analise.numero_processo && ('🔢 ' + analise.numero_processo),
+            analise.nome_cliente && ('👤 ' + analise.nome_cliente),
+          ].filter(Boolean).join('\n');
+          await env('✅ PDF analisado!\n' + (resumoPdf || 'Dados extraídos com sucesso.') + '\n\nSe tiver mais documentos, pode enviar.', ctx);
+        }
+      } catch(e) {
+        console.warn('[cadastrador-pdf] erro:', e.message);
+        await env('⚠️ Recebi o PDF mas tive dificuldade na análise. Pode reenviar ou enviar como foto.', ctx);
+        _registrarHistoricoConversa(perfil, 'sistema', '[erro-pdf] ' + (e.message||'').substring(0,200));
+      }
     } else if(tipoEntrada === 'audio') {
       if(!OPENAI_API_KEY) {
         await env('Recebi seu áudio, mas a transcrição automática está desativada no momento. Pode me enviar em texto?', ctx);
@@ -5202,6 +5261,11 @@ async function processarMensagem(ctx, dados) {
 
   // ── ARQUIVO (PDF / DOCX / imagem) ──
   if(dados.arquivo) {
+    // Se é cliente (não-admin), roteia PDF para o cadastrador para extrair dados pessoais
+    if(String(ctx.chatId) !== CHAT_ID) {
+      const processou = await _cadastradorRecebeu(ctx, 'pdf', dados.arquivo);
+      if(processou) return;
+    }
     return await _processarArquivo(ctx, mem, dados.arquivo);
   }
   if(dados.imagem) {
@@ -8278,8 +8342,7 @@ async function adapterTelegram(msg) {
     const isOk = isPdf || nome.toLowerCase().match(/\.(docx?|txt)$/);
     if(!isOk) { await env('Formato não suportado. Envie PDF, DOCX, TXT ou imagem.', ctx); return; }
     if(doc.file_size > 20971520) {
-      await env('📎 Arquivo de '+Math.round(doc.file_size/1048576)+'MB acima do limite do Telegram Bot (20MB).\n\nOpções:\n• Reduzir qualidade do PDF (iPhone: app "PDF Compressor")\n• Enviar em 2-3 arquivos menores — o Lex consolida automaticamente\n• Aguardar ativação do WhatsApp (aceita até 100MB)\n\n💡 Sem limite de páginas — mando o Lex processar PDFs gigantes internamente. A limitação é só do tamanho do arquivo físico no Telegram.', ctx);
-      return;
+      await env('📎 Recebendo arquivo grande ('+Math.round(doc.file_size/1048576)+'MB), vou processar em partes...', ctx);
     }
     try {
       const buf = await baixarTelegram(doc.file_id);
@@ -8496,10 +8559,10 @@ async function poll() {
 // ════════════════════════════════════════════════════════════════════════════
 // SERVIDOR HTTP + API REST
 // ════════════════════════════════════════════════════════════════════════════
-// FIX (PDF grandes): limite elevado para 150MB p/ aceitar base64 de PDFs com ate ~100MB.
-// base64 -> +33% overhead, entao 80MB brutos -> ~107MB, cabe em 150MB.
+// FIX (PDF grandes): limite elevado para 500MB p/ aceitar lotes e anexos muito grandes.
+// base64 -> +33% overhead; 500MB cobre cenarios de pericia com varios PDFs.
 // Rotas curtas (ex: /api/chat texto puro) continuam sendo rejeitadas corretamente.
-const LEX_MAX_BODY_BYTES = parseInt(process.env.LEX_MAX_BODY_MB || '150', 10) * 1024 * 1024;
+const LEX_MAX_BODY_BYTES = parseInt(process.env.LEX_MAX_BODY_MB || '500', 10) * 1024 * 1024;
 function lerBody(req) {
   return new Promise((res,rej)=>{
     const chunks = [];
