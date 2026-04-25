@@ -10857,17 +10857,23 @@ if(url==='/api/memoria' && req.method==='GET') {
     return;
   }
 
-  // POST /api/jurisprudencia — Buscar jurisprudência via IA
+  // POST /api/jurisprudencia — Buscar jurisprudência via IA COM WEB SEARCH REAL
   if(url==='/api/jurisprudencia' && req.method==='POST') {
     try {
       const pf = validarToken(getToken(req));
       if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       if(!b.tema && !b.area) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tema ou area obrigatorio'})); return; }
-      const sysJuris = 'Você é um pesquisador jurídico expert. Busque jurisprudência REAL e VERIFICÁVEL sobre o tema solicitado. NUNCA invente decisões, números de processo ou ementas. Se não tiver certeza, diga que não encontrou. Formate: Tribunal, Número, Relator, Data, Ementa resumida, e como se aplica ao caso. Foque em STJ, STF, TST e TRFs. Priorize decisões recentes (últimos 5 anos).';
+      const sysJuris = 'Você é um pesquisador jurídico expert do escritório Camargos Advocacia. USE A FERRAMENTA DE BUSCA WEB para encontrar jurisprudência REAL e VERIFICÁVEL nos tribunais brasileiros. NUNCA invente decisões, números de processo ou ementas. Busque em sites oficiais: stj.jus.br, stf.jus.br, tst.jus.br, jusbrasil.com.br, conjur.com.br. Formate: Tribunal, Número, Relator, Data, Ementa resumida, e como se aplica ao caso. Foque em STJ, STF, TST e TRFs. Priorize decisões recentes (últimos 5 anos). Cite a fonte/URL de cada decisão encontrada.';
       const msgs = [{role:'user', content:`Busque jurisprudência sobre: ${b.tema||''} | Área: ${b.area||'geral'} | Tribunal preferencial: ${b.tribunal||'todos'} | Contexto adicional: ${b.contexto||'nenhum'}`}];
-      const txt = await ia(msgs, sysJuris, 4096);
-      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, resposta:txt, tema:b.tema, area:b.area}));
+      const resultado = await iaComWebSearch(msgs, sysJuris, 4096, {
+        maxUses: 5,
+        allowedDomains: ['stj.jus.br','stf.jus.br','tst.jus.br','trt3.jus.br','tjmg.jus.br','jusbrasil.com.br','conjur.com.br'],
+        modelo: MODELO_MID
+      });
+      const txt = resultado.texto || '(nenhum resultado encontrado)';
+      const buscas = resultado.buscas || [];
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, resposta:txt, tema:b.tema, area:b.area, buscas_realizadas: buscas.length, fontes: buscas.map(b=>b.query)}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
