@@ -114,6 +114,23 @@ const TK = process.env.TELEGRAM_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_ADMIN || '696337324';
 const AK = process.env.ANTHROPIC_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+
+// ════════════════════════════════════════════════════════════════════════════
+// MULTI-PROVIDER IA — troca de API sem mexer no Lex
+// ────────────────────────────────────────────────────────────────────────────
+// IA_PROVIDER = 'anthropic' (padrão) | 'openai' | 'google'
+// Para trocar: mude APENAS IA_PROVIDER no Render + adicione a key do provedor.
+// Nenhuma outra mudança necessária. O Lex adapta automaticamente.
+// ════════════════════════════════════════════════════════════════════════════
+const IA_PROVIDER = (process.env.IA_PROVIDER || 'anthropic').toLowerCase();
+
+// Mapeamento de modelos: nível (top/mid/eco) → modelo de cada provedor
+const MODELOS_POR_PROVIDER = {
+  anthropic: { top: 'claude-opus-4-20250514', mid: 'claude-sonnet-4-20250514', eco: 'claude-3-5-haiku-20241022' },
+  openai:    { top: 'gpt-4.1',               mid: 'gpt-4.1-mini',            eco: 'gpt-4.1-nano' },
+  google:    { top: 'gemini-2.5-pro',         mid: 'gemini-2.5-flash',        eco: 'gemini-2.0-flash-lite' },
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // HIERARQUIA DE MODELOS ANTHROPIC (OTIMIZAÇÃO DE CUSTO — abr/2026)
@@ -126,9 +143,10 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 // de peças. Roteador/Cadastrador/Intake/Gestor-aplicar/Prazos/Proativo → Sonnet.
 // Resumos/classificações rápidas/confirmações → Haiku.
 // ════════════════════════════════════════════════════════════════════════════
-const MODELO_TOP = 'claude-opus-4-20250514';       // Opus 4 — top/caro
-const MODELO_MID = 'claude-sonnet-4-20250514';     // Sonnet 4 — intermediário
-const MODELO_ECO = 'claude-3-5-haiku-20241022';    // Haiku 3.5 — barato
+const _mp = MODELOS_POR_PROVIDER[IA_PROVIDER] || MODELOS_POR_PROVIDER.anthropic;
+const MODELO_TOP = _mp.top;   // top/caro (Opus / GPT-4.1 / Gemini Pro)
+const MODELO_MID = _mp.mid;   // intermediário (Sonnet / GPT-4.1-mini / Gemini Flash)
+const MODELO_ECO = _mp.eco;   // barato (Haiku / GPT-4.1-nano / Gemini Flash-Lite)
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_KEY || '';
@@ -1169,9 +1187,14 @@ async function envArq(buf, nome, ctx, mimetype) {
 // FIX-03: verificação de API key + retry automático em sobrecarga + erro claro
 // 2026-04-24: parâmetro `modelo` (opcional) para seleção de tier (TOP/MID/ECO).
 //             Default = MODELO_TOP (mantém comportamento antigo).
-async function ia(messages, system, maxTok, modelo) {
+// 2026-04-25: MULTI-PROVIDER — suporta Anthropic, OpenAI e Google via IA_PROVIDER.
+//             Mesma interface ia(messages, system, maxTok, modelo) para todo o Lex.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Anthropic ──
+async function _iaAnthropic(messages, system, maxTok, modelo) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada. Defina a variável de ambiente.');
-const pay={model: modelo || MODELO_TOP, max_tokens:maxTok||2000, messages};
+  const pay={model: modelo || MODELO_TOP, max_tokens:maxTok||2000, messages};
   if(system) pay.system=system;
   try {
     const r=await httpsPost('api.anthropic.com','/v1/messages',pay,
@@ -1192,6 +1215,74 @@ const pay={model: modelo || MODELO_TOP, max_tokens:maxTok||2000, messages};
     }
     throw e;
   }
+}
+
+// ── OpenAI (GPT) ──
+async function _iaOpenAI(messages, system, maxTok, modelo) {
+  const key = OPENAI_API_KEY;
+  if(!key) throw new Error('OPENAI_API_KEY não configurada. Defina a variável de ambiente.');
+  const msgs = [];
+  if(system) msgs.push({role:'system', content: system});
+  msgs.push(...messages);
+  const pay = { model: modelo || MODELO_TOP, max_tokens: maxTok||2000, messages: msgs };
+  try {
+    const r = await httpsPost('api.openai.com','/v1/chat/completions',pay,
+      {'Authorization':'Bearer '+key});
+    if(r.error) throw new Error(r.error.message || JSON.stringify(r.error));
+    if(!r.choices || !r.choices[0]) throw new Error('Resposta vazia da OpenAI');
+    return r.choices[0].message?.content||'';
+  } catch(e) {
+    const msg = String(e.message||'').toLowerCase();
+    if(msg.includes('rate_limit') || msg.includes('429')) {
+      console.warn('[IA] OpenAI rate limit, aguardando 8s...');
+      await new Promise(r=>setTimeout(r,8000));
+      const r2 = await httpsPost('api.openai.com','/v1/chat/completions',pay,
+        {'Authorization':'Bearer '+key});
+      if(r2.error) throw new Error(r2.error.message || JSON.stringify(r2.error));
+      if(!r2.choices || !r2.choices[0]) throw new Error('Resposta vazia da OpenAI no retry');
+      return r2.choices[0].message?.content||'';
+    }
+    throw e;
+  }
+}
+
+// ── Google Gemini ──
+async function _iaGoogle(messages, system, maxTok, modelo) {
+  const key = GOOGLE_API_KEY;
+  if(!key) throw new Error('GOOGLE_API_KEY não configurada. Defina a variável de ambiente.');
+  const mod = modelo || MODELO_TOP;
+  const contents = [];
+  if(system) contents.push({role:'user', parts:[{text:'[SYSTEM] '+system}]});
+  for(const m of messages) {
+    contents.push({role: m.role==='assistant'?'model':'user', parts:[{text:m.content}]});
+  }
+  const pay = { contents, generationConfig: { maxOutputTokens: maxTok||2000 } };
+  try {
+    const r = await httpsPost('generativelanguage.googleapis.com',
+      '/v1beta/models/'+mod+':generateContent?key='+key, pay, {});
+    if(r.error) throw new Error(r.error.message || JSON.stringify(r.error));
+    if(!r.candidates || !r.candidates[0]) throw new Error('Resposta vazia do Google');
+    return r.candidates[0].content?.parts?.[0]?.text||'';
+  } catch(e) {
+    const msg = String(e.message||'').toLowerCase();
+    if(msg.includes('resource_exhausted') || msg.includes('429')) {
+      console.warn('[IA] Google rate limit, aguardando 8s...');
+      await new Promise(r=>setTimeout(r,8000));
+      const r2 = await httpsPost('generativelanguage.googleapis.com',
+        '/v1beta/models/'+mod+':generateContent?key='+key, pay, {});
+      if(r2.error) throw new Error(r2.error.message || JSON.stringify(r2.error));
+      if(!r2.candidates || !r2.candidates[0]) throw new Error('Resposta vazia do Google no retry');
+      return r2.candidates[0].content?.parts?.[0]?.text||'';
+    }
+    throw e;
+  }
+}
+
+// ── Função principal ia() — roteador multi-provider ──
+async function ia(messages, system, maxTok, modelo) {
+  if(IA_PROVIDER === 'openai') return _iaOpenAI(messages, system, maxTok, modelo);
+  if(IA_PROVIDER === 'google') return _iaGoogle(messages, system, maxTok, modelo);
+  return _iaAnthropic(messages, system, maxTok, modelo);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -9064,6 +9155,7 @@ const server = http.createServer(async (req, res) => {
       // 1. API Key presente?
       diag.checks.api_key = AK ? 'presente ('+AK.substring(0,10)+'...)' : 'AUSENTE';
       // 2. Modelo
+      diag.checks.provider = IA_PROVIDER.toUpperCase();
       diag.checks.modelo = MODELO_TOP + ' (top) / ' + MODELO_MID + ' (mid) / ' + MODELO_ECO + ' (eco)';
       // 3. Agente vivo carregado?
       diag.checks.agente_vivo = lex_agente_vivo ? 'carregado' : 'NAO CARREGADO';
