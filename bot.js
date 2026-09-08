@@ -84,7 +84,10 @@
 // 5. Endpoint /api/memoria-export → markdown
 
 const https = require('https');
+const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
+const { modelsFor, admission: aiAdmission } = require('./lib/ai-runtime');
 const http = require('http');
+const {brazilMobile, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus} = require('./lib/integration-status');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -111,42 +114,32 @@ try {
 
 
 const TK = process.env.TELEGRAM_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_ADMIN || '696337324';
+const CHAT_ID = process.env.TELEGRAM_ADMIN || process.env.TELEGRAM_ADMIN_CHAT_ID || '696337324';
 const AK = process.env.ANTHROPIC_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+const WHATSAPP_WEBHOOK_SECRET = process.env.WHATSAPP_WEBHOOK_SECRET || '';
 
 // ════════════════════════════════════════════════════════════════════════════
 // MULTI-PROVIDER IA — troca de API sem mexer no Lex
 // ────────────────────────────────────────────────────────────────────────────
 // IA_PROVIDER = 'anthropic' (padrão) | 'openai' | 'google'
-// Para trocar: mude APENAS IA_PROVIDER no Render + adicione a key do provedor.
-// Nenhuma outra mudança necessária. O Lex adapta automaticamente.
+// A seleção abrange ia(); agente vivo e pesquisa nativa ainda usam Anthropic.
+// Alternância integral exige adaptação e homologação dos demais caminhos.
 // ════════════════════════════════════════════════════════════════════════════
 const IA_PROVIDER = (process.env.IA_PROVIDER || 'anthropic').toLowerCase();
 
 // Mapeamento de modelos: nível (top/mid/eco) → modelo de cada provedor
-const MODELOS_POR_PROVIDER = {
-  anthropic: { top: 'claude-opus-4-20250514', mid: 'claude-sonnet-4-20250514', eco: 'claude-3-5-haiku-20241022' },
-  openai:    { top: 'gpt-4.1',               mid: 'gpt-4.1-mini',            eco: 'gpt-4.1-nano' },
-  google:    { top: 'gemini-2.5-pro',         mid: 'gemini-2.5-flash',        eco: 'gemini-2.0-flash-lite' },
-};
+const MODELOS_POR_PROVIDER = Object.fromEntries(['anthropic', 'openai', 'google'].map(p => [p, modelsFor(p)]));
 
 // ════════════════════════════════════════════════════════════════════════════
-// HIERARQUIA DE MODELOS ANTHROPIC (OTIMIZAÇÃO DE CUSTO — abr/2026)
-// ────────────────────────────────────────────────────────────────────────────
-// Opus  : 15/75 USD por M tokens (CARO)       — só pra tarefas críticas.
-// Sonnet: 3/15  USD por M tokens (5x +barato) — intermediário.
-// Haiku : 0.25/1.25 USD por M tokens (60x +barato) — tarefas simples.
-//
-// Regra: manter Opus somente em chat Lex principal, perícia, petição e redação
-// de peças. Roteador/Cadastrador/Intake/Gestor-aplicar/Prazos/Proativo → Sonnet.
-// Resumos/classificações rápidas/confirmações → Haiku.
+// ANTHROPIC: Opus 4.8 em todos os tiers por determinação do titular.
+// A função modelsFor mantém os nomes legados sem rebaixamento de modelo.
 // ════════════════════════════════════════════════════════════════════════════
 const _mp = MODELOS_POR_PROVIDER[IA_PROVIDER] || MODELOS_POR_PROVIDER.anthropic;
-const MODELO_TOP = _mp.top;   // top/caro (Opus / GPT-4.1 / Gemini Pro)
-const MODELO_MID = _mp.mid;   // intermediário (Sonnet / GPT-4.1-mini / Gemini Flash)
-const MODELO_ECO = _mp.eco;   // barato (Haiku / GPT-4.1-nano / Gemini Flash-Lite)
+const MODELO_TOP = _mp.top;
+const MODELO_MID = _mp.mid;
+const MODELO_ECO = _mp.eco;
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_KEY || '';
@@ -155,15 +148,16 @@ const EVO_URL  = process.env.EVOLUTION_URL || '';
 const EVO_KEY  = process.env.EVOLUTION_KEY || '';
 const EVO_INST = process.env.EVOLUTION_INSTANCE || '';
 
+const LEX_WHATSAPP_NUMBER = brazilMobile(process.env.LEX_WHATSAPP_NUMBER);
 const WHATSAPP_CONFIG = {
   ativo: false,
-  numero: null,
+  numero: LEX_WHATSAPP_NUMBER ? LEX_WHATSAPP_NUMBER+'@s.whatsapp.net' : null,
   api_url: null,
   webhook_secret: null
 };
 const SECRETARIO_WHATSAPP_CONFIG = {
   ativo: false,
-  numero_escritorio: null,
+  numero_escritorio: LEX_WHATSAPP_NUMBER,
   numero_advogado: '5561999917171',
   // ── SISTEMA MULTI-OPERADOR ──
   // Kleuber: Telegram (CHAT_ID 696337324) + WhatsApp pessoal (5561999917171)
@@ -370,34 +364,42 @@ const SENHAS_WEB = {
   secretaria: process.env.SENHA_SECRETARIA
 };
 
-// ═══ AUTH PERSISTENTE — Supabase como fallback para env vars ═══
-// Se SENHA_ADMIN não está nas env vars, busca na tabela 'configuracoes' do Supabase
-// Permite que o admin configure a senha pela primeira vez via /api/setup-senha
+// ═══ AUTH PERSISTENTE — senha gravada no banco prevalece sobre bootstrap por env ═══
+// Perfis continuam legados; migracao para contas individuais esta documentada.
+// Cadastro inicial feito pelo operador; login publico nao grava configuracao.
+const _senhasConsultadas = new Set();
 async function obterSenhaValida(perfil) {
-  // 1. Prioridade: variável de ambiente (já carregada)
-  if(SENHAS_WEB[perfil]) return SENHAS_WEB[perfil];
-  // 2. Fallback: busca na tabela 'config' do Supabase (mesma tabela do startup)
+  if(!Object.hasOwn(SENHAS_WEB, perfil)) return null;
+  if(_senhasConsultadas.has(perfil)) return SENHAS_WEB[perfil] || null;
+  if(!SB_URL || !SB_KEY) return SENHAS_WEB[perfil] || null;
+  // Busca a senha persistida antes de aceitar a senha inicial do ambiente.
   try {
     const chave = perfil === 'admin' ? 'SENHA_ADMIN' : 'SENHA_SECRETARIA';
     const r = await sbReq('GET','config',null,{chave:'eq.'+chave, select:'valor'});
     if(r.ok && r.body && r.body.length && r.body[0].valor) {
       SENHAS_WEB[perfil] = r.body[0].valor; // cache em memória
+      _senhasConsultadas.add(perfil);
       return r.body[0].valor;
     }
-  } catch(e) { console.warn('[Lex] Erro buscando senha Supabase:', e.message || e); }
-  return null;
+    requireSuccess(r, 'Carregar senha');
+    _senhasConsultadas.add(perfil);
+    return SENHAS_WEB[perfil] || null;
+  } catch(e) { console.warn('[Lex] Erro buscando senha Supabase:', e.message || e); throw e; }
 }
 
 // Salva senha no Supabase (persistência permanente na tabela 'config')
 async function salvarSenhaSupabase(perfil, senha) {
+  if(!Object.hasOwn(SENHAS_WEB, perfil) || typeof senha !== 'string') return false;
   try {
     const chave = perfil === 'admin' ? 'SENHA_ADMIN' : 'SENHA_SECRETARIA';
     const existe = await sbReq('GET','config',null,{chave:'eq.'+chave, select:'id'});
-    if(existe.ok && existe.body && existe.body.length) {
-      await sbReq('PATCH','config',{valor:senha},{chave:'eq.'+chave});
-    } else {
-      await sbReq('POST','config',{chave,valor:senha},{},{'Prefer':'return=minimal'});
-    }
+    const existentes = rowsFromResult(existe, 'Consultar senha');
+    const resposta = existentes.length
+      ? await sbReq('PATCH','config',{valor:senha},{chave:'eq.'+chave},{'Prefer':'return=representation'})
+      : await sbReq('POST','config',{chave,valor:senha},{},{'Prefer':'return=representation'});
+    const gravados = rowsFromResult(resposta, 'Salvar senha');
+    if(!gravados.some(row => row.chave === chave)) return false;
+    _senhasConsultadas.add(perfil);
     SENHAS_WEB[perfil] = senha; // atualiza cache
     console.log('[Lex] Senha salva no Supabase para', perfil);
     return true;
@@ -673,38 +675,7 @@ const _PJE_INTERVALO_PADRAO_HORAS = 6;
 // ════════════════════════════════════════════════════════════════════════════
 // SUPABASE — REST helpers (com tratamento real de erro, não silencioso)
 // ════════════════════════════════════════════════════════════════════════════
-async function sbReq(method, tabela, dados, qs, headersExtra) {
-  return new Promise((res) => {
-    try {
-      if(!SB_URL || !SB_KEY) return res({ok:false, status:0, body:null, erro:'Supabase não configurado'});
-      const url = new URL(SB_URL+'/rest/v1/'+tabela);
-      if(qs) Object.entries(qs).forEach(([k,v])=>url.searchParams.set(k,v));
-      const body = dados ? JSON.stringify(dados) : null;
-      const opts = {
-        hostname: url.hostname,
-        path: url.pathname + (url.search||''),
-        method,
-        headers: {
-          'apikey': SB_KEY,
-          'Authorization': 'Bearer '+SB_KEY,
-          ...(body ? {'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)} : {}),
-          ...(headersExtra||{})
-        }
-      };
-      const req = https.request(opts, r => {
-        let d=''; r.on('data',c=>d+=c);
-        r.on('end',()=>{
-          let parsed = null;
-          try { parsed = d ? JSON.parse(d) : null; } catch(e) { parsed = d; }
-          res({ok:r.statusCode<300, status:r.statusCode, body:parsed});
-        });
-      });
-      req.on('error', e=>res({ok:false, status:0, body:null, erro:e.message}));
-      if(body) req.write(body);
-      req.end();
-    } catch(e) { res({ok:false, status:0, body:null, erro:e.message}); }
-  });
-}
+const sbReq = createSupabaseRequest({url: SB_URL, key: SB_KEY, https});
 
 async function sbPost(tabela, dados) {
   return sbReq('POST', tabela, dados, null, {'Prefer':'return=minimal'});
@@ -718,6 +689,10 @@ async function sbGet(tabela, filtros, opts) {
   const r = await sbReq('GET', tabela, null, qs, null);
   return Array.isArray(r.body) ? r.body : [];
 }
+async function sbRows(tabela, qs) {
+  return rowsFromResult(await sbReq('GET', tabela, null, qs), 'Consultar ' + tabela);
+}
+
 async function sbUpsert(tabela, dados, onConflict) {
   return sbReq('POST', tabela, dados,
     {on_conflict: onConflict||'id'},
@@ -776,11 +751,18 @@ async function _salvarConfigPersistida(chave, valor) {
   return true;
 }
 async function _inicializarConexaoWhatsApp() {
-  _estadoWhatsApp.conectado = !!(_configRuntime.whatsapp.ativo && (_configRuntime.whatsapp.api_url || EVO_URL));
-  return _estadoWhatsApp.conectado;
+  const cfg = _configRuntime.whatsapp;
+  const numero = LEX_WHATSAPP_NUMBER || _numeroPlanoWhats(cfg.numero);
+  // A URL do servidor fixa o destino da chave Evolution; nao usar URL do body.
+  const result = await whatsappStatus({url:EVO_URL, key:EVO_KEY, instance:EVO_INST,
+    number:numero, enabled:!!cfg.ativo});
+  Object.assign(_estadoWhatsApp, result);
+  return result.conectado;
 }
+
 async function _desconectarWhatsApp() {
   _estadoWhatsApp.conectado = false;
+  _estadoWhatsApp.estado = 'desativado';
   return true;
 }
 async function _resolverClientePorNumero(numeroLimpo) {
@@ -1084,6 +1066,12 @@ function httpsGet(url) {
 }
 
 function httpsPost(host, path, data, headers) {
+  const execute = () => _httpsPostRequest(host, path, data, headers);
+  return ['api.anthropic.com', 'api.openai.com', 'generativelanguage.googleapis.com'].includes(host)
+    ? aiAdmission.run(execute) : execute();
+}
+
+function _httpsPostRequest(host, path, data, headers) {
   return new Promise((res,rej)=>{
     const body=JSON.stringify(data);
     const req=https.request(
@@ -1091,35 +1079,40 @@ function httpsPost(host, path, data, headers) {
        headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body),...headers}},
       r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{try{res(JSON.parse(d));}catch(e){res(d);}});}
     );
-    req.on('error',rej); req.write(body); req.end();
+    req.on('error',rej);
+    req.setTimeout(180000, () => { req.destroy(); rej(new Error('Tempo de resposta excedido')); });
+    req.write(body); req.end();
   });
 }
 
 // ── TELEGRAM ──
 // FIX-02: loga erros de envio em vez de engolir silenciosamente
 async function envTelegram(texto, tId, chatId) {
+  if(!TK || !(chatId || CHAT_ID)) return false;
   const pay={chat_id:chatId||CHAT_ID, text:String(texto).substring(0,4000)};
   if(tId) pay.message_thread_id=tId;
-  try{await httpsPost('api.telegram.org','/bot'+TK+'/sendMessage',pay);}
-  catch(e){ console.warn('[Telegram] envio falhou (chat:'+(chatId||CHAT_ID)+'): '+e.message); }
+  try {
+    const r = await requestJson('https://api.telegram.org/bot'+TK+'/sendMessage', {method:'POST',data:pay});
+    return r?.ok === true && Number.isSafeInteger(r.result?.message_id);
+  } catch(e) { console.warn('[Telegram] envio nao confirmado'); return false; }
 }
 
 async function envTelegramArq(buf, nome, tId, chatId) {
-  return new Promise(res=>{
+  if(!TK || !(chatId || CHAT_ID) || !Buffer.isBuffer(buf) || !buf.length) return false;
+  try {
     const bound='LEX'+Date.now();
-    const n=nome.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const n=String(nome||'documento').replace(/[^a-zA-Z0-9._-]/g,'_');
     const cId=chatId||CHAT_ID;
     let h='--'+bound+'\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n'+cId+'\r\n';
     if(tId) h+='--'+bound+'\r\nContent-Disposition: form-data; name="message_thread_id"\r\n\r\n'+tId+'\r\n';
     h+='--'+bound+'\r\nContent-Disposition: form-data; name="document"; filename="'+n+'"\r\nContent-Type: application/octet-stream\r\n\r\n';
     const body=Buffer.concat([Buffer.from(h),buf,Buffer.from('\r\n--'+bound+'--\r\n')]);
-    const req=https.request(
-      {hostname:'api.telegram.org',path:'/bot'+TK+'/sendDocument',method:'POST',
-       headers:{'Content-Type':'multipart/form-data; boundary='+bound,'Content-Length':body.length}},
-      r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>res(d));}
-    );
-    req.on('error',res); req.write(body); req.end();
-  });
+    const result = await requestJson('https://api.telegram.org/bot'+TK+'/sendDocument', {
+      method:'POST', rawBody:body, timeoutMs:60000,
+      headers:{'Content-Type':'multipart/form-data; boundary='+bound}
+    });
+    return result?.ok === true && Number.isSafeInteger(result.result?.message_id);
+  } catch(e) { console.warn('[Telegram] envio do arquivo nao confirmado'); return false; }
 }
 
 async function baixarTelegram(fileId) {
@@ -1136,43 +1129,42 @@ async function baixarTelegram(fileId) {
 async function envWhatsApp(texto, numero) {
   if(!EVO_URL || !EVO_KEY || !EVO_INST || !numero) return false;
   try {
-    await httpsPost(
-      new URL(EVO_URL).hostname,
-      `/message/sendText/${EVO_INST}`,
-      { number: numero, text: String(texto).substring(0,4000) },
-      { 'apikey': EVO_KEY, 'Content-Type': 'application/json' }
-    );
-    return true;
-  } catch(e) { console.warn('WhatsApp send falhou:', e.message); return false; }
+    if(LEX_WHATSAPP_NUMBER && !await _inicializarConexaoWhatsApp()) return false;
+    const r = await requestJson(evolutionEndpoint(EVO_URL, 'message/sendText/'+encodeURIComponent(EVO_INST)), {
+      method:'POST', data:{number:numero, text:String(texto).substring(0,4000)}, headers:{apikey:EVO_KEY}
+    });
+    return !!(r?.key?.id && !r.error);
+  } catch(e) { console.warn('[WhatsApp] envio nao confirmado'); return false; }
 }
 
 async function envWhatsAppArq(buf, nome, numero, mimetype) {
-  if(!EVO_URL || !EVO_KEY || !EVO_INST || !numero) return false;
+  if(!EVO_URL || !EVO_KEY || !EVO_INST || !numero || !Buffer.isBuffer(buf) || !buf.length) return false;
   try {
-    await httpsPost(
-      new URL(EVO_URL).hostname,
-      `/message/sendMedia/${EVO_INST}`,
-      {
+    if(LEX_WHATSAPP_NUMBER && !await _inicializarConexaoWhatsApp()) return false;
+    const result = await requestJson(evolutionEndpoint(EVO_URL, 'message/sendMedia/'+encodeURIComponent(EVO_INST)), {
+      method:'POST', timeoutMs:60000, data:{
         number: numero,
         mediatype: 'document',
         mimetype: mimetype || 'application/octet-stream',
         media: buf.toString('base64'),
         fileName: nome
-      },
-      { 'apikey': EVO_KEY, 'Content-Type': 'application/json' }
-    );
-    return true;
-  } catch(e) { console.warn('WhatsApp envio arq falhou:', e.message); return false; }
+      }, headers:{apikey:EVO_KEY}
+    });
+    return !!(result?.key?.id && !result.error);
+  } catch(e) { console.warn('[WhatsApp] envio do arquivo nao confirmado'); return false; }
 }
 
 // ── ABSTRAÇÃO DE CANAL ──
 // Toda mensagem (Telegram OU WhatsApp) usa { canal, chatId, threadId, numero }
 async function env(texto, ctx) {
   if(!ctx) ctx = {canal:'telegram'};
-  // Registrar resposta na Central de Mensagens
-  try { _registrarMsgCentral(ctx.canal||'telegram', 'saida', ctx.chatId||ctx.numero||'?', 'Lex', String(texto||'').substring(0,300)); } catch(e){}
-  if(ctx.canal === 'whatsapp') return envWhatsApp(texto, ctx.numero);
-  return envTelegram(texto, ctx.threadId, ctx.chatId);
+  const enviado = ctx.canal === 'whatsapp'
+    ? await envWhatsApp(texto, ctx.numero)
+    : await envTelegram(texto, ctx.threadId, ctx.chatId);
+  if(enviado === true) {
+    try { _registrarMsgCentral(ctx.canal||'telegram', 'saida', ctx.chatId||ctx.numero||'?', 'Lex', String(texto||'').substring(0,300)); } catch(e){}
+  }
+  return enviado === true;
 }
 
 async function envArq(buf, nome, ctx, mimetype) {
@@ -1194,14 +1186,14 @@ async function envArq(buf, nome, ctx, mimetype) {
 // ── Anthropic ──
 async function _iaAnthropic(messages, system, maxTok, modelo) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada. Defina a variável de ambiente.');
-  const pay={model: modelo || MODELO_TOP, max_tokens:maxTok||2000, messages};
+  const pay={model: MODELOS_POR_PROVIDER.anthropic.top, max_tokens:maxTok||2000, messages};
   if(system) pay.system=system;
   try {
     const r=await httpsPost('api.anthropic.com','/v1/messages',pay,
       {'x-api-key':AK,'anthropic-version':'2023-06-01'});
     if(r.error) throw new Error(r.error.message || JSON.stringify(r.error));
     if(!r.content || !r.content[0]) throw new Error('Resposta vazia da IA');
-    return r.content[0].text||'';
+    return r.content.filter(block => block.type === 'text').map(block => block.text || '').join('\n');
   } catch(e) {
     const msg = String(e.message||'').toLowerCase();
     if(msg.includes('overloaded') || msg.includes('529')) {
@@ -1211,7 +1203,7 @@ async function _iaAnthropic(messages, system, maxTok, modelo) {
         {'x-api-key':AK,'anthropic-version':'2023-06-01'});
       if(r2.error) throw new Error(r2.error.message || JSON.stringify(r2.error));
       if(!r2.content || !r2.content[0]) throw new Error('Resposta vazia da IA no retry');
-      return r2.content[0].text||'';
+      return r2.content.filter(block => block.type === 'text').map(block => block.text || '').join('\n');
     }
     throw e;
   }
@@ -1297,7 +1289,7 @@ async function iaComWebSearch(messages, system, maxTok, opts) {
   const maxLoops = opts.maxLoops || 4;
   const allowedDomains = opts.allowedDomains || null;
   const maxUses = Number.isFinite(opts.maxUses) ? opts.maxUses : 5;
-  const modelo = opts.modelo || MODELO_MID; // pesquisa web = Sonnet (era Opus)
+  const modelo = MODELOS_POR_PROVIDER.anthropic.top;
 
   const webTool = { type: 'web_search_20250305', name: 'web_search', max_uses: maxUses };
   if(allowedDomains && Array.isArray(allowedDomains) && allowedDomains.length) {
@@ -2180,8 +2172,11 @@ async function gerarEEnviar(tipo, proc, instrucoes, dadosProf, ehInicial, dadosC
     const texto=await gerarDoc(tipo, proc, instrucoes, dadosProf, ehInicial, dadosCliente, memCaso);
     const nomeArq=tipo.replace(/\s+/g,'_').replace(/[^\w]/g,'').substring(0,25)
       +(proc?'_'+proc.nome.replace(/\s+/g,'_').substring(0,20):'')
-      +'_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.txt';
-    await envArq(Buffer.from(texto,'utf8'), nomeArq, ctx, 'text/plain');
+      +'_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.docx';
+    const arquivo = await _gerarDocxBufferPeca(tipo, texto, tipo);
+    if(!await envArq(arquivo, nomeArq, ctx, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+      throw new Error('O canal nao confirmou o envio do documento.');
+    }
     await env('✅ '+tipo+' gerado. Revise antes de protocolar.\n⚠️ Complete os campos entre [ ] com os dados corretos.', ctx);
     if(proc) {
       await lembrarDoCaso(proc.nome, 'documento_gerado', tipo+' gerado em '+new Date().toLocaleDateString('pt-BR'), ctx.canal);
@@ -3883,8 +3878,11 @@ async function _assessorRedacao(ctx, mem) {
 
     // Envia o texto da peça
     const nomeArq = 'peca_'+(proc?.nome||'novo').replace(/\s+/g,'_').substring(0,20)+
-      '_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.txt';
-    await envArq(Buffer.from(resposta,'utf8'), nomeArq, ctx, 'text/plain');
+      '_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.docx';
+    const arquivo = await _gerarDocxBufferPeca('Peça jurídica', resposta, 'peticao');
+    if(!await envArq(arquivo, nomeArq, ctx, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+      throw new Error('O canal nao confirmou o envio da peca.');
+    }
     await env('✅ Peça redigida. Pontos de atenção:\n\n⚠️ [VERIFICAR] → jurisprudência não confirmada, você precisa validar fonte antes de usar\n⚠️ [CALCULAR] → conta que precisa passar pela calculadora (me peça o cálculo)\n⚠️ Campos [ ] → dados a preencher\n\nRevise antes de protocolar.', ctx);
 
     // Memória do caso
@@ -3993,8 +3991,11 @@ LEMBRE: cálculos vêm da calculadora determinística. Você DESCREVE, não calc
     const msg = [{role:'user', content: 'INSTRUÇÕES DE KLEUBER:\n'+instrucoes+'\n\nElabore o laudo pericial completo conforme estrutura acima.'}];
     const texto = await ia(msg, sys, 4000); // Perícia/laudo → Opus (qualidade CRÍTICA)
     const nomeArq = 'laudo_pericial_'+(proc?.nome||'novo').replace(/\s+/g,'_').substring(0,20)+
-      '_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.txt';
-    await envArq(Buffer.from(texto,'utf8'), nomeArq, ctx, 'text/plain');
+      '_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.docx';
+    const arquivo = await _gerarDocxBufferPeca('Minuta de laudo pericial', texto, 'laudo');
+    if(!await envArq(arquivo, nomeArq, ctx, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+      throw new Error('O canal nao confirmou o envio do laudo.');
+    }
     await env('✅ Laudo pericial elaborado.\n\n⚠️ [VERIFICAR] → normas/doutrina sem fonte → validar antes\n⚠️ [CALCULAR] → cálculo pendente → me peça o número exato\n⚠️ Revise metodologia e quesitos antes de protocolar.', ctx);
     if(proc) await lembrarDoCaso(proc.nome, 'laudo_pericial', 'Laudo pericial elaborado via Assessor.', ctx.canal);
     logAtividade('juridico', ctx.chatId, 'assessor_pericial', proc?.nome||'sem proc');
@@ -4555,7 +4556,7 @@ async function _verificarIdentidadeCliente(numero, dados_informados) {
 async function _chamarAnthropicSecretario(messages, system, modelo) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada.');
   const pay = {
-    model: modelo || SECRETARIO_WHATSAPP_CONFIG.modelo_ia,
+    model: MODELOS_POR_PROVIDER.anthropic.top,
     max_tokens: 900,
     messages
   };
@@ -5306,6 +5307,7 @@ async function _enviarEmailBackupDB(info) {
     const pass = process.env.LEX_SMTP_PASS || '';
     if(!to || !host || !user || !pass || !nodemailer) return false;
     const transporter = nodemailer.createTransport({
+      disableFileAccess: true, disableUrlAccess: true,
       host, port, secure: port === 465,
       auth: { user, pass }
     });
@@ -5703,7 +5705,8 @@ async function _executarCobrador(ctx) {
       await env(msg, ctx);
     } else {
       // Execução automática: envia pro admin
-      await envTelegram(msg, null, CHAT_ID).catch(()=>{});
+      const enviado = await envTelegram(msg, null, CHAT_ID);
+      if(!enviado) throw new Error('Telegram nao confirmou o envio do cobrador');
     }
     _cobradorUltimaExecucao = Date.now();
     logAtividade('juridico', ctx?.chatId || CHAT_ID, 'cobrador_executado', candidatos.length+' processo(s)');
@@ -9278,8 +9281,9 @@ async function adapterEvolution(body) {
 // POLLING TELEGRAM
 // ════════════════════════════════════════════════════════════════════════════
 async function poll() {
+  if(!TK) return;
   try {
-    const data = await httpsGet('https://api.telegram.org/bot'+TK+'/getUpdates?offset='+(lastUpdateId+1)+'&timeout=30&allowed_updates=["message","channel_post","edited_message"]');
+    const data = await requestJson('https://api.telegram.org/bot'+TK+'/getUpdates?offset='+(lastUpdateId+1)+'&timeout=30&allowed_updates='+encodeURIComponent('["message","channel_post"]'), {timeoutMs:40000});
     if(data.ok && data.result?.length) {
       for(const u of data.result) {
         lastUpdateId = u.update_id;
@@ -9376,13 +9380,15 @@ function validarToken(token) {
     const { p, ts, sig } = JSON.parse(Buffer.from(token,'base64url').toString());
     const esperado = CRYPTO.createHmac('sha256', AUTH_SECRET).update(p+'|'+ts).digest('hex').slice(0,16);
     if(sig !== esperado) return null;
-    if(!PERMS[p]) return null;
+    if(typeof p !== 'string' || !Object.hasOwn(PERMS, p)) return null;
+    if(!Number.isSafeInteger(ts) || ts <= 0 || ts > Date.now()) return null;
     const agora = Date.now();
     // Se token está registrado na sessão, checa inatividade
     const ultimo = global._sessaoAtividade ? global._sessaoAtividade.get(token) : null;
     if(ultimo) {
       if(agora - ultimo > AUTH_IDLE_MS) {
         global._sessaoAtividade.delete(token);
+        global._tokensRevogados.add(token);
         return null;
       }
     } else {
@@ -10198,6 +10204,15 @@ const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   const CORS = corsHeaders(req);
   if(req.method==='OPTIONS') { res.writeHead(204, corsHeaders(req)); res.end(); return; }
+  if(req.method==='POST' && ['/api/webhook-whatsapp','/api/whatsapp/webhook'].includes(url)) {
+    const secret = WHATSAPP_WEBHOOK_SECRET || _configRuntime.whatsapp.webhook_secret || '';
+    const status = webhookAuthStatus(secret, req.headers['x-webhook-secret']);
+    if(status !== 200) {
+      res.writeHead(status,CORS);
+      res.end(JSON.stringify({ok:false,error:status===503?'Webhook nao configurado':'Webhook nao autorizado'}));
+      return;
+    }
+  }
   if(url==='/' || url==='/health' || url==='/api/ping') {
     res.writeHead(200, {
       'Content-Type':'text/plain',
@@ -10207,6 +10222,24 @@ const server = http.createServer(async (req, res) => {
     });
     res.end('Lex OK');
     return;
+  }
+
+  // Rotas operacionais devem autenticar antes de acessar dados ou executar ações.
+  const rotasRestritas = ['/api/sync-status', '/api/comandos', '/api/memoria',
+    '/api/memoria-export', '/api/fila', '/api/docx', '/api/relatorio', '/api/whatsapp/status', '/api/whatsapp/mensagem', '/api/integracoes/status',
+    '/api/diagnostico', '/api/teste-vivo', '/api/teste-ia'];
+  if(rotasRestritas.includes(url)) {
+    const perfilRota = validarToken(getToken(req));
+    if(!perfilRota) {
+      res.writeHead(401, CORS);
+      res.end(JSON.stringify({error:'Nao autenticado'}));
+      return;
+    }
+    if(['/api/diagnostico', '/api/teste-vivo', '/api/teste-ia'].includes(url) && perfilRota !== 'admin') {
+      res.writeHead(403, CORS);
+      res.end(JSON.stringify({error:'Somente admin pode executar diagnosticos'}));
+      return;
+    }
   }
 
   // ── AUTH ──
@@ -10219,22 +10252,16 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const b = await lerBody(req);
-      if(!b.perfil || !b.senha) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil e senha obrigatorios'})); return; }
+      if(typeof b.perfil !== 'string' || !Object.hasOwn(PERMS, b.perfil) || typeof b.senha !== 'string' || !b.senha) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil ou senha invalidos'})); return; }
       
       // Busca senha válida (env var → Supabase → setup mode)
       const senhaCorreta = await obterSenhaValida(b.perfil);
       
       if(!senhaCorreta) {
-        // Nenhuma senha configurada — primeira vez: CONFIGURA automaticamente
-        console.log('[Lex] Primeira configuração de senha para perfil:', b.perfil);
-        const salvo = await salvarSenhaSupabase(b.perfil, b.senha);
-        if(!salvo) {
-          res.writeHead(500,corsHeaders(req));
-          res.end(JSON.stringify({error:'Senha nao configurada. Erro ao salvar no Supabase. Configure SENHA_ADMIN nas vars de ambiente do Render.'}));
-          return;
-        }
-        // Senha configurada com sucesso — prossegue com login
-        console.log('[Lex] Senha configurada e salva no Supabase para', b.perfil);
+        // Cadastro inicial exige configuração pelo operador, nunca por login público.
+        res.writeHead(503,corsHeaders(req));
+        res.end(JSON.stringify({error:'Senha nao configurada. Configure a senha do perfil no servidor.'}));
+        return;
       } else if(b.senha !== senhaCorreta) {
         res.writeHead(401,corsHeaders(req));
         res.end(JSON.stringify({error:'Senha incorreta'}));
@@ -10252,19 +10279,6 @@ const server = http.createServer(async (req, res) => {
   }
   
   // ── TROCAR SENHA (autenticado) ──
-  if(url==='/api/trocar-senha' && req.method==='POST') {
-    try {
-      const perfil = validarToken(getToken(req));
-      if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
-      const b = await lerBody(req);
-      if(!b.novaSenha || b.novaSenha.length < 4) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Nova senha deve ter pelo menos 4 caracteres'})); return; }
-      const salvo = await salvarSenhaSupabase(perfil, b.novaSenha);
-      if(!salvo) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro ao salvar senha'})); return; }
-      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Senha alterada com sucesso'}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
-    return;
-  }
-
   if(url==='/api/perfil' && req.method==='GET') {
     const perfil = validarToken(getToken(req));
     if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
@@ -10274,32 +10288,17 @@ const server = http.createServer(async (req, res) => {
 
   if(url==='/api/trocar-senha' && req.method==='POST') {
     try {
-      const perfilAtual = validarToken(getToken(req));
-      if(!perfilAtual) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const perfil = validarToken(getToken(req));
+      if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(perfilAtual !== 'admin' && b.perfilAlvo !== perfilAtual) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
-      if(!SENHAS_WEB[b.perfilAlvo]) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil inválido'})); return; }
-      if(perfilAtual !== 'admin' && b.senhaAtual !== SENHAS_WEB[b.perfilAlvo]) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Senha atual incorreta'})); return; }
-      if(!b.novaSenha || b.novaSenha.length<6) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Senha curta (mín 6)'})); return; }
-      
-      // Atualizar em memória
-      SENHAS_WEB[b.perfilAlvo] = b.novaSenha;
-      
-      // Tentar persistir no Supabase (tabela config)
-      try {
-        await sbReq('POST', 'config', {
-          chave: 'SENHA_' + b.perfilAlvo.toUpperCase(),
-          valor: b.novaSenha,
-          atualizado_em: new Date().toISOString()
-        });
-      } catch(e) {
-        console.warn('[Trocar Senha] Nao foi possivel persistir no Supabase:', e.message);
-        // Continua mesmo sem persistir - funciona em memória
-      }
-      
-      _auditarAcao(perfilAtual, 'trocar_senha', {perfil: b.perfilAlvo});
-      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Senha alterada. NOTA: Se o servidor reiniciar, a senha pode voltar ao valor original das variaveis de ambiente.'}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+      const alvo = b.perfilAlvo || perfil;
+      if(perfil !== 'admin' && alvo !== perfil) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissao'})); return; }
+      if(!Object.hasOwn(SENHAS_WEB, alvo)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil invalido'})); return; }
+      if(perfil !== 'admin' && b.senhaAtual !== await obterSenhaValida(alvo)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Senha atual incorreta'})); return; }
+      if(typeof b.novaSenha !== 'string' || b.novaSenha.length < 8) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Senha deve ter pelo menos 8 caracteres'})); return; }
+      if(!await salvarSenhaSupabase(alvo,b.novaSenha)) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({error:'Banco nao confirmou a gravacao'})); return; }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true,msg:'Senha alterada com sucesso'}));
+    } catch(e) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({error:'Falha ao alterar senha'})); }
     return;
   }
 
@@ -10334,7 +10333,7 @@ const server = http.createServer(async (req, res) => {
     const diag = { ts: new Date().toISOString(), checks: {} };
     try {
       // 1. API Key presente?
-      diag.checks.api_key = AK ? 'presente ('+AK.substring(0,10)+'...)' : 'AUSENTE';
+      diag.checks.api_key = AK ? 'presente' : 'AUSENTE';
       // 2. Modelo
       diag.checks.provider = IA_PROVIDER.toUpperCase();
       diag.checks.modelo = MODELO_TOP + ' (top) / ' + MODELO_MID + ' (mid) / ' + MODELO_ECO + ' (eco)';
@@ -10478,16 +10477,16 @@ const server = http.createServer(async (req, res) => {
       if(formato === 'pdf') {
         const pdfBuf = await _gerarPecaPdfBuffer(titulo, conteudo, 'peticao');
         const nome = _nomeArquivoSeguro(titulo, '.pdf');
-        res.writeHead(200, { 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"', ...corsHeaders(req) });
+        res.writeHead(200, {...corsHeaders(req), 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"'
+      });
         res.end(pdfBuf);
         return;
       }
       const docxBuf = _gerarDocxBufferPeca(titulo, conteudo, 'peticao');
       const nome = _nomeArquivoSeguro(titulo, '.docx');
-      res.writeHead(200, {
+      res.writeHead(200, {...corsHeaders(req),
         'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition':'attachment; filename="' + nome + '"',
-        ...corsHeaders(req)
+        'Content-Disposition':'attachment; filename="' + nome + '"'
       });
       res.end(docxBuf);
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -10556,15 +10555,16 @@ const server = http.createServer(async (req, res) => {
       const fakeBody = { mensagem: 'Diga apenas OK FUNCIONANDO', historico: [] };
       const fakeReq = Object.assign(Object.create(req), { method: 'POST' });
       const fakeDeps = {
-        req: fakeReq, res, body: fakeBody, perfil: {p:'admin'}, processos, CORS: corsHeaders(req),
+        req: fakeReq, res, body: fakeBody, perfil: 'admin', processos, CORS: corsHeaders(req),
         ANTHROPIC_KEY: AK, https, lerBody,
-        sbGet: (t,q)=>sbReq('GET',t,null,q), sbReq,
-        sbUpsert: async (tabela, dados, conflito) => { return sbReq('POST', tabela, dados, {}, { onConflict: conflito || 'id', merge: Object.keys(dados).join(',') }); },
-        sbPatch: async (tabela, dados, filtro) => { return sbReq('PATCH', tabela, dados, filtro); },
+        sbGet: (t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))), sbReq,
+        sbUpsert: async (tabela, dados, conflito) => { return sbUpsert(tabela, dados, conflito); },
+        sbPatch: async (tabela, dados, filtro) => { return sbReq('PATCH', tabela, dados, filtro, {'Prefer':'return=representation'}); },
         _processarMarcadoresChat, _notificarEquipe,
+        onProcessPersisted: () => _bumpProcessos('agente-vivo'),
         helpers: { validarToken, getToken, lerBody, notificarTodosSSE }
       };
-      await lex_agente_vivo.tratarRota(req, res, '/api/vivo/conversar', fakeDeps);
+      await lex_agente_vivo.tratarRota(fakeReq, res, '/api/vivo/conversar', fakeDeps);
     } catch(e) {
       if(!res.writableEnded) { res.writeHead(500, corsHeaders(req)); res.end(JSON.stringify({erro:e.message, stack:(e.stack||'').substring(0,500)})); }
     }
@@ -10648,7 +10648,7 @@ const server = http.createServer(async (req, res) => {
     const sysPrompt = b.system || sysAssessor(null, null);
     const txt = await ia(b.messages, sysPrompt, b.maxTokens||4096, MODELO_MID); // Chat API → Sonnet (economia)
       // Pós-processamento: marcadores de atualização de processo
-      const acoes = await _processarMarcadoresChat(txt);
+      const acoes = await _processarMarcadoresChat(txt, validarToken(tk));
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -10822,16 +10822,17 @@ const server = http.createServer(async (req, res) => {
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
         req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
         ANTHROPIC_KEY: AK, https, lerBody,
-        sbGet: (t,q)=>sbReq('GET',t,null,q),
+        sbGet: (t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))),
         sbReq,
         sbUpsert: async (tabela, dados, conflito) => {
-          return sbReq('POST', tabela, dados, {}, { onConflict: conflito || 'id', merge: Object.keys(dados).join(',') });
+          return sbUpsert(tabela, dados, conflito);
         },
         sbPatch: async (tabela, dados, filtro) => {
-          return sbReq('PATCH', tabela, dados, filtro);
+          return sbReq('PATCH', tabela, dados, filtro, {'Prefer':'return=representation'});
         },
         _processarMarcadoresChat,
         _notificarEquipe,
+        onProcessPersisted: () => _bumpProcessos('agente-vivo'),
         helpers: { validarToken, getToken, lerBody, notificarTodosSSE }
       });
       if(typeof out !== 'undefined' && !res.writableEnded) {
@@ -10851,7 +10852,7 @@ const server = http.createServer(async (req, res) => {
       if(!b || !b.pdf_base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'pdf_base64 obrigatorio'})); return; }
       const texto = _extrairTextoPdf(b.pdf_base64);
       const docId = CRYPTO.randomUUID ? CRYPTO.randomUUID() : CRYPTO.randomBytes(16).toString('hex');
-      await sbReq('POST', 'documentos_processo', {
+      requireSuccess(await sbReq('POST', 'documentos_processo', {
         id: docId,
         processo: b.processo || null,
         titulo: b.titulo || 'documento.pdf',
@@ -10859,7 +10860,7 @@ const server = http.createServer(async (req, res) => {
         texto_extraido: texto,
         criado_por: pfDoc,
         criado_em: new Date().toISOString()
-      }, null, null);
+      }, null, null), 'Salvar documento');
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, id:docId, texto_chars:texto.length}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -10880,7 +10881,7 @@ const server = http.createServer(async (req, res) => {
         select: 'id,processo,titulo,tipo,criado_em,criado_por,texto_extraido'
       };
       if(processo) filtros.processo = 'eq.' + processo;
-      let rows = await sbReq('GET', 'documentos_processo', null, filtros, null) || [];
+      let rows = await sbRows('documentos_processo', filtros);
       if(q) {
         const qq = q.toLowerCase();
         rows = rows.filter(r => (String(r.titulo||'').toLowerCase().includes(qq) || String(r.texto_extraido||'').toLowerCase().includes(qq)));
@@ -10897,7 +10898,7 @@ const server = http.createServer(async (req, res) => {
       if(!pfDocP) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const processoId = decodeURIComponent(url.split('/').pop() || '');
       if(!processoId) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'id do processo obrigatorio'})); return; }
-      const rows = await sbReq('GET', 'documentos_processo', null, {
+      const rows = await sbRows('documentos_processo', {
         processo: 'eq.' + processoId,
         order: 'criado_em.desc',
         select: 'id,processo,titulo,tipo,criado_em,criado_por,texto_extraido'
@@ -10925,7 +10926,7 @@ const server = http.createServer(async (req, res) => {
       const ini = dtIni.getFullYear()+'-'+String(dtIni.getMonth()+1).padStart(2,'0')+'-'+String(dtIni.getDate()).padStart(2,'0');
       let rows = [];
       try {
-        const sbResult = await sbReq('GET', 'tempo_uso', null, {
+        const sbResult = await sbRows('tempo_uso', {
           perfil: 'eq.' + perfilConsulta,
           data: 'gte.' + ini,
           select: 'data,hora_inicio',
@@ -11000,7 +11001,8 @@ if(url==='/api/memoria' && req.method==='GET') {
         }
         md += '---\n\n';
       }
-      res.writeHead(200, {'Content-Type':'text/markdown; charset=utf-8', 'Content-Disposition':'attachment; filename="lex-memoria.md"', ...corsHeaders(req)});
+      res.writeHead(200, {...corsHeaders(req),'Content-Type':'text/markdown; charset=utf-8', 'Content-Disposition':'attachment; filename="lex-memoria.md"'
+      });
       res.end(md);
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -11051,14 +11053,31 @@ if(url==='/api/memoria' && req.method==='GET') {
     return;
   }
 
+  if(url==='/api/integracoes/status' && req.method==='GET') {
+    const perfil = validarToken(getToken(req));
+    if(perfil !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Somente administrador'})); return; }
+    const [whatsapp,telegram] = await Promise.all([
+      whatsappStatus({url:EVO_URL,key:EVO_KEY,instance:EVO_INST,number:LEX_WHATSAPP_NUMBER||_numeroPlanoWhats(_configRuntime.whatsapp.numero)}),
+      telegramStatus({token:TK,admin:CHAT_ID})
+    ]);
+    res.writeHead(200,corsHeaders(req));
+    res.end(JSON.stringify({whatsapp,telegram,agentes_registrados:Lex.listar().map(a=>({nome:a.nome,
+      estado_declarado_no_codigo:a.status,ferramentas:a.ferramentas,homologado:false})),agente_vivo:{modulo_carregado:!!lex_agente_vivo,
+      chave_ia_configurada:!!AK, banco_configurado:!!(SB_URL&&SB_KEY), homologado:false}}));
+    return;
+  }
+
   if(url==='/api/whatsapp/configurar' && req.method==='POST') {
     try {
       const pfW = validarToken(getToken(req));
       if(!pfW) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      if(pfW !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Somente administrador'})); return; }
       const b = await lerBody(req);
       const ativo = !!b.ativo;
-      const numero = b.numero ? _normalizarNumeroWhats(b.numero) : null;
-      _configRuntime.whatsapp = {
+      const novoNumero = b.numero ? brazilMobile(b.numero) : LEX_WHATSAPP_NUMBER || _numeroPlanoWhats(_configRuntime.whatsapp.numero);
+      if(LEX_WHATSAPP_NUMBER && novoNumero !== LEX_WHATSAPP_NUMBER) { res.writeHead(409,corsHeaders(req)); res.end(JSON.stringify({error:'Numero diverge da linha do LEX configurada no servidor'})); return; }
+      const numero = novoNumero ? _normalizarNumeroWhats(novoNumero) : null;
+      const proximaConfig = {
         ..._configRuntime.whatsapp,
         ativo,
         numero,
@@ -11066,7 +11085,9 @@ if(url==='/api/memoria' && req.method==='GET') {
         webhook_secret: b.webhook_secret || _configRuntime.whatsapp.webhook_secret || null,
         atualizado_em: new Date().toISOString()
       };
-      await _salvarConfigPersistida('whatsapp', _configRuntime.whatsapp);
+      requireSuccess(await sbUpsert(_configTabela(), {chave:'whatsapp',valor:proximaConfig,atualizado_em:proximaConfig.atualizado_em}, 'chave'), 'Salvar WhatsApp');
+      _configRuntime.whatsapp = proximaConfig;
+      _configMemCache.whatsapp = proximaConfig;
       if(ativo && numero) await _inicializarConexaoWhatsApp();
       if(!ativo) await _desconectarWhatsApp();
       res.writeHead(200,corsHeaders(req));
@@ -11085,11 +11106,13 @@ if(url==='/api/memoria' && req.method==='GET') {
     try {
       const cfgW = await _carregarConfigPersistida('whatsapp', WHATSAPP_CONFIG);
       _configRuntime.whatsapp = {..._configRuntime.whatsapp, ...cfgW};
+      await _inicializarConexaoWhatsApp();
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ativo: !!_configRuntime.whatsapp.ativo,
         numero: _configRuntime.whatsapp.numero,
         conectado: !!_estadoWhatsApp.conectado,
+        estado: _estadoWhatsApp.estado || 'nao_verificado',
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
       }));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -11176,9 +11199,6 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/whatsapp/webhook' && req.method==='POST') {
     try {
       const b = await lerBody(req);
-      const secCfg = _configRuntime.whatsapp.webhook_secret || '';
-      const secReq = String(req.headers['x-webhook-secret'] || '');
-      if(secCfg && secReq !== secCfg) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:'assinatura invalida'})); return; }
       _estadoWhatsApp.ultima_mensagem = new Date().toISOString();
       res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({ok:true, recebido:true}));
       const data = b.data || b;
@@ -11266,14 +11286,14 @@ if(url==='/api/memoria' && req.method==='GET') {
       let enviado = false;
       if(canal === 'telegram') {
         try {
-          await envTelegram(texto, null, destino);
-          enviado = true;
+          enviado = await envTelegram(texto, null, destino);
+          if(!enviado) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,enviado:false,error:'Telegram nao confirmou o envio'})); return; }
           _registrarMsgCentral('telegram', 'saida', destino, 'Kleuber (Lex)', texto);
         } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro Telegram: '+e.message})); return; }
       } else if(canal === 'whatsapp') {
         try {
-          await envWhatsApp(texto, destino);
-          enviado = true;
+          enviado = await envWhatsApp(texto, destino);
+          if(!enviado) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,enviado:false,error:'WhatsApp nao confirmou o envio'})); return; }
           _registrarMsgCentral('whatsapp', 'saida', destino, 'Kleuber (Lex)', texto);
         } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro WhatsApp: '+e.message})); return; }
       } else {
@@ -11456,7 +11476,8 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!conteudo) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'conteudo obrigatório'})); return; }
       const pdfBuf = await _gerarPecaPdfBuffer(titulo, conteudo, tipo);
       const nome = _nomeArquivoSeguro(titulo, '.pdf');
-      res.writeHead(200, { 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"', ...corsHeaders(req) });
+      res.writeHead(200, {...corsHeaders(req), 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"'
+      });
       res.end(pdfBuf);
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -11475,10 +11496,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!conteudo) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'conteudo obrigatório'})); return; }
       const docxBuf = _gerarDocxBufferPeca(titulo, conteudo, tipo);
       const nome = _nomeArquivoSeguro(titulo, '.docx');
-      res.writeHead(200, {
+      res.writeHead(200, {...corsHeaders(req),
         'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition':'attachment; filename="' + nome + '"',
-        ...corsHeaders(req)
+        'Content-Disposition':'attachment; filename="' + nome + '"'
       });
       res.end(docxBuf);
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -11520,6 +11540,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
 
       const transporter = nodemailer.createTransport({
+      disableFileAccess: true, disableUrlAccess: true,
         host, port, secure: port===465,
         auth:{ user, pass }
       });
@@ -11562,11 +11583,10 @@ if(url==='/api/memoria' && req.method==='GET') {
     try {
       const b = await lerBody(req);
       if(!b.texto) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'texto obrigatório'})); return; }
-      const buf = Buffer.from(b.texto, 'utf8');
-      res.writeHead(200, {
+      const buf = await _gerarDocxBufferPeca(b.titulo || 'Peticao', b.texto, 'peticao');
+      res.writeHead(200, {...corsHeaders(req),
         'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition':'attachment; filename="peticao.docx"',
-        ...corsHeaders(req)
+        'Content-Disposition':'attachment; filename="peticao.docx"'
       });
       res.end(buf);
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -11579,22 +11599,9 @@ if(url==='/api/memoria' && req.method==='GET') {
   // quando qualquer processo muda ou comando chega
   // ════════════════════════════════════════════════════════════════════════
   if(url==='/api/sse' && req.method==='GET') {
-    // SSE: valida token com regra relaxada (assinatura válida, sem check de idle)
-    // porque EventSource reconecta automaticamente e token pode ter sido criado há >30min
+    // Reutiliza a validação de sessão, inclusive revogação e inatividade.
     const tkSse = getToken(req);
-    let pfSse = null;
-    try {
-      if(tkSse) {
-        const { p, ts, sig } = JSON.parse(Buffer.from(tkSse,'base64url').toString());
-        const esperado = CRYPTO.createHmac('sha256', AUTH_SECRET).update(p+'|'+ts).digest('hex').slice(0,16);
-        if(sig === esperado && PERMS[p]) {
-          pfSse = p;
-          // Registra atividade (mantém sessão viva pra outras rotas)
-          if(!global._sessaoAtividade) global._sessaoAtividade = new Map();
-          global._sessaoAtividade.set(tkSse, Date.now());
-        }
-      }
-    } catch(e) {}
+    const pfSse = validarToken(tkSse);
     if(!pfSse) { res.writeHead(401,corsHeaders(req)); res.end('data: {"error":"Não autenticado"}\n\n'); return; }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -11711,10 +11718,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       };
       const jsonBuf = Buffer.from(JSON.stringify(payload, null, 2), 'utf8');
       const zipBuf = _zipStorePeca([{ nome:'clientes_pendentes.json', data: jsonBuf }]);
-      res.writeHead(200, {
+      res.writeHead(200, {...corsHeaders(req),
         'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename=\"arquivo_morto_'+Date.now()+'.zip\"',
-        ...corsHeaders(req)
+        'Content-Disposition': 'attachment; filename=\"arquivo_morto_'+Date.now()+'.zip\"'
       });
       res.end(zipBuf);
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -12016,8 +12022,8 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!b.mensagem || typeof b.mensagem !== 'string' || !b.mensagem.trim()) {
         res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'mensagem obrigatoria'})); return;
       }
-      if(!TK) { res.writeHead(503,CORS); res.end(JSON.stringify({error:'TELEGRAM_TOKEN nao configurado no servidor'})); return; }
-      await envTelegram(b.mensagem.trim(), null, b.chat_id || CHAT_ID);
+      if(!TK) { res.writeHead(503,corsHeaders(req)); res.end(JSON.stringify({error:'TELEGRAM_TOKEN nao configurado no servidor'})); return; }
+      if(!await envTelegram(b.mensagem.trim(), null, b.chat_id || CHAT_ID)) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:'Telegram nao confirmou o envio'})); return; }
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Notificacao enviada via Telegram'}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -12401,22 +12407,20 @@ NAO INVENTE numeros. Se um valor nao consta nos documentos, diga "nao foi possiv
       if(formato==='pdf') {
         const pdfBuf = await _gerarPecaPdfBuffer(titulo, conteudo, 'laudo_pericial');
         const nome = _nomeArquivoSeguro(titulo, '.pdf');
-        res.writeHead(200, {
+        res.writeHead(200, {...corsHeaders(req),
           'Content-Type':'application/pdf',
           'Content-Length': pdfBuf.length,
-          'Content-Disposition':'attachment; filename="'+nome+'"',
-          ...corsHeaders(req)
-        });
+          'Content-Disposition':'attachment; filename="'+nome+'"'
+      });
         res.end(pdfBuf);
       } else {
         const docxBuf = _gerarDocxBufferPeca(titulo, conteudo, 'laudo_pericial');
         const nome = _nomeArquivoSeguro(titulo, '.docx');
-        res.writeHead(200, {
+        res.writeHead(200, {...corsHeaders(req),
           'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'Content-Length': docxBuf.length,
-          'Content-Disposition':'attachment; filename="'+nome+'"',
-          ...corsHeaders(req)
-        });
+          'Content-Disposition':'attachment; filename="'+nome+'"'
+      });
         res.end(docxBuf);
       }
     } catch(e) {
@@ -12527,6 +12531,7 @@ NAO INVENTE numeros. Se um valor nao consta nos documentos, diga "nao foi possiv
 // Formato: [ATUALIZAR:processo_id:campo:valor] [ANDAMENTO:processo_id:descricao] [PRAZO:processo_id:descricao:data:tipo]
 // ═══════════════════════════════════════════════════════════════════
 async function _processarMarcadoresChat(texto, perfil='assessor') {
+  if(!['admin','assessor','advogado'].includes(perfil)) return [];
   if(!texto) return [];
   const acoes = [];
   const hoje = new Date().toISOString().slice(0,10);
@@ -12642,7 +12647,7 @@ async function _processarMarcadoresChat(texto, perfil='assessor') {
 if(!global._filaNotificacoes) global._filaNotificacoes = [];
 
 function _dentroHorarioNotificacao() {
-  const agora = new Date();
+  const agora = horaBrasilia();
   const h = agora.getHours();
   const m = agora.getMinutes();
   const totalMin = h * 60 + m;
@@ -12729,22 +12734,35 @@ async function _salvarMensagemChat(plataforma, direcao, chatId, mensagem, proces
 // Wrapper para envTelegram com persistência
 const _envTelegramOriginal = envTelegram;
 envTelegram = async function(texto, tId, chatId) {
-  // Salvar antes de enviar
-  await _salvarMensagemChat('telegram', 'enviada', chatId || CHAT_ID, texto, null, {thread_id: tId});
-  return _envTelegramOriginal(texto, tId, chatId);
+  const enviado = await _envTelegramOriginal(texto, tId, chatId);
+  try {
+    await _salvarMensagemChat('telegram', enviado ? 'enviada' : 'falha_envio', chatId || CHAT_ID, texto, null, {thread_id:tId,confirmado:enviado});
+  } catch(e) { console.warn('[Telegram] falha ao registrar resultado do envio'); }
+  return enviado;
 };
 
-// Flush da fila de notificações a cada 5 minutos
-setInterval(async () => {
-  if(_dentroHorarioNotificacao() && global._filaNotificacoes.length > 0) {
+// Flush da fila. Resultado incerto fica separado para conferência, sem reenvio
+// automático que possa duplicar uma mensagem já aceita pelo provedor.
+let _flushNotificacoesEmCurso = false;
+async function _flushNotificacoes() {
+  if(_flushNotificacoesEmCurso || !_dentroHorarioNotificacao()) return;
+  _flushNotificacoesEmCurso = true;
+  try {
     const fila = [...global._filaNotificacoes];
     global._filaNotificacoes = [];
+    if(!global._notificacoesNaoConfirmadas) global._notificacoesNaoConfirmadas = [];
+    let enviadas = 0;
     for(const item of fila) {
-      try { await envTelegram(item.msg, item.opts, item.chatId); } catch(e) { console.warn('[Fila Telegram] Erro:', e.message); }
+      let enviado = false;
+      try { enviado = await envTelegram(item.msg, item.opts, item.chatId); }
+      catch(e) { console.warn('[Fila Telegram] envio nao confirmado'); }
+      if(enviado === true) enviadas++;
+      else global._notificacoesNaoConfirmadas.push({...item,estado:'envio_nao_confirmado',verificar_em:new Date().toISOString()});
     }
-    console.log(`[Fila Telegram] ${fila.length} notificacoes enviadas no horario`);
-  }
-}, 5 * 60 * 1000);
+    if(fila.length) console.log(`[Fila Telegram] ${enviadas} confirmadas; ${fila.length-enviadas} aguardam conferencia`);
+  } finally { _flushNotificacoesEmCurso = false; }
+}
+setInterval(_flushNotificacoes, 5 * 60 * 1000);
 
 server.listen(process.env.PORT||3000, async () => {
   // VALIDACAO DE SEGURANCA NO STARTUP
@@ -12752,7 +12770,7 @@ server.listen(process.env.PORT||3000, async () => {
   
   // 1. Tentar carregar senhas do Supabase (sobrescreve env vars se existir)
   try {
-    const configs = await sbReq('GET', 'config', null, {select: 'chave,valor'});
+    const configs = await sbRows('config', {select: 'chave,valor'});
     if(Array.isArray(configs)) {
       for(const cfg of configs) {
         if(cfg.chave === 'SENHA_ADMIN' && cfg.valor) {
@@ -12842,32 +12860,39 @@ async function enviarAlertas() {
     });
     msgs.push(m);
   }
-  for(const m of msgs) await envTelegram(m);
+  for(const m of msgs) {
+    const enviado = await envTelegram(m);
+    if(!enviado) throw new Error('Telegram nao confirmou o envio do alerta');
+  }
 }
 
 function agendarProximoAlerta() {
   const agora = horaBrasilia();
   const hora = agora.getHours();
-  const min = agora.getMinutes();
   const venceHoje = getPrazos(0).filter(p=>p.dias===0);
   let proxHora = null;
   if(venceHoje.length > 0) {
     if(hora < HORA_LIMITE) proxHora = hora + 1;
   } else {
-    proxHora = HORARIOS_NORMAIS.find(h=>h>hora||(h===hora&&min<1))||null;
+    // Nunca reagenda para a hora atual: às HH:00 isso criava timers de 0 ms
+    // e inundava o servidor com milhares de execuções até o minuto mudar.
+    proxHora = HORARIOS_NORMAIS.find(h=>h>hora)||null;
   }
-  if(proxHora !== null) {
-    const ms = ((proxHora-hora)*60-min)*60000;
-    setTimeout(async()=>{await enviarAlertas();agendarProximoAlerta();}, ms);
-    console.log('Próximo alerta às '+proxHora+'h ('+Math.round(ms/60000)+'min)');
-  } else {
-    const amanha = new Date(); amanha.setDate(amanha.getDate()+1); amanha.setHours(8,0,0,0);
-    const ms = amanha - agora;
-    setTimeout(async()=>{await enviarAlertas();agendarProximoAlerta();}, ms);
-  }
+  const proximo = new Date(agora.getTime());
+  if(proxHora === null) { proximo.setDate(proximo.getDate()+1); proxHora=HORARIOS_NORMAIS[0]; }
+  proximo.setHours(proxHora,0,0,0);
+  const ms = Math.max(1000, proximo.getTime()-agora.getTime());
+  setTimeout(_executarCicloAlertas, ms);
+  console.log('Próximo alerta às '+proxHora+'h ('+Math.round(ms/60000)+'min)');
 }
 
-setTimeout(()=>{enviarAlertas();agendarProximoAlerta();}, 2*60*1000);
+async function _executarCicloAlertas() {
+  try { await enviarAlertas(); }
+  catch(e) { console.warn('[Alertas] envio nao confirmado; proximo ciclo sera mantido'); }
+  finally { agendarProximoAlerta(); }
+}
+
+setTimeout(_executarCicloAlertas, 2*60*1000);
 setInterval(_executarFollowupClientesPendentes, 60*60*1000);
 setTimeout(()=>{ _executarFollowupClientesPendentes().catch(()=>{}); }, 3*60*1000);
 setInterval(_monitorarCapacidadeDB, 6*60*60*1000);
@@ -12951,13 +12976,13 @@ const MOTOR_INTERVALO = 6 * 60 * 60 * 1000; // 6 horas (antes: 2h)
 
 async function _motorProativoLex() {
   if(Date.now() - _motorUltimaExecucao < MOTOR_INTERVALO) return;
-  _motorUltimaExecucao = Date.now();
   console.log('[LEX MOTOR] Iniciando verificação proativa...');
   
-  const agora = new Date();
+  const agora = horaBrasilia();
   const horaAtual = agora.getHours();
   // Só roda entre 7h e 22h (horário de Brasília)
   if(horaAtual < 7 || horaAtual > 22) { console.log('[LEX MOTOR] Fora do horário (7h-22h). Pulando.'); return; }
+  _motorUltimaExecucao = Date.now();
   
   const alertas = [];
   const acoes = [];
@@ -12997,8 +13022,8 @@ async function _motorProativoLex() {
       alertas.push(`🚨 *${nome}* — URGENTE há ${dias} dias SEM AÇÃO! Prioridade máxima!`);
     }
     
-    // 5. Prazo vencendo — NÃO alerta se atualizado hoje (atualização limpa prazo cumprido)
-    if(p.prazo && !atualizadoHoje) {
+    // Atualizar andamento não comprova cumprimento de um prazo ainda cadastrado.
+    if(p.prazo) {
       try {
         const parts = p.prazo.includes('/') ? p.prazo.split('/').reverse().join('-') : p.prazo;
         const dprazo = Math.ceil((new Date(parts) - agora) / (1000*60*60*24));
@@ -13042,7 +13067,8 @@ async function _motorProativoLex() {
     
     // Enviar pro Kleuber via Telegram
     try {
-      await envTelegram(msg, null, CHAT_ID).catch(()=>{});
+      const enviado = await envTelegram(msg, null, CHAT_ID);
+      if(!enviado) throw new Error('Telegram nao confirmou o envio do relatorio');
       console.log('[LEX MOTOR] Relatório enviado ao Telegram.');
     } catch(e) { console.warn('[LEX MOTOR] Erro ao enviar:', e.message); }
     
@@ -13858,7 +13884,7 @@ async function _registrarTempoUso(perfil, acao, tsMs) {
     // Se não há sessão em memória, busca a última aberta no Supabase
     if(!sessao) {
       try {
-        const rows = await sbReq('GET', 'tempo_uso', null,
+        const rows = await sbRows('tempo_uso',
           { perfil: 'eq.'+perfil, hora_fim: 'is.null', order: 'hora_inicio.desc', limit: '1' }, null);
         if(rows && rows[0]) {
           sessao = { id: rows[0].id, hora_inicio: rows[0].hora_inicio, data: rows[0].data, ultimo_heartbeat_ms: Date.now() };
@@ -13904,10 +13930,10 @@ async function _resumoTempoUso(perfil) {
 
   async function somarMinutos(dataInicio, dataFim) {
     try {
-      const rows = await sbReq('GET', 'tempo_uso', null, {
+      const rows = await sbRows('tempo_uso', {
         perfil: 'eq.'+perfil,
-        data: 'gte.'+dataInicio,
-        data2: dataFim ? 'lte.'+dataFim : undefined,
+        and: dataFim ? '(data.gte.'+dataInicio+',data.lte.'+dataFim+')' : undefined,
+        data: dataFim ? undefined : 'gte.'+dataInicio,
         select: 'minutos_ativos'
       }, null);
       if(!rows || !rows.length) return 0;
@@ -13963,7 +13989,7 @@ async function _historicoTempoUso(perfil, dias) {
 
   let rows = [];
   try {
-    rows = await sbReq('GET', 'tempo_uso', null, {
+    rows = await sbRows('tempo_uso', {
       perfil: 'eq.'+perfil,
       data: 'gte.'+dataInicioStr,
       order: 'hora_inicio.desc'
@@ -14028,7 +14054,7 @@ async function bootInicio() {
     const avisos = urg.map(a=>(a.dias<0?'🔴 VENCIDO: ':a.dias===0?'🚨 HOJE: ':'⚠️ '+a.dias+'d: ')+a.nome).join('\n');
     await envTelegram('Sistema ativo. '+processos.length+' processos.\n\n'+avisos);
   }
-  poll();
+  if(TK) poll();
 }
 bootInicio();
 

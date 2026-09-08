@@ -20,24 +20,22 @@
 // =====================================================================
 
 'use strict';
+const { rowsFromResult } = require('./lib/supabase');
+const { withProcessLock } = require('./lib/process-lock');
+const { modelsFor, positiveInteger, admission: aiAdmission } = require('./lib/ai-runtime');
 
 // =====================================================================
-// HIERARQUIA DE MODELOS (OTIMIZAÇÃO DE CUSTO — abr/2026)
-// ---------------------------------------------------------------------
-// Opus  : 15/75 USD por M tokens (CARO)   — só pra tarefas críticas.
-// Sonnet: 3/15  USD por M tokens (5x +barato) — intermediário.
-// Haiku : 0.25/1.25 USD por M tokens (60x +barato) — tarefas simples.
+// Todos os agentes usam o TOP Anthropic configurado, sem redução de tier.
 // =====================================================================
-const MODELO_TOP = 'claude-opus-4-20250514';       // Opus 4 — top/caro
-const MODELO_MID = 'claude-sonnet-4-20250514';     // Sonnet 4 — intermediário
-const MODELO_ECO = 'claude-3-5-haiku-20241022';    // Haiku 3.5 — barato
+const modelosAnthropic = modelsFor('anthropic');
+const MODELO_TOP = modelosAnthropic.top;
+const MODELO_MID = modelosAnthropic.mid;
+const MODELO_ECO = modelosAnthropic.eco;
 
 // =====================================================================
 // CONFIGURAÇÃO DE MODELOS POR FUNCIONÁRIO
 // =====================================================================
-// Regra: só mantém Opus onde qualidade é crítica (chat Lex, redação de peças,
-// perícia). Pesquisa/juizes migra para Sonnet — contexto grande mas raciocínio
-// de síntese é suportado bem por Sonnet 4.
+// Os nomes MID/ECO existem por compatibilidade e resolvem para o mesmo TOP.
 const MODELO_GESTOR          = MODELO_TOP;   // chat Lex principal — Opus
 const MODELO_REDATOR         = MODELO_TOP;   // redator de peças/perícia — Opus
 const MODELO_PESQUISADOR     = MODELO_MID;   // pesquisa juízes/jurisprudência — Sonnet
@@ -48,7 +46,7 @@ const MODELO_DEFAULT_LEVE    = MODELO_MID;   // retrocompat (leve = Sonnet agora
 // LIMITES E CONFIGURAÇÕES
 // =====================================================================
 const MAX_HISTORICO        = 20;       // msgs máximas no histórico
-const MAX_TOOL_LOOPS       = 3;        // max loops de tool_result
+const MAX_TOOL_LOOPS       = positiveInteger(process.env.LEX_AI_MAX_TOOL_LOOPS, 3, 8);        // max loops de tool_result
 const ANTHROPIC_TIMEOUT_MS = 180000;   // 3 min (Opus é lento)
 const MAX_RETRIES          = 2;        // retries para 429/5xx/timeout
 const STATUS_VALIDOS       = ['URGENTE','ATIVO','DISTRIBUIDO','MONITORAR','AGUARDANDO','VENCIDO','CONCLUIDO','ENTREGUE'];
@@ -58,7 +56,7 @@ const PRAZO_REGEX          = /^\d{4}-\d{2}-\d{2}$/;
 // PROMPTS DOS FUNCIONÁRIOS
 // =====================================================================
 
-const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório Camargos Advocacia, atuando sob orientação do CEO Kleuber Melchior de Souza (analista jurídico, NÃO advogado) para o advogado titular Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
+const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório Camargos Advocacia, atuando sob orientação do CEO Kleuber Melchior de Souza para o advogado titular Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade, não um robô:
 - Você ENTENDE o que é conversado e DETERMINA a ação correta baseado no contexto.
@@ -581,6 +579,10 @@ function montarContextoProcesso(p) {
 }
 
 function chamarAnthropic(ANTHROPIC_KEY, httpsMod, payload) {
+  return aiAdmission.run(() => chamarAnthropicRequest(ANTHROPIC_KEY, httpsMod, {...payload,model:MODELO_TOP}));
+}
+
+function chamarAnthropicRequest(ANTHROPIC_KEY, httpsMod, payload) {
   return new Promise((resolve, reject) => {
     try {
       if (!ANTHROPIC_KEY) return reject(new Error('ANTHROPIC_KEY ausente'));
@@ -676,44 +678,39 @@ async function buscarDocumentosIndexados(processoId, nomeProcesso, deps) {
 }
 
 async function persistirProcesso(deps, processo_atualizado) {
-  // 1. Atualiza na memória (sempre)
+  const updateData = {};
+  const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao','comarca','instancia','valor','area_direito','tipo_acao','confianca_extracao'];
+  for(const campo of campos) {
+    if(processo_atualizado[campo] !== undefined) updateData[campo] = processo_atualizado[campo];
+  }
+  if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
+  for(const campo of ['autor','reu','demanda','processo','evidencias']) {
+    if(processo_atualizado[campo]) updateData[campo + '_json'] = JSON.stringify(processo_atualizado[campo]);
+  }
+  if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
+  if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
+  const filtro = {id: 'eq.' + processo_atualizado.id};
+  let resposta;
+  if(typeof deps.sbPatch === 'function') {
+    resposta = await deps.sbPatch('processos', updateData, filtro);
+  } else if(typeof deps.sbReq === 'function') {
+    resposta = await deps.sbReq('PATCH', 'processos', updateData, filtro, {'Prefer':'return=representation'});
+  } else {
+    throw new Error('Persistencia indisponivel. Nenhuma alteracao foi confirmada.');
+  }
+  const gravados = rowsFromResult(resposta, 'Salvar processo');
+  if(!gravados.some(row => String(row.id) === String(processo_atualizado.id))) {
+    throw new Error('Banco nao confirmou a atualizacao do processo.');
+  }
+  // Cache so muda depois de o banco confirmar uma linha efetivamente atualizada.
   const arr = deps.processos || [];
   const idx = arr.findIndex(p => String(p.id) === String(processo_atualizado.id));
-  if (idx >= 0) arr[idx] = processo_atualizado;
+  if(idx >= 0) arr[idx] = processo_atualizado;
   else arr.push(processo_atualizado);
-  
-  // 2. Persiste no Supabase (tabela processos)
-  try {
-    if (deps.sbPatch) {
-      const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao','comarca','instancia','valor','area_direito','tipo_acao','confianca_extracao'];
-      for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
-      if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
-      // Preserva dados completos extraídos dos PDFs (autor, réu, demanda, evidências)
-      if(processo_atualizado.autor) updateData.autor_json = JSON.stringify(processo_atualizado.autor);
-      if(processo_atualizado.reu) updateData.reu_json = JSON.stringify(processo_atualizado.reu);
-      if(processo_atualizado.demanda) updateData.demanda_json = JSON.stringify(processo_atualizado.demanda);
-      if(processo_atualizado.processo) updateData.processo_json = JSON.stringify(processo_atualizado.processo);
-      if(processo_atualizado.evidencias) updateData.evidencias_json = JSON.stringify(processo_atualizado.evidencias);
-      if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
-      if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
-      await deps.sbPatch('processos', updateData, { id: 'eq.' + processo_atualizado.id });
-      console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via PATCH');
-      return { ok: true, via: 'supabase' };
-    } else if (deps.sbReq) {
-      const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao'];
-      for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
-      if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
-      if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
-      await deps.sbReq('PATCH', 'processos', updateData, { id: 'eq.' + processo_atualizado.id });
-      console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via sbReq');
-      return { ok: true, via: 'supabase' };
-    }
-  } catch (e) {
-    console.error('[VIVO] Falha ao persistir no Supabase (não-fatal):', e.message);
+  if(typeof deps.onProcessPersisted === 'function') {
+    try { deps.onProcessPersisted(processo_atualizado.id); } catch(e) { console.warn('[VIVO] Falha ao notificar sincronizacao:', e.message); }
   }
-  return { ok: true, via: 'memoria' };
+  return {ok:true, via:'supabase'};
 }
 
 function jsonResponse(res, status, obj, CORS) {
@@ -741,7 +738,7 @@ async function chamarAnthropicComRetry(ANTHROPIC_KEY, httpsMod, payload) {
       const retryable = (st === 429 || st === 529 || st >= 500 ||
         msg.includes('overloaded') || msg.includes('timeout') ||
         msg.includes('econnreset') || msg.includes('socket hang up'));
-      if (!retryable || t >= maxR) throw e;
+      if (e.code === 'LEX_AI_BUSY' || !retryable || t >= maxR) throw e;
       const delay = Math.min(2000 * Math.pow(2, t), 16000);
       console.warn('[VIVO] Retry ' + (t+1) + '/' + maxR + ' em ' + delay + 'ms: ' + e.message);
       await new Promise(r => setTimeout(r, delay));
@@ -798,6 +795,7 @@ function erroSeguro(msg) {
 // =====================================================================
 async function resolverToolUse(deps, payload) {
   const maxLoops = (typeof MAX_TOOL_LOOPS !== 'undefined') ? MAX_TOOL_LOOPS : 3;
+  payload = {...payload, system: (payload.system || '') + '\nREGRA DE EXECUCAO: uma proposta preparada ainda nao foi aplicada. So afirme que houve gravacao quando a ferramenta comprovar persistencia. Ferramentas desconhecidas ou com erro nao foram executadas.'};
   let resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, payload);
   let resultado = extrairRespostaModelo(resposta);
   let textoAcumulado = resultado.texto;
@@ -811,11 +809,12 @@ async function resolverToolUse(deps, payload) {
     const blocos = (resposta.content || []).filter(b => b.type === 'tool_use');
     if (!blocos.length) break;
     const toolResults = await Promise.all(blocos.map(async (b) => {
-      let resultadoTool = {
-        ok: true,
-        registrado: true,
-        mensagem: 'Tool "' + b.name + '" executada com sucesso pelo sistema Lex.'
-      };
+      let resultadoTool = {ok:false, executado:false, mensagem:'Ferramenta nao implementada.'};
+      const propostas = new Set(['propor_atualizacao','pronto_para_redigir','consolidar_perfil','consolidar_jurisprudencia']);
+      if(propostas.has(b.name)) {
+        resultadoTool = {ok:true, executado:false, estado:'proposta_preparada',
+          mensagem:'Dados preparados para a proxima etapa. Ainda nao houve gravacao no processo.'};
+      }
 
       if (b.name === 'buscar_documentos') {
         const input = (b && b.input && typeof b.input === 'object') ? b.input : {};
@@ -831,7 +830,8 @@ async function resolverToolUse(deps, payload) {
       return {
         type: 'tool_result',
         tool_use_id: b.id,
-        content: JSON.stringify(resultadoTool)
+        content: JSON.stringify(resultadoTool),
+        is_error: resultadoTool.ok === false
       };
     }));
     msgs.push({ role: 'assistant', content: resposta.content });
@@ -951,16 +951,22 @@ async function handlerConversar(req, res, body, deps) {
 // =====================================================================
 
 async function handlerAplicar(req, res, body, deps) {
+  return withProcessLock(deps.processos, body && body.processo_id,
+    () => handlerAplicarSerial(req, res, body, deps));
+}
+
+async function handlerAplicarSerial(req, res, body, deps) {
   try {
     const { processo_id, proposta } = body || {};
     if (!processo_id || !proposta) {
       return jsonResponse(res, 400, { error: 'processo_id e proposta obrigatórios' }, deps.CORS);
     }
 
-    const processo = acharProcesso(deps.processos, processo_id);
-    if (!processo) return jsonResponse(res, 404, { error: 'processo não encontrado' }, deps.CORS);
+    const atual = acharProcesso(deps.processos, processo_id);
+    if (!atual) return jsonResponse(res, 404, { error: 'processo não encontrado' }, deps.CORS);
 
-    const antes = JSON.parse(JSON.stringify(processo));
+    const antes = JSON.parse(JSON.stringify(atual));
+    const processo = JSON.parse(JSON.stringify(atual));
     const hoje = new Date().toISOString().slice(0, 10);
     // Status considerados "finais" — não voltam para ATIVO sozinhos
     const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
@@ -983,27 +989,7 @@ async function handlerAplicar(req, res, body, deps) {
       processo.atualizado_em = hoje;
       processo.dias_parado = 0;
       processo.diasParado = 0;
-      // Limpa prazo vencendo (≤5d) — alerta de prazo DEVE sumir quando houve andamento
-      if (proposta.andamento && processo.prazo && !proposta.prazo) {
-        try {
-          const pr = String(processo.prazo).trim();
-          // Aceita DD/MM/YYYY ou YYYY-MM-DD
-          let dt = null;
-          if (/^\d{4}-\d{2}-\d{2}$/.test(pr)) dt = new Date(pr);
-          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(pr)) {
-            const [d,m,a] = pr.split('/').map(Number);
-            dt = new Date(a, m-1, d);
-          }
-          if (dt) {
-            const dRest = Math.ceil((dt - new Date()) / 86400000);
-            if (dRest !== null && dRest <= 5) {
-              console.log('[VIVO] Prazo cumprido (andamento aplicado), limpando:', pr);
-              processo.prazo = '';
-              processo.prazoReal = '';
-            }
-          }
-        } catch(_) {}
-      }
+      // Andamento nao equivale a cumprimento; preserva prazo e prazoReal.
     }
 
     // Aplica status: se proposta trouxe status explícito, respeita. Senão, se houve trabalho, ATIVO.
@@ -1035,10 +1021,10 @@ async function handlerAplicar(req, res, body, deps) {
     }
     if (proposta.prazo) {
       const pr = String(proposta.prazo).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(pr)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(pr) && Number.isFinite(Date.parse(pr)) && new Date(pr).toISOString().slice(0,10) === pr) {
         processo.prazo = pr;
       } else {
-        console.warn('[VIVO] Prazo formato inválido ignorado:', proposta.prazo);
+        return jsonResponse(res, 400, {error:'Prazo invalido. Informe uma data existente em YYYY-MM-DD.'}, deps.CORS);
       }
     }
     if (proposta.setor) {
@@ -1254,21 +1240,23 @@ Redija a peça completa agora.`;
       } catch (e) { console.warn('[VIVO] falha ao registrar acao vivo_acoes:', e?.message || e); }
     }
 
+    let persistencia = {ok:false, via:null};
     // AUTO-GRAVAR no processo: peça elaborada = atualiza andamento + ATIVO
     if (processo && deps.sbReq) {
       try {
         const hoje = new Date().toISOString().slice(0, 10);
-        processo.andamentos = processo.andamentos || [];
-        processo.andamentos.push({
+        const atualizado = JSON.parse(JSON.stringify(processo));
+        atualizado.andamentos = atualizado.andamentos || [];
+        atualizado.andamentos.push({
           data: hoje,
-          texto: `Peça jurídica elaborada: ${briefing.tipo_peca}. Pronta para protocolo.`,
+          texto: `Peça jurídica elaborada: ${briefing.tipo_peca}. Minuta gerada para revisao do advogado.`,
           origem: 'redator_ia'
         });
-        processo.status = 'ATIVO';
-        processo.atualizado_em = hoje;
-        processo.ultima_atualizacao = hoje;
-        processo.dias_parado = 0;
-        await persistirProcesso(deps, processo);
+        atualizado.status = 'ATIVO';
+        atualizado.atualizado_em = hoje;
+        atualizado.ultima_atualizacao = hoje;
+        atualizado.dias_parado = 0;
+        persistencia = await persistirProcesso(deps, atualizado);
         console.log('[VIVO] Processo atualizado automaticamente após geração de peça:', processo_id);
       } catch (e) { console.warn('[VIVO] falha ao auto-atualizar processo após peça:', e?.message || e); }
     }
@@ -1279,6 +1267,7 @@ Redija a peça completa agora.`;
       tipo_peca: briefing.tipo_peca,
       modelo,
       tem_perfil_juiz: !!perfilJuiz,
+      persistencia,
       briefing
     }, deps.CORS);
 
@@ -1663,7 +1652,9 @@ async function tratarRota(req, res, url, deps) {
         jurisprudencia:{ modelo: deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR, endpoint: '/api/vivo/juris/conversar' }
       },
       processos_em_memoria: (deps.processos || []).length,
-      supabase_conectado: typeof deps.sbGet === 'function',
+      supabase_conectado: null,
+      supabase_adapter_disponivel: typeof deps.sbGet === 'function',
+      integracoes_verificadas: false,
       anthropic_key_presente: !!deps.ANTHROPIC_KEY
     }, CORS);
     return true;
@@ -1693,6 +1684,12 @@ async function tratarRota(req, res, url, deps) {
   catch (e) { jsonResponse(res, 400, { error: 'body inválido: ' + e.message }, CORS); return true; }
 
   const depsPlus = Object.assign({}, deps, { CORS });
+
+  const escritas = ['/api/vivo/aplicar','/api/vivo/peca/gerar','/api/vivo/gerar_peca'];
+  if(escritas.includes(url) && deps.perfil !== 'admin') {
+    jsonResponse(res, 403, {error:'Sem permissao para alterar processos ou gerar pecas.'}, CORS);
+    return true;
+  }
 
   // Gestor
   if (url === '/api/vivo/conversar')        { await handlerConversar(req, res, body, depsPlus);      return true; }

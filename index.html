@@ -1337,7 +1337,9 @@ table{max-width:100%;}
 
 <script>
 // ═══════════════ CONSTANTES ═══════════════
-const SK='lex_proc_v1', AK='cam_api_k', JK='cam_juizes_v1', CK='cam_chat_hist', USR_KEY='cam_usuario';
+const SK='lex_proc_v1', JK='cam_juizes_v1', CK='cam_chat_hist', USR_KEY='cam_usuario';
+// Remove a antiga credencial local; o servidor ja e o caminho de autenticacao da IA.
+try { localStorage.removeItem('cam_api_k'); } catch (_) {}
 const EK='lex_escritorio_v1'; // chave configuração do escritório
 
 const WA_CFG_KEY = 'lex_whatsapp_cfg_v1';
@@ -2428,36 +2430,7 @@ async function chamarIA(messages, system, maxTokens) {
     console.warn('[chat] servidor falhou:', e?.message || e);
   }
 
-  // Tentativa 2: chave API local (configurada pelo usuário)
-  const key = getKey();
-  if(key){
-    try {
-      const res = await fetchComTimeout('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          'x-api-key': key,
-          'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-direct-browser-access':'true'
-        },
-        body: JSON.stringify({
-          model:'claude-opus-4-20250514',
-          max_tokens: maxTokens||1500,
-          messages, system
-        })
-      }, 30000);
-      const d = await res.json();
-      if(d.error) throw new Error(d.error.message);
-      const _respLocal = d.content?.[0]?.text || '';
-      if(_respLocal) _chamarIA_cacheSet(_cacheKey, _respLocal);
-      return _respLocal;
-    } catch(e) {
-      const motivoSrv = ultimoErroServidor ? (ultimoErroServidor.message||ultimoErroServidor) : 'indisponivel';
-      return '⚠️ Erro de conexao: '+(e.message||'verifique sua chave API')+' | servidor: '+motivoSrv;
-    }
-  }
-
-  // Sem servidor e sem chave: da diagnostico real em vez de "offline" generico
+  // Todas as chamadas de IA passam pelo servidor autenticado.
   const motivoSrv = ultimoErroServidor ? (ultimoErroServidor.message || String(ultimoErroServidor)) : 'sem resposta';
   if(String(motivoSrv).includes('401') || String(motivoSrv).toLowerCase().includes('autentic')) {
     return '⚠️ Sessao expirada. Faca login novamente (menu Sair > entrar). Detalhe: '+motivoSrv;
@@ -2465,9 +2438,9 @@ async function chamarIA(messages, system, maxTokens) {
   if(String(motivoSrv).toLowerCase().includes('anthropic_key')) {
     return '⚠️ Servidor sem ANTHROPIC_KEY configurada. Avise o admin. Detalhe: '+motivoSrv;
   }
-  return '⚠️ Assessor IA indisponivel. Servidor respondeu: "'+motivoSrv+'". Se o problema persistir, configure a chave API local em Menu > Gestao de Senhas > Chave API Anthropic.';
+  return '⚠️ Assessor IA indisponivel. Servidor respondeu: "'+motivoSrv+'". Tente novamente ou consulte o administrador.';
 }
-// Chave API deve ser configurada pelo usuário no sistema — nunca embutida no código
+// Credenciais de IA configuradas somente no servidor.
 const COR={'Cível':'#1ab8d8','Criminal':'#e84545','Ambiental':'#2ec97e','Trabalhista':'#4f6ef7','Tributário':'#9b6ef7','Tributário Municipal':'#9b6ef7','Execução Federal':'#f0832a','Previdenciário':'#c9a84c','Família':'#e879a8'};
 const SC={URGENTE:'#e84545',ATIVO:'#1a73e8',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',EM_PREP:'#9b6ef7',MONITORAR:'#6b7280',VENCIDO:'#e84545',CONCLUIDO:'#2ec97e',GANHO:'#2ec97e',PERDIDO:'#e84545',ARQUIVADO:'#555878',DISTRIBUIDO:'#7c3aed',ENTREGUE:'#059669'};
 
@@ -3208,7 +3181,6 @@ function _exportarSemZip() {
 function renderGestaoSenhas(){
   if(!podeConfig()){document.getElementById('content').innerHTML='<div style="font-size:13px;color:var(--red)">Acesso restrito ao Administrador.</div>';return;}
   const senhas=getSenhas();
-  const chaveAtual=getKey()||'';
   const esc=getEscritorio();
   const info={admin:'Administrador',secretaria:'Secretária'};
   document.getElementById('content').innerHTML=`
@@ -3233,19 +3205,6 @@ function renderGestaoSenhas(){
       </div>
       <button onclick="salvarEscritorio()" class="btn-primary" style="font-size:12px;padding:9px 18px;">💾 Salvar configurações</button>
       ${esc.configurado?'<span style="margin-left:12px;font-size:11px;color:var(--green)">✓ Configurado</span>':'<span style="margin-left:12px;font-size:11px;color:var(--orange)">⚠ Não configurado — configure para personalizar documentos</span>'}
-    </div>
-
-    <!-- CHAVE API -->
-    <div style="background:var(--surface);border:1px solid color-mix(in srgb, var(--accent) 27%, transparent);border-radius:14px;padding:20px 22px;margin-bottom:20px;">
-      <div style="font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:14px;">🤖 CHAVE API ANTHROPIC</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Necessária como fallback local quando o servidor estiver offline.</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input id="api-key-input" type="password" class="fi" style="flex:1;min-width:140px;font-family:monospace;font-size:12px;" placeholder="sk-ant-api03-..." value="${chaveAtual}">
-        <button onclick="toggleVerApiKey()" class="btn-outline" style="font-size:12px;padding:8px 14px;flex-shrink:0;">👁 Ver</button>
-        <button onclick="salvarApiKey()" class="btn-primary" style="font-size:12px;padding:9px 18px;flex-shrink:0;">💾 Salvar chave</button>
-      </div>
-      <div id="api-key-status" style="margin-top:8px;font-size:12px;"></div>
-      ${chaveAtual?'<div style="margin-top:8px;font-size:11px;color:var(--green);">✓ Chave configurada</div>':'<div style="margin-top:8px;font-size:11px;color:var(--orange);">⚠ Sem chave local — usando servidor</div>'}
     </div>
 
     <!-- GESTÃO FINANCEIRA / RECARGA API -->
@@ -3445,7 +3404,7 @@ function renderGestaoSenhas(){
         <div>🤖 <strong>Modo Autônomo</strong> — salva processos/clientes diretamente do PDF sem pedir confirmação no chat</div>
         <div>📱 <strong>Webhook WhatsApp</strong> — receptor nativo para Evolution API via <code>window.receberWebhookWhatsApp(payload)</code></div>
         <div>🧠 <strong>processamentoAutonomo()</strong> — núcleo de agência: classifica documento e roteia para módulo correto</div>
-        <div>🔄 <strong>Modelo atualizado</strong> — agora usa claude-opus-4-20250514 (Opus 4 — máxima inteligência)</div>
+        <div>🔄 <strong>Modelo atualizado</strong> — seleção centralizada no servidor</div>
         <div>🛡 <strong>Anti-duplicidade CNJ reforçada</strong> — normalização <code>.replace(/[\s.\-\/]/g,'')</code> confirmada em todas as rotas</div>
         <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">← Inclui tudo do v13: busca universal · ciclo inteligente · sugestão IA · saúde do processo · processos conexos</div>
       </div>
@@ -3716,21 +3675,6 @@ function verNoPje(id){
   window.open(link, '_blank');
 }
 
-function toggleVerApiKey(){
-  const inp=document.getElementById('api-key-input');
-  if(!inp)return;
-  inp.type=inp.type==='password'?'text':'password';
-}
-function salvarApiKey(){
-  const k=document.getElementById('api-key-input')?.value?.trim();
-  const st=document.getElementById('api-key-status');
-  if(!k){st.innerHTML='<span style="color:var(--red)">Cole a chave API primeiro.</span>';return;}
-  if(!k.startsWith('sk-ant')){st.innerHTML='<span style="color:var(--orange)">⚠ Chave inválida — deve começar com sk-ant...</span>';return;}
-  setKey(k);
-  st.innerHTML='<span style="color:var(--green)">✓ Chave salva! IA ativada em todo o sistema.</span>';
-  setTimeout(()=>renderGestaoSenhas(),1500);
-}
-
 function toggleAutonomoMode(){
   window.autonomoMode = !window.autonomoMode;
   localStorage.setItem('lex_autonomo_mode', window.autonomoMode ? '1' : '0');
@@ -3792,12 +3736,6 @@ function saveProcs(d){
   clearTimeout(window._syncTimer);
   window._syncTimer=setTimeout(sincronizarComBot,800);
 }
-function getKey(){
-  const stored=localStorage.getItem(AK);
-  if(stored) return stored;
-  return null; // Configure sua chave API no sistema
-}
-function setKey(k){localStorage.setItem(AK,k);}
 function getChatHist(id){try{const h=JSON.parse(localStorage.getItem(CK)||'{}');return h[id]||[];}catch(e){return[];}}
 function saveChatHist(id,msgs){try{const h=JSON.parse(localStorage.getItem(CK)||'{}');h[id]=msgs.slice(-30);localStorage.setItem(CK,JSON.stringify(h));}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }}
 if(!localStorage.getItem(SK)) saveProcs(DEFAULT);
@@ -3810,7 +3748,7 @@ function calcAjustado(s){const dt=parsePrazo(s);if(!dt)return{prazo:'',prazoReal
 // ═══════════════════════════════════════════════════════════════════════
 // CICLO DE STATUS — fonte ÚNICA de verdade para mudanças de status
 // Regra CEO (ordem de prioridade):
-//   evento='andamento'     → ATIVO (exceto CONCLUIDO/ENTREGUE/ARQUIVADO/EM_PREP), zera dias_parado, limpa prazo <=5d
+//   evento='andamento'     → ATIVO (exceto CONCLUIDO/ENTREGUE/ARQUIVADO/EM_PREP), zera dias_parado, preserva prazo
 //   evento='parado_5d'     → URGENTE (só se status atual = ATIVO)
 //   evento='prazo_critico' → URGENTE (ATIVO ou AGUARDANDO)
 //   evento='distribuir'    → DISTRIBUIDO
@@ -3838,10 +3776,7 @@ function cicloStatus(procId, evento, opts){
       p.ultima_atualizacao = hoje;
       p.dias_parado = 0;
       p.diasParado = 0;
-      if(p.prazo){
-        const dRest = diasRestantes(p.prazo);
-        if(dRest !== null && dRest <= 5){ p.prazo = ''; p.prazoReal = ''; }
-      }
+      // Novo andamento nao comprova o cumprimento de um prazo.
       break;
     case 'parado_5d':
       if(stAtual === 'ATIVO') p.status = 'URGENTE';
@@ -9994,15 +9929,7 @@ async function aplicarPropostaGestor() {
           if(d.processo[campo] !== undefined) local[campo] = d.processo[campo];
         }
         local.id = idOriginal;
-        // Se houve andamento e prazo antigo já passou/vencendo, limpar (prazo cumprido)
-        if(local.prazo && !d.processo.prazo) {
-          const dRest = diasRestantes(local.prazo);
-          if(dRest !== null && dRest <= 5) {
-            console.log('[LEX] Prazo antigo cumprido, limpando:', local.prazo);
-            local.prazo = '';
-            local.prazoReal = '';
-          }
-        }
+        // Ausencia de prazo na resposta nao autoriza apagar o prazo local.
         ps[idx] = local;
         console.log('[LEX] Processo atualizado localmente — status:', local.status, 'setor:', local.setor);
         if(typeof saveProcs === 'function') saveProcs(ps);
@@ -10497,7 +10424,7 @@ function limparMsgCiclo(){
   window._cicloPend=[];
 }
 
-// Registra ação de salvar — QUALQUER atualização = ATIVO + limpa prazo cumprido
+// Registra ação de salvar — Atualização = ATIVO, preservando prazo ate baixa expressa
 function registrarAcaoSalvar(procId,acao){
   if(!procId)return;
   const ps=getProcs();
@@ -10507,7 +10434,7 @@ function registrarAcaoSalvar(procId,acao){
   p._ultimaAcao=acao||'Salvo';
   p._ultimaAtualiz=new Date().toISOString();
   saveProcs(ps);
-  // Regra CEO centralizada: delega ciclo de status (ATIVO + zera dias + limpa prazo vencido)
+  // Regra CEO centralizada: delega ciclo de status (ATIVO + zera dias, preservando prazo)
   cicloStatus(procId, 'andamento');
   toast('✓ Processo atualizado — status ATIVO','ok');
   if(typeof renderPainel==='function'&&document.getElementById('page-title')?.textContent==='Painel Geral')renderPainel();
@@ -11867,7 +11794,7 @@ async function atualizarAndamentoProcessoExistente(){
   const hoje = new Date().toISOString().slice(0,10);
   ps[idx].andamentos.unshift({data:hoje, txt});
   saveProcs(ps);
-  // Regra CEO centralizada: ATIVO + zera dias + limpa prazo cumprido
+  // Regra CEO centralizada: ATIVO + zera dias, preservando prazo
   cicloStatus(chatCtx.id, 'andamento');
   try{
     const tk = (typeof getAuthToken==='function' ? (getAuthToken()||'') : '');
