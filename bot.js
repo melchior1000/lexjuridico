@@ -84,6 +84,7 @@
 // 5. Endpoint /api/memoria-export → markdown
 
 const https = require('https');
+const {applyPjeMovement} = require('./lib/pje-sync');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
 const { modelsFor, admission: aiAdmission } = require('./lib/ai-runtime');
 const http = require('http');
@@ -317,6 +318,8 @@ const Lex = {
   async consultar(nomeAgente, metodo, ...args) {
     const ag = this.obter(nomeAgente);
     if(!ag) throw new Error('Agente '+nomeAgente+' não encontrado');
+    if(!ag.ferramentas.includes(metodo)) throw new Error('Ferramenta não autorizada para '+nomeAgente);
+    if(ag.status !== 'pronto') throw new Error('Agente indisponível: '+nomeAgente);
     if(typeof ag[metodo] !== 'function') throw new Error('Método '+metodo+' não existe em '+nomeAgente);
     return await ag[metodo](...args);
   },
@@ -782,7 +785,7 @@ function _extrairTribunalDoProcesso(numero) {
     '401':'trf1','402':'trf2','403':'trf3','404':'trf4','406':'trf6',
     '502':'trt2','510':'trt10'
   };
-  return mapa[cod] || 'tjsp';
+  return mapa[cod] || null;
 }
 function _linkPjeProcesso(tribunal, numero) {
   const t = String(tribunal||'').toUpperCase();
@@ -797,6 +800,9 @@ function _linkPjeProcesso(tribunal, numero) {
 }
 async function _buscarAndamentosDatajud(processoNumero, tribunalAlias) {
   const tribunal = String(tribunalAlias || _extrairTribunalDoProcesso(processoNumero)).toLowerCase();
+  if(!/^(tj[a-z]+|trf[1-6]|trt\d{1,2})$/.test(tribunal)) return {ok:false,erro:'Tribunal não mapeado',movimentacoes:[]};
+  const datajudKey=process.env.DATAJUD_API_KEY;
+  if(!datajudKey) return {ok:false,erro:'Consulta pública Datajud não configurada',movimentacoes:[]};
   const host = 'api-publica.datajud.cnj.jus.br';
   const path = '/api_publica_'+tribunal+'/_search';
   const body = {
@@ -805,10 +811,11 @@ async function _buscarAndamentosDatajud(processoNumero, tribunalAlias) {
     sort: [{ 'movimentos.dataHora': { order: 'desc' } }]
   };
   try {
-    const r = await httpsPost(host, path, body, { 'Content-Type':'application/json' });
+    const r = await httpsPost(host, path, body, { 'Content-Type':'application/json', Authorization:'APIKey '+datajudKey });
+    if(r?.error || !Array.isArray(r?.hits?.hits)) throw new Error('Datajud não confirmou a consulta');
     const hits = r?.hits?.hits || [];
     const src = hits[0]?._source || {};
-    const movs = Array.isArray(src.movimentos) ? src.movimentos.slice(0,10).map(m => ({
+    const movs = Array.isArray(src.movimentos) ? src.movimentos.slice().sort((a,b)=>String(b.dataHora||b.data||'').localeCompare(String(a.dataHora||a.data||''))).slice(0,10).map(m => ({
       data: m.dataHora || m.data || '',
       tipo: m.nome || m.codigo || 'Movimentacao',
       texto: (m.nome ? String(m.nome) : 'Movimentacao processual')
@@ -821,33 +828,29 @@ async function _buscarAndamentosDatajud(processoNumero, tribunalAlias) {
 async function _varrerAndamentosPjeAgora() {
   const ativos = processos.filter(p => ['ATIVO','URGENTE','EM_PREP','RECURSAL'].includes(String(p.status||'').toUpperCase()) && p.numero);
   let novidades = 0;
+  let falhas = 0;
   const alertas = [];
   for(const p of ativos) {
     const r = await _buscarAndamentosDatajud(p.numero, _extrairTribunalDoProcesso(p.numero));
-    if(!r.ok || !r.movimentacoes.length) continue;
+    if(!r.ok) { falhas++; continue; }
+    if(!r.movimentacoes.length) continue;
     const ultimo = r.movimentacoes[0];
     const chave = String(p.id || p.numero);
     const antigo = _pjeMovCache[chave];
     const assinatura = (ultimo.data||'')+'|'+(ultimo.tipo||'')+'|'+(ultimo.texto||'');
     if(antigo && antigo !== assinatura) {
-      novidades += 1;
-      alertas.push({ processo: p, mov: ultimo });
-      if(!p.andamentos) p.andamentos = [];
-      p.andamentos.unshift({
-        data: ultimo.data ? new Date(ultimo.data).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR'),
-        txt: '[DATAJUD] '+(ultimo.tipo || 'Movimentacao')
-      });
-      p.status = 'URGENTE';
-      await envTelegram('MOVIMENTACAO: Processo '+(p.numero||p.nome)+' - '+(ultimo.tipo||'Movimentacao')+' em '+(ultimo.data||new Date().toISOString()), null, CHAT_ID).catch(()=>{});
+      try {
+        const result = await applyPjeMovement({processos, sbReq, origem:'datajud',
+          onPersisted:()=>_bumpProcessos('datajud')},
+          {cnj:p.numero, data:ultimo.data, andamento_texto:ultimo.texto});
+        if(!result.duplicado) { novidades++; alertas.push({processo:result.processo, mov:ultimo}); }
+      } catch(e) { falhas++; continue; }
+
     }
     _pjeMovCache[chave] = assinatura;
   }
-  if(novidades) {
-    _bumpProcessos('pje_datajud');
-    _persistirProcessosCache().catch(()=>{});
-  }
   _pjeUltimoCheck = new Date().toISOString();
-  return { ok: true, monitorados: ativos.length, novidades, ultimo_check: _pjeUltimoCheck, alertas };
+  return { ok: falhas===0, falhas, monitorados: ativos.length, novidades, ultimo_check: _pjeUltimoCheck, alertas };
 }
 
 async function logAtividade(agenteId, chatId, acao, detalhes) {
@@ -11332,6 +11335,34 @@ if(url==='/api/memoria' && req.method==='GET') {
     return;
   }
 
+  if(url==='/api/agentes/status' && req.method==='GET') {
+    const perfil = validarToken(getToken(req));
+    if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+    if(perfil !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+    res.writeHead(200,corsHeaders(req));
+    res.end(JSON.stringify({ok:true, verificado_em:new Date().toISOString(),
+      agentes:Lex.listar().map(a => ({nome:a.nome, descricao:a.descricao,
+        implementado:a.status==='pronto', ferramentas:a.ferramentas})),
+      ia:{chave_configurada:!!AK, operacao:'nao_verificada'},
+      canais:{telegram:{configurado:!!TK, operacao:'nao_verificada'},
+        whatsapp:{configurado:!!(EVO_URL && EVO_KEY && EVO_INST), operacao:'nao_verificada'}},
+      pje:{conector_disponivel:false, importacao_acervo:'pendente'}}));
+    return;
+  }
+
+  // Ingestão autenticada: conector deve fornecer CNJ e movimento; não executa login PJe.
+  if(url==='/api/pje/andamento' && req.method==='POST') {
+    const perfil = validarToken(getToken(req));
+    if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+    if(perfil !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
+    try {
+      const dados = await lerBody(req);
+      const resultado = await Lex.obter('PJe').receberAndamento(dados);
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify(resultado));
+    } catch(e) { res.writeHead(e.status || 422,corsHeaders(req)); res.end(JSON.stringify({sucesso:false,error:e.message})); }
+    return;
+  }
+
   if(url==='/api/pje/configurar' && req.method==='POST') {
     try {
       const pfP = validarToken(getToken(req));
@@ -11424,7 +11455,10 @@ if(url==='/api/memoria' && req.method==='GET') {
       const varredura = await _varrerAndamentosPjeAgora();
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
-        ok:true,
+        ok:varredura.ok,
+        fonte:"datajud",
+        importacao_acervo:false,
+        falhas:varredura.falhas,
         processos: processos.filter(p=>p.numero).map(p => ({
           id:p.id,
           nome:p.nome,
@@ -11433,7 +11467,7 @@ if(url==='/api/memoria' && req.method==='GET') {
           ultimoAndamento:(p.andamentos&&p.andamentos[0]) ? p.andamentos[0].txt : ''
         })),
         resumo: 'Monitorados: '+varredura.monitorados+' | Novidades: '+varredura.novidades,
-        novasIntimacoes: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero })),
+        novosAndamentos: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero })),
         ultimo_check: varredura.ultimo_check
       }));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -13197,78 +13231,29 @@ class AgentePericial extends AgenteBase {
 //   1. lex-agente.js (Playwright no PC do Wanderson) consulta PJe com A3
 //   2. Quando detecta andamento novo, envia POST para o Lex (endpoint abaixo)
 //   3. Este agente recebe, valida, e reporta evento ao Lex
-//   4. Lex muda o processo correspondente para URGENTE (6d) e avisa Kleuber
+//   4. LEX persiste o andamento pelo CNJ exato, sem inventar ou substituir prazos.
 //
-// ENDPOINT A IMPLEMENTAR no servidor Express: POST /api/pje/andamento
-// (adicionar quando lex-agente.js estiver pronto)
+// POST /api/pje/andamento exige sessão de administrador. Conector externo ainda pendente.
 
 class AgentePJe extends AgenteBase {
   constructor() {
     super({
       nome: 'PJe',
-      descricao: 'Consulta PJe via Playwright (no PC do Wanderson) e detecta andamentos novos não informados ao Lex. Muda processo para URGENTE automaticamente.',
+      descricao: 'Importa andamentos pelo CNJ exato, preservando prazos. Conector de acesso ao tribunal pendente de implantação.',
       status: 'pendente',  // pendente até lex-agente.js estar testado
-      ferramentas: ['receberAndamento', 'marcarUrgente']
+      ferramentas: ['receberAndamento']
     });
   }
 
-  // Chamado quando o lex-agente.js detecta andamento novo
-  // dados: { cnj, andamento_texto, data, tribunal }
   async receberAndamento(dados) {
-    console.log('[AgentePJe] andamento recebido: '+dados.cnj);
-    // Localiza o processo via Agente Roteador (reaproveita classificação)
-    const analiseSimulada = {
-      numero_processo: dados.cnj,
-      partes: dados.partes || '',
-      tribunal: dados.tribunal || ''
-    };
-    const match = _agenteRoteador(analiseSimulada);
-    if(match.tipo === 'match_cnj' || match.tipo === 'match_score') {
-      this.marcarUrgente(match.proc, dados);
-      this.registrarEvento('andamento_detectado', {
-        proc_id: match.proc.id, proc_nome: match.proc.nome, dados
-      });
-      // Reporta ao Lex
-      await Lex.receberEvento('PJe', 'andamento_detectado', {
-        proc: match.proc, dados
-      });
-      // Notifica Kleuber diretamente
-      try {
-        await envTelegram(
-          '🏛️ ANDAMENTO NOVO DETECTADO NO PJE\n\n'+
-          '📋 '+match.proc.nome+'\n'+
-          (match.proc.numero ? 'Nº: '+match.proc.numero+'\n' : '')+
-          (dados.data ? 'Data: '+dados.data+'\n' : '')+
-          '\n📝 '+(dados.andamento_texto||'(texto não fornecido)').substring(0,400)+'\n'+
-          '\n⚠ Processo agora URGENTE (6 dias).\n'+
-          'Me manda a peça quando puder.',
-          null, CHAT_ID
-        ).catch(()=>{});
-      } catch(_){ console.warn('[Lex][bot] Erro silenciado:', (_ && _.message) ? _.message : _); }
-      return { sucesso: true, proc_nome: match.proc.nome };
+    const result = await applyPjeMovement({processos, sbReq,
+      onPersisted: () => _bumpProcessos('pje')}, dados);
+    if (!result.duplicado) {
+      await Lex.receberEvento('PJe', 'andamento_detectado', {proc:result.processo, dados});
     }
-    console.warn('[AgentePJe] andamento não casou com processo: '+dados.cnj);
-    return { sucesso: false, motivo: 'processo não encontrado no Lex' };
+    return {sucesso:true, duplicado:result.duplicado, proc_nome:result.processo.nome};
   }
 
-  // Muda status do processo para URGENTE e adiciona andamento
-  marcarUrgente(proc, dados) {
-    const idx = processos.findIndex(p => p.id === proc.id);
-    if(idx < 0) return;
-    processos[idx].status = 'URGENTE';
-    // Prazo de 6 dias a partir de hoje
-    const d = new Date();
-    d.setDate(d.getDate() + 6);
-    processos[idx].prazo = String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-    // Adiciona andamento
-    if(!processos[idx].andamentos) processos[idx].andamentos = [];
-    processos[idx].andamentos.unshift({
-      data: new Date().toLocaleDateString('pt-BR'),
-      txt: '[PJe] '+(dados.andamento_texto||'Andamento detectado automaticamente').substring(0,300)
-    });
-    _bumpProcessos('pje');
-    _persistirProcessosCache().catch(()=>{});
-  }
 }
 
 // Instanciar e registrar todos os funcionários

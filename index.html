@@ -679,6 +679,23 @@ table{max-width:100%;}
   overflow-wrap:break-word;
   word-break:break-word;
 }
+
+/* Central LEX: controles legíveis e chat contido no celular. */
+.lex-central{max-width:1040px;margin:auto;font-size:16px;line-height:1.5}
+.lex-central h2{font-size:24px;margin:0 0 8px}.lex-central p{color:var(--text2)}
+.lex-sector-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+.lex-sector{background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:20px;min-width:0}
+.lex-sector h3{font-size:18px;margin:0 0 8px}.lex-sector p{font-size:14px}
+.lex-sector button,.lex-central>button{min-height:44px;font-size:14px!important}
+.lex-status{font-size:13px;color:var(--text2);border-left:3px solid var(--gold);padding-left:10px;margin:12px 0}
+#chat-panel{box-sizing:border-box;max-width:100vw}#chat-in{min-width:0}
+#chat-msgs .msg{overflow-wrap:anywhere}.chat-foot{min-width:0;flex-wrap:wrap}
+@media(max-width:700px){
+  #chat-panel{left:0!important;right:0!important;width:100%!important;top:0!important;height:100dvh!important;z-index:1100;padding-bottom:env(safe-area-inset-bottom)}
+  #chat-in{flex:1 0 100%;width:100%;font-size:16px!important;box-sizing:border-box}
+  #chat-msgs .msg{font-size:14px!important}.chat-foot button{min-height:44px;min-width:44px}
+  .chat-foot .chat-send-btn{margin-left:auto}.chat-close{min-width:44px;min-height:44px}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -772,7 +789,7 @@ table{max-width:100%;}
     <button class="nav-btn" onclick="ir('agenda',this)"><span class="nav-icon">📇</span> Agenda / Contatos</button>
     <button class="nav-btn" onclick="ir('preparacao',this)"><span class="nav-icon">📋</span> Em Preparação</button>
     <button class="nav-btn" onclick="ir('pericia',this)"><span class="nav-icon">🔬</span> Setor de Perícia</button>
-    <button class="nav-btn" onclick="ir('agentes',this)"><span class="nav-icon">🤖</span> Agentes IA</button>
+    <button class="nav-btn" onclick="ir('agentes',this)"><span class="nav-icon">🤖</span> Central de agentes</button>
     <button class="nav-btn" id="btn-pje" onclick="ir('pje',this)"><span class="nav-icon">🔗</span> PJe <span id="_pjeDot" style="font-size:9px;color:var(--red-soft)">○</span></button>
   </nav>
   <div class="sidebar-bottom">
@@ -2333,6 +2350,12 @@ function varreduraAcao(idx){
   }
 }
 
+function textoVarredura(html) {
+  const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  parsed.querySelectorAll('script,style').forEach(el => el.remove());
+  return parsed.body.textContent || '';
+}
+
 function varreduraListarTudo(){
   document.getElementById('varredura-overlay')?.remove();
   const pendencias = window._varreduraPendencias || [];
@@ -2340,7 +2363,7 @@ function varreduraListarTudo(){
   
   abrirChat(null);
   const resumo = '🤖 VARREDURA COMPLETA DO LEX\n\n' +
-    pendencias.map((p,i)=>(i+1)+'. ' + p.icone + ' ' + p.titulo + '\n   ' + p.detalhe).join('\n\n') +
+    pendencias.map((p,i)=>(i+1)+'. ' + p.icone + ' ' + p.titulo + '\n   ' + textoVarredura(p.detalhe)).join('\n\n') +
     '\n\nQual destes itens quer resolver primeiro? Me diga e eu te ajudo.';
   addMsgEl('ai', resumo);
 }
@@ -2981,6 +3004,7 @@ async function sincronizarPjeAgora() {
     }, 30000);
     if (!r.ok) throw new Error('Servidor retornou ' + r.status);
     const data = await r.json();
+    if(data.ok !== true) throw new Error('Consulta incompleta: '+(data.falhas||'algumas')+' falha(s). Os dados anteriores foram preservados.');
     const antigos = getPjeProcessos();
     const novos = data.processos || [];
     // Detecta movimentacoes novas
@@ -2993,7 +3017,7 @@ async function sincronizarPjeAgora() {
     setPjeProcessos(novos);
     const agora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     localStorage.setItem(_PJE_LAST_KEY, agora);
-    if (statusEl) { statusEl.textContent = 'Sincronizado ' + agora + ' — ' + novos.length + ' proc.'; statusEl.style.color = 'var(--green)'; }
+    if (statusEl) { statusEl.textContent = 'Consulta pública ' + agora + ' — ' + novos.length + ' processos já cadastrados. Não importa o acervo PJe.'; statusEl.style.color = 'var(--green)'; }
     renderPjeProcessosList();
   } catch(e) {
     if (statusEl) { statusEl.textContent = 'Falha: ' + e.message; statusEl.style.color = 'var(--red)'; }
@@ -3005,7 +3029,7 @@ function renderPjeProcessosList() {
   if (!cont) return;
   const ps = getPjeProcessos();
   if (!ps.length) {
-    cont.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:12px 0">Nenhum processo importado. Clique em Sincronizar.</div>';
+    cont.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:12px 0">Nenhum processo monitorado nesta consulta. A importação do acervo autenticado ainda está pendente.</div>';
     return;
   }
   cont.innerHTML = ps.map(function(p) {
@@ -7116,12 +7140,12 @@ async function _renderPjeAsync(cfg) {
   // Detecta se o agente está rodando neste computador
   const agente = await detectarAgenteLocal();
   const agenteAtivo = !!agente;
-  const pjeConectado = agente?.pjeLogado || false;
+  const pjeConectado = agente?.pjeLogado === true;
 
   const statusAgenteHtml = agenteAtivo
     ? `<div style="display:flex;align-items:center;gap:8px">
         <span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block"></span>
-        <span style="color:var(--green);font-weight:700;font-size:13px">Agente ativo — ${agente.maquina}</span>
+        <span style="color:var(--green);font-weight:700;font-size:13px">Agente ativo — ${lexEscape(agente.maquina || "Computador do escritório")}</span>
        </div>`
     : `<div style="display:flex;align-items:center;gap:8px">
         <span style="width:10px;height:10px;border-radius:50%;background:var(--text3);display:inline-block"></span>
@@ -7137,7 +7161,7 @@ async function _renderPjeAsync(cfg) {
   document.getElementById('content').innerHTML = `
     <div style="max-width:640px">
       <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;margin-bottom:6px">🔗 Integração PJe</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;font-weight:300">Cada computador se integra com seu próprio certificado. O LEX detecta automaticamente se o agente está rodando.</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;font-weight:300">Conecte sua conta do tribunal para trazer processos e andamentos ao LEX. O cadastro da OAB identifica o advogado; não substitui a autenticação exigida pelo tribunal.</div>
 
       <!-- STATUS CARD -->
       <div style="background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:22px;margin-bottom:16px">
@@ -7154,13 +7178,13 @@ async function _renderPjeAsync(cfg) {
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:13px;color:var(--text2)">Integração:</span>
             <span style="background:${cfg.ativo?'var(--green-soft)':'var(--red-soft)'};border:1px solid ${cfg.ativo?'var(--green)':'var(--red)'};border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;color:${cfg.ativo?'var(--green)':'var(--red)'}">
-              ${cfg.ativo ? 'ON' : 'OFF'}
+              ${cfg.ativo ? 'Habilitada' : 'Desabilitada'}
             </span>
           </div>
           ${cfg.ultimaSinc ? `<div style="font-size:11px;color:var(--text3)">Última sincronização: ${cfg.ultimaSinc} · ${cfg.ultimaAgente||''}</div>` : ''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn-green" onclick="ativarPje(true)" style="border:none">✅ Ativar Integração</button>
+          <button class="btn-green" onclick="ativarPje(true)" style="border:none">Habilitar consulta</button>
           <button class="btn-danger" onclick="ativarPje(false)">⛔ Desativar</button>
           ${agenteAtivo && !pjeConectado ? `<button class="btn-primary" onclick="conectarPjeLocal()">🔌 Conectar PJe</button>` : ''}
           ${pjeConectado ? `<button class="btn-outline" onclick="sincronizarAgora()">🔄 Sincronizar Agora</button>` : ''}
@@ -7218,22 +7242,17 @@ async function _renderPjeAsync(cfg) {
         <div id="pje-connect-status" style="margin-top:10px;font-size:12px"></div>
       </div>` : ''}
 
-      <!-- O QUE O AGENTE FAZ -->
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:12px">O QUE O AGENTE FAZ</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.9">
-          <div>🔍 <strong>Ao abrir o LEX</strong> — busca andamentos novos de todos os processos ativos automaticamente</div>
-          <div>📬 <strong>Intimações</strong> — detecta intimações e avisa no chat da IA com prazo calculado</div>
-          <div>📄 <strong>Documentos</strong> — lista PDFs disponíveis para você escolher o que baixar</div>
-          <div>📤 <strong>Petições</strong> — carrega o arquivo no PJe e aguarda <strong>sua confirmação visual</strong> antes de protocolar</div>
-          <div>⏰ <strong>Prazos</strong> — consulta prazos direto no tribunal e atualiza o calendário do LEX</div>
-        </div>
+      <div class="lex-sector" style="margin-bottom:16px">
+        <h3>Conectar, confirmar, importar</h3>
+        <p>1. Escolha o tribunal e entre com sua conta oficial.</p>
+        <p>2. Se solicitado, confirme o código do autenticador ou o certificado no tribunal.</p>
+        <p>3. Após confirmar a sessão, o conector poderá consultar os processos autorizados. A importação completa do acervo ainda está em implantação.</p>
+        <p>Andamentos devem manter origem e CNJ. Um andamento novo não cria nem substitui um prazo automaticamente.</p>
       </div>
-
             <!-- PROCESSOS IMPORTADOS DO PJe -->
       <div style="background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:18px 20px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-size:10px;color:var(--text3);letter-spacing:2px">PROCESSOS DO PJe</div>
+          <div style="font-size:10px;color:var(--text3);letter-spacing:2px">PROCESSOS MONITORADOS</div>
           <div style="display:flex;align-items:center;gap:8px">
             <span id="pje-sinc-status" style="font-size:11px;color:var(--text3)"></span>
             <button class="btn-outline" style="padding:5px 12px;font-size:11px" onclick="sincronizarPjeAgora()">🔄 Sincronizar</button>
@@ -7243,24 +7262,11 @@ async function _renderPjeAsync(cfg) {
       </div>
 
 
-      <!-- INSTALAR AGENTE -->
-      ${!agenteAtivo ? `
-      <div style="background:linear-gradient(135deg,#0a0a1f,#0d0d22);border:1px solid color-mix(in srgb, var(--accent) 27%, transparent);border-radius:14px;padding:22px">
-        <div style="font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:12px">INSTALAR O AGENTE LOCAL</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.9;margin-bottom:14px">
-          O Lex Agente é um pequeno programa que fica rodando em segundo plano. Instale uma vez em cada computador do escritório.
-        </div>
-        <div style="background:#000;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;color:#2ec97e;line-height:2">
-          <div style="color:#9da6cc;margin-bottom:4px"># 1. Instalar Node.js em nodejs.org (se não tiver)</div>
-          <div># 2. Baixar a pasta lex-agente e abrir o terminal nela:</div>
-          <div>npm install</div>
-          <div>npx playwright install chromium</div>
-          <div style="color:#9da6cc;margin-top:4px"># 3. Iniciar (fazer isso todo dia ao abrir o escritório):</div>
-          <div>node lex-agente.js</div>
-          <div style="color:#9da6cc"># Ou duplo clique em INICIAR.bat (Windows)</div>
-        </div>
-        <div style="margin-top:12px;font-size:11px;color:var(--text3)">Após iniciar o agente, recarregue esta página — o LEX detecta automaticamente.</div>
-      </div>` : ''}
+      ${!agenteAtivo ? `<div class="lex-sector"><h3>Conexão com o tribunal pendente</h3>
+        <p>O conector PJe ainda precisa ser instalado e validado no computador do escritório. Esta versão não inclui o instalador.</p>
+        <p>No iPhone, o acesso ao computador do escritório depende de um pareamento que ainda está em implantação. O botão de ativação não realiza esse pareamento.</p>
+        <p>Cadastro inicial do advogado, certificado e autenticação adicional seguem as etapas do tribunal escolhido.</p></div>` : ''}
+
     </div>`;
 }
 
@@ -7271,7 +7277,7 @@ function ativarPje(status) {
   const dot = document.getElementById('_pjeDot');
   if (dot) { dot.textContent = status ? '●' : '○'; dot.style.color = status ? 'var(--green)' : 'var(--red-soft)'; }
   renderPje();
-  toast('PJe integração ' + (status ? 'ATIVADA ✓' : 'DESATIVADA ⭕'), 'ok');
+  toast(status ? 'Preferência salva. A conexão com o tribunal ainda precisa ser confirmada.' : 'Consulta automática desabilitada.', 'ok');
 }
 
 async function conectarPjeLocal() {
@@ -7297,6 +7303,9 @@ async function conectarPjeComCredenciais() {
   const pfxSenha  = document.getElementById('pje-pfx-senha')?.value || '';
   const statusEl  = document.getElementById('pje-connect-status');
 
+  try { const destino=new URL(urlPje); if(destino.protocol!=='https:' || !destino.hostname.endsWith('.jus.br') || destino.username || destino.password || (destino.port && destino.port!=='443')) throw new Error(); }
+  catch { toast('Use o endereço HTTPS oficial do tribunal, terminado em .jus.br.', 'erro'); return; }
+
   // Validação por tipo
   if (tipoAcesso === 'usuario_senha' && (!usuario || !senha)) {
     toast('Informe usuário e senha', 'erro'); return;
@@ -7321,20 +7330,26 @@ async function conectarPjeComCredenciais() {
     }, 35000);
     const dados = await r.json();
 
-    if (!dados.ok && dados.erro) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ ${dados.erro}</span>`;
+    if (!r.ok || dados.ok !== true) {
+      if (statusEl) statusEl.textContent = dados.erro || 'Conexão não confirmada pelo agente.';
       return;
     }
-    if (dados.status === 'aguardando_login_manual') {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--orange)">⚠️ ${dados.mensagem}</span>`;
+    if (['aguardando_login_manual','aguardando_mfa','sessao_expirada'].includes(dados.status)) {
+      if (statusEl) statusEl.textContent = dados.mensagem || 'Conclua a autenticação na página oficial do tribunal e depois confirme aqui.';
       toast('PJe aberto — faça login manualmente', 'ok');
       return;
     }
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--green)">✅ Conectado!</span>';
+    if(dados.status !== 'confirmado' || dados.pjeLogado !== true) {
+      if(statusEl) statusEl.textContent='O agente respondeu, mas não comprovou a sessão do tribunal.';
+      return;
+    }
+    if (statusEl) statusEl.textContent = 'Sessão PJe confirmada pelo conector.';
     toast('✅ PJe conectado!', 'ok');
     setTimeout(() => renderPje(), 1500);
   } catch(e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--red)">❌ Agente não respondeu. Verifique se lex-agente.js está rodando.</span>';
+    if (statusEl) statusEl.textContent = 'O conector não respondeu. A conexão não foi confirmada.';
+  } finally {
+    for(const id of ['pje-senha','pje-pfx-senha']) { const input=document.getElementById(id); if(input) input.value=''; }
   }
 }
 
@@ -7342,7 +7357,7 @@ async function confirmarLoginManual() {
   try {
     const r = await fetchComTimeout(AGENTE_URL + '/confirmar-login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' }, 5000);
     const dados = await r.json();
-    if (dados.status === 'confirmado') {
+    if (r.ok && dados.ok === true && dados.status === 'confirmado' && dados.pjeLogado === true) {
       toast('✅ Login confirmado!', 'ok');
       setTimeout(() => renderPje(), 800);
     } else {
@@ -9292,55 +9307,43 @@ function _periciaReset(){
   renderPericia();
 }
 
-function renderAgentes(){
-  if(!podeConfig()){
-    document.getElementById('content').innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:48px">🔒</div><div style="font-size:16px;color:var(--text);margin-top:12px">Acesso restrito ao Administrador.</div></div>';
-    return;
-  }
-  const agentes = getAgentes().length ? getAgentes() : AGENTES_PADRAO;
-  document.getElementById('content').innerHTML=`
-    <div style="font-size:13px;color:var(--text2);font-weight:300;margin-bottom:20px">Gerencie os agentes IA do escritório. Cada agente tem seu próprio bot no Telegram e especialidade.</div>
-    ${agentes.map(a=>`
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-        <div style="display:flex;align-items:center;gap:14px">
-          <div style="font-size:17px">${a.icone}</div>
-          <div>
-            <div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:600">${a.nome}</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:2px">${a.descricao}</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">Especialidade: ${a.especialidade}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <div style="background:${a.ativo?'var(--green-soft)':'var(--surface2)'};border:1px solid ${a.ativo?'var(--green)':'var(--border2)'};border-radius:20px;padding:4px 12px;font-size:11px;color:${a.ativo?'var(--green)':'var(--text3)'};font-weight:700">${a.ativo?'● Ativo':'○ Inativo'}</div>
-          <button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="configurarAgente('${a.id}')">Configurar</button>
-        </div>
-      </div>`).join('')}
-    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:8px">
-      <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:10px">COMO ATIVAR UM AGENTE</div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.8">
-        <div>1. Crie um bot no <strong>@BotFather</strong> no Telegram → /newbot</div>
-        <div>2. Copie o token gerado</div>
-        <div>3. Clique em <strong>Configurar</strong> no agente desejado</div>
-        <div>4. Cole o token e ative</div>
-        <div>5. O agente passa a responder no novo bot com sua especialidade</div>
-      </div>
-    </div>`;
+function lexEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const LEX_SETORES = [
+  {nome:'Autuação e clientes', agente:'Cadastrador/Autuação', pagina:'autuacao', entrega:'Cadastro do cliente, abertura do caso e documentos pendentes.'},
+  {nome:'Judicial e administrativo', agente:'Assessor', pagina:'peticao', entrega:'Análise do caso e minuta em DOCX para revisão do advogado.'},
+  {nome:'Perícia e cálculos', agente:'Pericial', pagina:'pericia', entrega:'Minuta de parecer, quesitos e memória de cálculo com os dados fornecidos.'},
+  {nome:'Prazos e acompanhamento', agente:'Cobrador', pagina:'prazos', entrega:'Consulta de prazos e identificação de processos sem atualização.'},
+  {nome:'Identificação de processos', agente:'Roteador', pagina:'processos', entrega:'Localização do caso antes de consultar ou alterar informações.'},
+  {nome:'Tribunais e PJe', agente:'PJe', pagina:'pje', entrega:'Conexão e importação do acervo ainda pendentes de implantação.'}
+];
+async function renderAgentes(){
+  if(!podeConfig()){ document.getElementById('content').textContent='Acesso restrito ao Administrador.'; return; }
+  const host=document.getElementById('content');
+  host.innerHTML='<section class="lex-central" id="lex-central"><h2>LEX · Central de agentes</h2><p>Consultando os agentes registrados no servidor…</p></section>';
+  const target=document.getElementById('lex-central');
+  let status=null;
+  try {
+    const r=await fetchComTimeout(SERVIDOR+'/api/agentes/status', {headers:{Authorization:'Bearer '+getAuthToken()}},10000);
+    if(r.ok){ const d=await r.json(); if(d.ok && Array.isArray(d.agentes)) status=d; }
+  } catch(e) { /* O painel continua acessível, sem afirmar disponibilidade. */ }
+  if(!target.isConnected) return;
+  target.innerHTML=`<h2>LEX · Central de agentes</h2>
+    <p>Um assistente para acompanhar o escritório. Escolha o setor, vincule o processo e prepare sua solicitação.</p>
+    <div class="lex-status" role="status">${status?'Registro do servidor consultado. A execução com IA e a entrega pelos canais ainda precisam ser verificadas.':'Servidor não confirmou os agentes. Verifique a conexão ou a versão publicada.'}</div>
+    <button class="btn-primary" onclick="abrirChat(null)">Conversar com o LEX</button>
+    <p>WhatsApp e Telegram compartilham o atendimento do servidor. Você não precisa criar um bot para cada setor.</p>
+    <div class="lex-sector-grid">${LEX_SETORES.map((setor,i)=>{
+      const agente=status?.agentes.find(a=>a.nome===setor.agente);
+      return `<article class="lex-sector"><h3>${lexEscape(setor.nome)}</h3><div>Agente ${lexEscape(setor.agente)}</div>
+        <p>${lexEscape(setor.entrega)}</p><div class="lex-status">${!agente?'Registro não confirmado':agente.implementado?'Funções implementadas · operação a verificar':'Integração pendente'}</div>
+        <button class="btn-outline" onclick="ir(LEX_SETORES[${i}].pagina)">Abrir setor</button></article>`;
+    }).join('')}</div>
+    <p>Uma tarefa só deve aparecer como concluída após confirmar a gravação ou a entrega. Minutas e atos no tribunal exigem revisão do advogado.</p>`;
 }
 
-function configurarAgente(id){
-  if(!podeConfig()){alert('Acesso restrito ao Administrador.');return;}
-  const agentes = getAgentes().length ? getAgentes() : AGENTES_PADRAO;
-  const a = agentes.find(x=>x.id===id);
-  if(!a)return;
-  const token=prompt('Token do bot Telegram para '+a.nome+':\n(deixe vazio para usar o bot principal)');
-  if(token===null)return;
-  const ativo=confirm('Ativar o agente '+a.nome+'?');
-  const idx=agentes.findIndex(x=>x.id===id);
-  agentes[idx]={...a,token:token||'',ativo};
-  saveAgentes(agentes);
-  toast('✓ Agente '+a.nome+' '+(ativo?'ativado':'desativado')+'!','ok');
-  renderAgentes();
-}
+function configurarAgente(){ renderAgentes(); }
 let _tgLastUpdate=0;
 let _tgPollingAtivo=false;
 let _tgPollingTimer=null;
