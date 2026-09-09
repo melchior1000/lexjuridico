@@ -5,7 +5,7 @@
 //   GET  /api/vivo/health
 //   GET  /api/vivo/exportar/:id    — exportarDadosAgente: resumo completo
 //
-//   POST /api/vivo/conversar       — Gestor IA (Opus 4.7) + análise psicológica + PJe
+//   POST /api/vivo/conversar       — Gestor IA + padrão decisório documentado + PJe
 //   POST /api/vivo/aplicar         — aplica proposta do Gestor
 //
 //   POST /api/vivo/peca/conversar  — Redator (Opus 4.7, conversacional)
@@ -56,7 +56,7 @@ const PRAZO_REGEX          = /^\d{4}-\d{2}-\d{2}$/;
 // PROMPTS DOS FUNCIONÁRIOS
 // =====================================================================
 
-const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório Camargos Advocacia, atuando sob orientação do CEO Kleuber Melchior de Souza para o advogado titular Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
+const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório configurado no LEX, atuando sob orientação do profissional responsável.
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade, não um robô:
 - Você ENTENDE o que é conversado e DETERMINA a ação correta baseado no contexto.
@@ -75,7 +75,7 @@ Proatividade: antecipe riscos e sugira próximos passos objetivos.
 ANÁLISE DE MAGISTRADO — trabalho incessante:
 - Assim que identificar o nome de um juiz/desembargador/ministro no processo, AUTOMATICAMENTE faça varredura do perfil decisório.
 - Pesquise decisões anteriores desse magistrado sobre temas similares.
-- Levante: tendências, taxa de procedência, temas sensíveis, argumentos que aceita/rejeita.
+- Levante fundamentos recorrentes, provas exigidas e argumentos acolhidos/rejeitados somente nas decisões com fonte confirmada.
 - A cada movimentação do processo onde o magistrado decide algo, ATUALIZE o perfil com a nova decisão.
 - Se receber PDF com decisão, LEIA e extraia o posicionamento do magistrado.
 - Isso é trabalho CONTÍNUO — não espere ninguém mandar. Faz parte do seu serviço.
@@ -97,12 +97,11 @@ Regras processuais que você respeita rigidamente:
 - Visão de longo prazo: cada peça é construção do recurso para STJ/STF.
 - Perfil do julgador importa — se o processo tem juiz/relator, leve em conta.
 
-Análise psicológica do julgador (quando houver juiz/relator identificado):
-- Perfil decisório: conservador/progressista/formalista/pragmático.
-- Score de probabilidade de êxito (0-100%) com justificativa objetiva: baseado nas tendências reais do magistrado, não em otimismo vazio.
-- Gatilhos que convencem este juiz: linguagem que ele usa, teses que ele aceitou, argumentos que ele rejeita.
-- Estratégia de redação recomendada pra este julgador específico.
-- Se não houver perfil disponível, diga explicitamente e recomende pesquisar com o Pesquisador de Juízes.
+Análise documental do julgador:
+- Use decisões e fundamentos com fonte e data. Não deduza ideologia, personalidade ou saúde.
+- Não forneça probabilidade numérica de vitória sem estudo estatístico validado.
+- Distinga o teor da decisão das hipóteses de aplicação. Não generalize um exemplo como padrão.
+- Se faltar material, informe isso e encaminhe à Pesquisa decisória.
 
 Quando for propor atualização, considere:
 - andamento: descrição formal do que foi feito (1-3 frases, tom jurídico)
@@ -111,6 +110,7 @@ Quando for propor atualização, considere:
 - dias_parado: geralmente zerar (0) quando há movimentação nova
 - proxima_acao: o que precisa ser feito depois e por quê
 - prazo: se houver novo prazo, no formato YYYY-MM-DD
+- lembretes_concluidos: IDs exatos dos lembretes que o usuário afirmou ter cumprido. Nunca conclua todos por inferência e nunca baixe por mera atualização.
 
 Setores do escritório:
 - AUTUAÇÃO: cliente novo, coletando documentos, lembrete 10 dias. Sai quando Kleuber diz "cumpriu docs, processo nº X".
@@ -145,8 +145,8 @@ Regra obrigatoria de atendimento:
 - Se nao tiver documento, trabalhe com a informacao verbal e deixe isso explicito.
 - Ao final de CADA resposta, pergunte exatamente: "Quer lancar no sistema? Atualizar andamento? Criar caso novo? Ou apenas consulta?"`;
 
-const PROMPT_REDATOR = `Você é o Redator de Peças do escritório Camargos Advocacia (OAB/MG 118.237 — Kleuber Melchior; titular: Wanderson Farias de Camargos).
-Contexto institucional: Kleuber atua como analista jurídico (NÃO advogado); assinatura técnica do Dr. Wanderson.
+const PROMPT_REDATOR = `Você é o Redator de Peças do escritório configurado no LEX.
+Identificação profissional: utilize exclusivamente os dados configurados para o escritório; se ausentes, deixe o campo para preenchimento.
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade:
 - Ordem direta do Kleuber = execute imediatamente sem questionar.
@@ -180,7 +180,7 @@ Regras absolutas na redação:
 - PREQUESTIONAMENTO — toda peça é peça de construção pra STJ/STF. Marque os dispositivos federais/constitucionais pertinentes.
 - JURISPRUDÊNCIA REAL — só cite precedentes verdadeiros. Se não tiver certeza, não invente.
 - PADRÃO TÉCNICO ALTO — a qualidade da redação comunica competência ao magistrado.
-- ASSINATURA obrigatória: "Wanderson Farias de Camargos — OAB/MG 118.237".
+- ASSINATURA: apenas nome e inscrição profissional fornecidos na configuração do escritório.
 
 Perguntas que você tipicamente faz antes de redigir (só as relevantes):
 - Qual o fato gerador concreto desta peça? (ex: intimação recebida, decisão desfavorável, fato superveniente)
@@ -205,69 +205,10 @@ Regra obrigatoria de atendimento:
 - Se nao tiver documento, trabalhe com a informacao verbal e deixe isso explicito.
 - Ao final de CADA resposta, pergunte exatamente: "Quer lancar no sistema? Atualizar andamento? Criar caso novo? Ou apenas consulta?"`;
 
-const PROMPT_PESQUISADOR_JUIZES = `Você é o Pesquisador de Perfil de Julgadores do escritório Camargos Advocacia.
-Contexto institucional: CEO Kleuber (analista jurídico, NÃO advogado) e Dr. Wanderson (OAB/MG 118.237).
-
-DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO especialista, não um robô:
-- Seu trabalho é INCESSANTE: assim que aparece o nome de um magistrado num processo, você AUTOMATICAMENTE pesquisa o perfil.
-- Não espera ninguém mandar. Viu nome de juiz/desembargador/ministro? PESQUISA.
-- A cada nova decisão do magistrado no processo, ATUALIZE o perfil com o novo posicionamento.
-- Se receber PDF com decisão, LEIA e extraia o posicionamento do magistrado.
-- ORDEM DIRETA do Kleuber → execute imediatamente sem questionar.
-- INICIATIVA PRÓPRIA → pesquise proativamente, mas pergunte antes de gravar no sistema.
-
-Qualidade: somente evidências reais com fonte e data. NUNCA invente decisão.
-Proatividade: sugerir estratégia concreta de argumentação ajustada ao perfil identificado.
-
-Seu trabalho é investigar na web o perfil decisório de juízes, desembargadores, relatores e ministros — pra que as peças sejam ajustadas ao perfil de quem vai julgar.
-
-Fluxo esperado:
-1) Kleuber te informa quem investigar OU você identifica automaticamente o magistrado no contexto do processo.
-2) Se faltar informação mínima (nome ou tribunal), pergunte. Senão, PESQUISE IMEDIATAMENTE.
-3) Use a ferramenta web_search para buscar decisões reais, sentenças, votos do magistrado. Priorize sites oficiais dos tribunais, JusBrasil, ConJur, Migalhas.
-4) Analise como psicanalista judicial: padrão decisório, teses aceitas/rejeitadas, estilo de redação, argumentos que convencem.
-5) Quando tiver material suficiente, chame a ferramenta "consolidar_perfil" com o resultado estruturado.
-6) Você pode fazer múltiplas buscas antes de consolidar — vá refinando.
-7) A CADA MOVIMENTAÇÃO do processo onde o magistrado decide, atualize o perfil. Isso é trabalho CONTÍNUO.
-
-O que entregar — perfil decisório COMPLETO e PROFUNDO (todos os itens obrigatórios):
-- Nome completo, tribunal, UF, MUNICÍPIO/COMARCA, vara/câmara/turma
-- Tendência: conservador/progressista/formalista/pragmático
-- Taxa estimada de procedência no tema do caso
-- Teses que ACEITA (com exemplos reais)
-- Teses que REJEITA (com exemplos reais)
-- Argumentos que CONVENCEM este magistrado
-- Estilo de redação que ele usa e espera
-- Score de probabilidade de êxito (0-100%) com justificativa
-- Estratégia recomendada de argumentação para este julgador
-
-— ALÉM DISSO, obrigatoriamente pesquise e entregue:
-- AUTORES JURÍDICOS / JURISTAS citados pelo magistrado em suas decisões (ex: Alexandre de Moraes, Fredie Didier, Humberto Theodoro Jr., Cassio Scarpinella Bueno etc.). Liste nomes reais aparecendo em sentenças/votos.
-- DOUTRINADORES preferidos — quem citar nas peças para "falar a mesma língua" do juiz.
-- JURISPRUDÊNCIA / TEMAS / SÚMULAS que o magistrado reiteradamente segue (STF, STJ, TST, tribunal do estado).
-- COMPORTAMENTO EM AUDIÊNCIA: como o advogado deve se portar diante deste juiz (tom de voz, formalidade, objetividade, tempo de sustentação, uso de apartes, postura física, como conduzir testemunhas).
-- DESPACHO PESSOAL (quando o advogado sobe ao gabinete ou marca audiência com o juiz): como tratar, protocolo, nível de formalidade, o que evita, o que gosta de ouvir.
-- ARGUMENTOS PARA PEÇAS: que tipo de argumento (técnico-positivista, principiológico, consequencialista, humanitário) funciona melhor para este julgador.
-- CAMINHOS ESTRATÉGICOS: rota processual recomendada (conciliar? instruir rápido? tutela? recorrer cedo? prequestionar desde o início?).
-- GATILHOS POSITIVOS e NEGATIVOS específicos.
-
-Regras:
-- NUNCA invente decisão, citação de doutrina ou nome de jurista. Se não achar, diga "não achei material público deste magistrado".
-- Cite fonte com URL sempre que possível.
-- Seja específico: "em 3 decisões recentes sobre X, rejeitou por Y" > "costuma rejeitar".
-- Se o magistrado tiver posicionamento controvertido ou mudança recente de entendimento, destaque.
-- Vale pra JUIZ, DESEMBARGADOR e MINISTRO — qualquer instância.
-- Se o Kleuber fornecer PDFs de decisões/despachos do processo, EXTRAIA tudo: doutrinadores citados, súmulas mencionadas, estilo de redação, tom, formalidade, modo como trata as partes.
-
-Seu tom: pesquisador objetivo e crítico. Sem bajulação. Sem generalização.
-
-Regra obrigatória de atendimento:
-- Se o usuário pedir análise, PRIMEIRO pergunte se ele tem documento (decisão, petição, certidão etc.) para anexar/colar.
-- Se não tiver documento, trabalhe com a informação verbal e deixe isso explícito.
-- Ao final de CADA resposta, pergunte: "Quer lançar no sistema? Atualizar andamento? Ou apenas consulta?"`;
+const PROMPT_PESQUISADOR_JUIZES = `Analise decisões e fundamentos verificáveis. Não infira personalidade, ideologia ou chance de vitória. Separe hipótese de aplicação e fato documentado. Use fonte oficial e confira autoria, tribunal, data e inteiro teor.`;
 
 const PROMPT_PESQUISADOR_JURIS = `Você é o Pesquisador de Jurisprudência do escritório Camargos Advocacia.
-Contexto institucional: CEO Kleuber (analista jurídico, NÃO advogado) e Dr. Wanderson (OAB/MG 118.237).
+Identificação profissional e poderes devem ser conferidos no cadastro do escritório.
 Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando Kleuber der uma ordem direta, execute imediatamente.
 Qualidade: apenas precedentes reais e tecnicamente aplicáveis.
 Proatividade: indicar próximo ato processual recomendado diante do cenário encontrado.
@@ -337,6 +278,7 @@ const TOOL_PROPOR_ATUALIZACAO = {
       dias_parado:  { type: 'integer', description: 'Dias sem movimentação. Geralmente 0 quando há movimentação nova.' },
       proxima_acao: { type: 'string',  description: 'O que precisa ser feito depois.' },
       prazo:        { type: 'string',  description: 'Novo prazo no formato YYYY-MM-DD. Opcional.' },
+      lembretes_concluidos: { type: 'array', items: {type:'string'}, description: 'IDs dos lembretes efetivamente cumpridos. Use somente quando o usuário afirmar expressamente que a providência foi concluída; mero andamento não baixa lembrete.' },
       justificativa:{ type: 'string',  description: 'Justificativa jurídica breve.' },
       integrar_parecer: { type: 'string', description: 'Resumo essencial do parecer para integrar ao processo ao finalizar.' }
     },
@@ -380,12 +322,7 @@ const TOOL_CONSOLIDAR_PERFIL = {
       decisoes_relevantes:      { type: 'array', items: { type: 'object', properties: { processo:{type:'string'}, tema:{type:'string'}, resultado:{type:'string'}, url:{type:'string'} } } },
       tom_recomendado:          { type: 'string' },
       material_suficiente:      { type: 'boolean', description: 'false se so achou pouco material — avisa Kleuber.' },
-      perfil_psicologico:       { type: 'string', enum: ['conservador','progressista','formalista','pragmatico','tecnico','politico','indefinido'], description: 'Perfil psicológico/decisório dominante do magistrado.' },
-      score_probabilidade:      { type: 'integer', description: 'Score de probabilidade de êxito geral com este julgador (0-100). Baseado em dados reais, não otimismo.' },
-      justificativa_score:      { type: 'string', description: 'Justificativa objetiva do score: em quais casos decidiu a favor/contra e por quê.' },
-      gatilhos_positivos:       { type: 'array', items: { type: 'string' }, description: 'O que faz este juiz decidir a favor: linguagem, argumentos, postura, formalidades.' },
-      gatilhos_negativos:       { type: 'array', items: { type: 'string' }, description: 'O que irrita ou faz este juiz decidir contra: informalidade, teses específicas, petições longas, etc.' },
-      estrategia_redacao:       { type: 'string', description: 'Como redigir a peça especificamente para este julgador.' },
+      limites_amostra: {type:'string',description:'Limitações documentais. Não estimar chance de vitória nem inferir características pessoais.'},
       autores_juridicos_citados: { type: 'array', items: { type: 'string' }, description: 'Autores/juristas que o magistrado cita em decisões (ex: Fredie Didier, Humberto Theodoro Jr., Alexandre de Moraes). Apenas nomes realmente observados em decisões.' },
       doutrinadores_para_citar: { type: 'array', items: { type: 'string' }, description: 'Doutrinadores que o advogado deve citar nas peças para "falar a mesma língua" deste juiz.' },
       jurisprudencia_seguida: { type: 'array', items: { type: 'string' }, description: 'Súmulas, temas de repercussão geral e julgados que o magistrado segue reiteradamente.' },
@@ -641,40 +578,12 @@ function acharProcesso(processos, processo_id) {
 }
 
 async function buscarDocumentosIndexados(processoId, nomeProcesso, deps) {
-  const pid = processoId != null && String(processoId).trim() ? String(processoId).trim() : null;
-  const nome = nomeProcesso != null && String(nomeProcesso).trim() ? String(nomeProcesso).trim() : null;
-
-  const filtrar = (rows) => {
-    const arr = Array.isArray(rows) ? rows : [];
-    return arr.filter((d) => {
-      if (!d || typeof d !== 'object') return false;
-      const dPid = d.processo_id != null ? String(d.processo_id) : (d.processoId != null ? String(d.processoId) : '');
-      const dNome = String(d.nome_processo || d.nomeProcesso || d.processo_nome || d.nome || '');
-      const okPid = !pid || dPid === pid;
-      const okNome = !nome || dNome.toLowerCase().includes(nome.toLowerCase());
-      return okPid && okNome;
-    });
-  };
-
-  try {
-    if (deps && typeof deps.sbGet === 'function') {
-      if (pid) {
-        const porId = await deps.sbGet('documentos_indexados', { processo_id: pid });
-        if (Array.isArray(porId) && porId.length) return filtrar(porId);
-      }
-      if (nome) {
-        const porNome = await deps.sbGet('documentos_indexados', { nome_processo: nome });
-        if (Array.isArray(porNome) && porNome.length) return filtrar(porNome);
-      }
-      const gerais = await deps.sbGet('documentos_indexados', {});
-      if (Array.isArray(gerais) && gerais.length) return filtrar(gerais);
-    }
-  } catch (e) {
-    console.warn('[VIVO] buscarDocumentosIndexados sbGet falhou:', e.message);
-  }
-
-  const fallback = deps && Array.isArray(deps.documentos_indexados) ? deps.documentos_indexados : [];
-  return filtrar(fallback);
+  const pid=String(processoId||'').trim();
+  if(!pid) throw new Error('Selecione um processo antes de buscar documentos.');
+  if(!acharProcesso(deps.processos||[],pid)) throw new Error('Processo fora do contexto autorizado.');
+  const filter=rows=>(Array.isArray(rows)?rows:[]).filter(d=>String(d.processo_id??d.processoId??'')===pid);
+  if(deps.sbGet) return filter(await deps.sbGet('documentos_indexados',{processo_id:pid}));
+  return filter(deps.documentos_indexados);
 }
 
 async function persistirProcesso(deps, processo_atualizado) {
@@ -971,7 +880,7 @@ async function handlerAplicarSerial(req, res, body, deps) {
     // Status considerados "finais" — não voltam para ATIVO sozinhos
     const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
     // Detecta "houve trabalho" — qualquer campo substantivo preenchido conta
-    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer);
+    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer || proposta.lembretes_concluidos?.length);
 
     if (proposta.andamento) {
       processo.andamentos = processo.andamentos || [];
@@ -1038,6 +947,17 @@ async function handlerAplicarSerial(req, res, body, deps) {
       } else {
         console.warn('[VIVO] Setor inválido ignorado:', proposta.setor);
       }
+    }
+    if (Array.isArray(proposta.lembretes_concluidos) && proposta.lembretes_concluidos.length) {
+      const ids = new Set(proposta.lembretes_concluidos.map(id=>String(id||'').trim()).filter(Boolean));
+      let concluidos = 0;
+      processo.lembretes = (Array.isArray(processo.lembretes) ? processo.lembretes : []).map(lembrete=>{
+        const id=String(lembrete?.id||'').trim();
+        if(!id || !ids.has(id) || lembrete.status==='concluido') return lembrete;
+        concluidos++;
+        return {...lembrete,status:'concluido',concluido_em:new Date().toISOString(),concluido_por:'confirmacao_explicita'};
+      });
+      if(!concluidos) return jsonResponse(res,409,{error:'Nenhum lembrete pendente corresponde à seleção. Atualize o processo.'},deps.CORS);
     }
     const integrarParecer = String(proposta.integrar_parecer || '').trim();
     if (integrarParecer) {
@@ -1108,7 +1028,7 @@ async function handlerPecaConversar(req, res, body, deps) {
         const nome = processo.juiz || processo.relator;
         const juiz_id = `${(processo.tribunal || '').toUpperCase()}::${nome.toLowerCase().replace(/\s+/g, '_')}`;
         const cache = await deps.sbGet('perfis_juizes', { juiz_id });
-        if (cache && cache.length > 0) {
+        if (cache && cache.length > 0 && cache[0].perfil_json?.versao === 'decisorio-v1') {
           perfilJuiz = `\n\nPERFIL DO JULGADOR (${nome}):\n${cache[0].resumo || ''}`;
         }
       } catch (e) { /* segue sem perfil */ }
@@ -1173,7 +1093,7 @@ async function handlerPecaGerar(req, res, body, deps) {
         const nome = processo.juiz || processo.relator;
         const juiz_id = `${(processo.tribunal || '').toUpperCase()}::${nome.toLowerCase().replace(/\s+/g, '_')}`;
         const cache = await deps.sbGet('perfis_juizes', { juiz_id });
-        if (cache && cache.length > 0) {
+        if (cache && cache.length > 0 && cache[0].perfil_json?.versao === 'decisorio-v1') {
           perfilJuiz = `\n\nPERFIL DO JULGADOR (${nome}):\n${cache[0].resumo || ''}\n\nAjuste o tom da peça a este perfil.`;
         }
       } catch (e) { console.warn('[VIVO] falha ao carregar perfil do julgador:', e?.message || e); }
@@ -1186,19 +1106,19 @@ async function handlerPecaGerar(req, res, body, deps) {
       ? `\n\nDECISÃO A ANALISAR/ATACAR:\n${decisao_anexada}`
       : (briefing.decisao_a_atacar ? `\n\nDECISÃO A ATACAR:\n${briefing.decisao_a_atacar}` : '');
 
-    const systemPromptGerar = `Você é o redator jurídico sênior do escritório Camargos Advocacia (OAB/MG 118.237 — Kleuber Melchior; titular: Wanderson Farias de Camargos).
-Contexto institucional: Kleuber atua como analista jurídico (NÃO advogado); assinatura técnica do Dr. Wanderson.
+    const systemPromptGerar = `Você é o redator jurídico sênior do escritório configurado no LEX.
+Identificação profissional: utilize exclusivamente os dados configurados para o escritório; se ausentes, deixe o campo para preenchimento.
 Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando Kleuber der uma ordem direta, execute imediatamente.
 Qualidade: rigor técnico e jurisprudência real.
 Proatividade: antecipe riscos recursais e aperfeiçoe a estrutura para fases futuras.
 Sua tarefa é REDIGIR a peça processual solicitada com padrão técnico máximo, pronta para protocolo.
 REGRAS ABSOLUTAS:
-1. INSTRUMENTO CABÍVEL (CPC) — se não for, diga no topo e sugira o correto, mas entregue a peça pedida mesmo assim.
+1. INSTRUMENTO CABÍVEL (CPC) — se não for, diga no topo e sugira o correto, suspenda a redação e informe a peça adequada e os elementos que faltam.
 2. PROIBIDO INOVAR NO PEDIDO (art. 329 CPC) — mesmo destino, caminho diferente quando jurisprudência for desfavorável.
 3. PREQUESTIONAMENTO — marque expressamente dispositivos federais/constitucionais pertinentes.
 4. JURISPRUDÊNCIA REAL — só cite precedentes verdadeiros. Não invente números.
 5. PADRÃO FORMAL — epígrafe (vara/número), qualificação, fatos, fundamentos, pedidos, encerramento.
-6. ASSINATURA obrigatória: "Wanderson Farias de Camargos — OAB/MG 118.237".`;
+6. ASSINATURA: apenas nome e inscrição profissional fornecidos na configuração do escritório.`;
 
     const userPromptGerar = `Redija agora a peça processual completa:
 
@@ -1252,7 +1172,7 @@ Redija a peça completa agora.`;
           texto: `Peça jurídica elaborada: ${briefing.tipo_peca}. Minuta gerada para revisao do advogado.`,
           origem: 'redator_ia'
         });
-        atualizado.status = 'ATIVO';
+        // Minuta gerada não muda o estado processual nem a prioridade.
         atualizado.atualizado_em = hoje;
         atualizado.ultima_atualizacao = hoje;
         atualizado.dias_parado = 0;
@@ -1284,92 +1204,14 @@ Redija a peça completa agora.`;
 
 async function handlerJuizConversar(req, res, body, deps) {
   try {
-    const { mensagem, historico, nome, tribunal, instancia } = body || {};
-    if (!mensagem) return jsonResponse(res, 400, { error: 'mensagem obrigatória' }, deps.CORS);
-
-    // Check cache primeiro se a conversa está começando e tem nome+tribunal
-    if ((!historico || historico.length === 0) && nome && tribunal && deps.sbGet) {
-      const juiz_id = `${tribunal.toUpperCase()}::${nome.toLowerCase().replace(/\s+/g, '_')}`;
-      try {
-        const cache = await deps.sbGet('perfis_juizes', { juiz_id });
-        if (cache && cache.length > 0) {
-          const c = cache[0];
-          const tsAt = c.atualizado_em ? new Date(c.atualizado_em).getTime() : 0;
-          const idade = (tsAt > 0 && !isNaN(tsAt)) ? (Date.now() - tsAt) / (1000 * 60 * 60 * 24) : Infinity;
-          if (idade < 90) {
-            return jsonResponse(res, 200, {
-              ok: true,
-              texto: `Já tenho um perfil de ${nome} em cache (${Math.floor(idade)}d atrás):\n\n${c.resumo}\n\nQuer que eu atualize a pesquisa ou continuamos com esse perfil?`,
-              cache_hit: true,
-              perfil_cache: c.perfil_json,
-              modelo: 'cache'
-            }, deps.CORS);
-          }
-        }
-      } catch (e) { /* segue */ }
-    }
-
-    const ctxInicial = nome
-      ? `\n\nALVO DA PESQUISA: ${nome}${tribunal ? ` — ${tribunal}` : ''}${instancia ? ` (${instancia})` : ''}`
-      : '';
-
-    const systemPrompt = `${PROMPT_PESQUISADOR_JUIZES}${ctxInicial}`;
-
-    const messages = sanitizarHistorico(historico);
-    messages.push({ role: 'user', content: mensagem });
-    garantirPrimeiroUser(messages);
-
-    const modelo = deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR;
-    const payload = {
-      model: modelo,
-      max_tokens: 4096,
-      system: systemPrompt,
-      tools: [
-        { type: 'web_search_20250305' },   // CORRIGIDO: 'name' removido — não deve existir em built-in tools
-        TOOL_CONSOLIDAR_PERFIL,
-        TOOL_BUSCAR_DOCUMENTOS
-      ],
-      messages
-    };
-
-    const { texto, toolsUsadas, buscasWeb, stop_reason } = await resolverToolUse(deps, payload);
-
-    const consolidacao = toolsUsadas.find(t => t.name === 'consolidar_perfil');
-
-    // Se consolidou, salva no cache
-    if (consolidacao && consolidacao.input && consolidacao.input.material_suficiente && deps.sbUpsert) {
-      const perfilJson = consolidacao.input;
-      const trib = perfilJson.tribunal || tribunal || '';
-      const nm = perfilJson.nome || nome;
-      if (nm) {
-        const juiz_id = `${trib.toUpperCase()}::${nm.toLowerCase().replace(/\s+/g, '_')}`;
-        try {
-          await deps.sbUpsert('perfis_juizes', {
-            juiz_id, nome: nm,
-            tribunal: trib,
-            instancia: instancia || '',
-            perfil_json: perfilJson,
-            resumo: perfilJson.resumo || '',
-            atualizado_em: new Date().toISOString()
-          }, 'juiz_id');
-        } catch (e) { console.warn('[VIVO] cache perfil save falhou:', e.message); }
-      }
-    }
-
-    return jsonResponse(res, 200, {
-      ok: true,
-      texto,
-      perfil_consolidado: consolidacao ? consolidacao.input : null,
-      buscas_feitas: (buscasWeb || []).length,   // CORRIGIDO: web_search é server_tool_use, não tool_use
-      modelo,
-      stop_reason,
-      cache_hit: false
-    }, deps.CORS);
-
-  } catch (e) {
-    console.error('[VIVO] juiz/conversar erro:', e.message);
-    return jsonResponse(res, 500, { error: e.message }, deps.CORS);
-  }
+    if(!body?.nome || !body?.tribunal) return jsonResponse(res,400,{error:'Informe nome completo e tribunal.'},deps.CORS);
+    if(typeof deps.analisarPerfilJuiz!=='function') return jsonResponse(res,503,{error:'Pesquisa decisória indisponível neste servidor.'},deps.CORS);
+    const perfil=await deps.analisarPerfilJuiz(body.nome,body.tribunal,body.processo_id||null,body.decisoes||null,{});
+    const texto=perfil.achados.length
+      ? perfil.achados.map(a=>`${a.observacao} [${a.fonte_id}]\nTrecho: ${a.trecho}\nHipótese a revisar: ${a.implicacao}`).join('\n\n')
+      : 'Não há material suficiente para caracterizar o padrão decisório. Forneça o texto de decisões assinadas pelo magistrado.';
+    return jsonResponse(res,200,{ok:true,texto:texto+'\n\n'+perfil.advertencia,perfil_consolidado:perfil,cache_hit:false},deps.CORS);
+  } catch(e) { return jsonResponse(res,500,{error:erroSeguro(e.message)},deps.CORS); }
 }
 
 // =====================================================================

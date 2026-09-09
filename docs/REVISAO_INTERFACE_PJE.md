@@ -6,6 +6,8 @@ Referência: sete páginas do PDF da interface fornecido pelo titular. A marca e
 
 - Central de agentes consulta o registro real do backend em GET /api/agentes/status, exclusivo do administrador. Não aceita mais token de bot em prompt nem anuncia ativação por uma preferência local.
 - Setores dão acesso aos módulos existentes: autuação, jurídico, perícia, prazos, identificação e PJe. O registro de uma função não comprova operação da API.
+- O menu preserva os temas claro/escuro e a identidade azul/dourada. O atalho duplicado "Em Preparação" foi removido; essa fila continua dentro de Autuação. "Análise de decisões" passou a "Padrão decisório".
+- A análise do julgador não deve inferir personalidade, ideologia, reputação ou porcentagem de vitória. Exige decisões identificadas e separa material analisado, fundamentos, provas, teses acolhidas/rejeitadas, aplicação possível e limites da amostra.
 - Chat móvel usa a largura disponível, campo de texto em linha própria e ações de tamanho utilizável. O relatório de varredura converte seus links em texto antes do renderizador do chat, corrigindo as tags exibidas no PDF. Sem homologação visual em aparelho nesta rodada.
 - Conectar PJe exige resposta explícita de sessão confirmada. MFA, login manual e expiração permanecem pendências. Destino de credenciais restrito a HTTPS *.jus.br; campos de senha limpos ao terminar a tentativa. Não há instalador do conector local no repositório.
 - POST /api/pje/andamento recebe movimento com sessão de administrador. Somente CNJ exato e único; preserva prazo e status; exige PATCH confirmado no banco antes de mudar cache; deduplica reenvios. Bloqueio concorrente na instância, sem transação distribuída.
@@ -30,11 +32,17 @@ Referência: sete páginas do PDF da interface fornecido pelo titular. A marca e
 
 ## Pendências concretas adicionais
 
-O motor proativo ainda contém chamada a persistirProcesso fora de seu módulo e captura falhas. Outros caminhos de cache/configuração podem confirmar sem checar a resposta do banco. A sincronização local antiga ainda precisa migrar para a ingestão autenticada com confirmação de persistência. Deduplicação durável de entradas dos canais, fila por tarefa e recuperação após falha continuam necessárias. Não é uma versão comercial homologada.
+O fluxo de lembretes agora separa atualização, prazo e cumprimento. Andamento novo não baixa lembrete nem oculta prazo crítico. A baixa exige IDs exatos e confirmação explícita; o banco precisa confirmar antes de a tela receber o estado concluído. O motor proativo ainda contém caminhos legados a revisar. A sincronização local antiga ainda precisa migrar para a ingestão autenticada com confirmação de persistência. Deduplicação durável de entradas dos canais, fila por tarefa e recuperação após falha continuam necessárias. Não é uma versão comercial homologada.
 
 ## Validação
 
-107 testes locais passaram, sem acesso aos processos reais nem envio de mensagens. Incluem rejeição de gravação, CNJ divergente/duplicado, movimentos concorrentes, repetição de evento, permissões da rota e falhas de Datajud. Sintaxe do backend, módulos e scripts inline verificada. Os testes não certificam o funcionamento integral do escritório.
+128 testes locais passaram, sem acesso aos processos reais nem envio de mensagens. Incluem rejeição de gravação, baixa explícita de lembrete, preservação de prazo após andamento, CNJ divergente/duplicado, movimentos concorrentes, repetição de evento, permissões da rota e falhas de Datajud. Sintaxe do backend, módulos e scripts inline verificada. Os testes não certificam o funcionamento integral do escritório.
+
+## Componentes públicos avaliados
+
+- `mcp-juridico-brasil` (MIT): interessante como referência para Datajud, LexML, snapshots e cálculo de prazo, mas não substitui o PJe autenticado. Não será incorporado sem testes próprios e revisão das regras de calendário.
+- `docassemble` (MIT): forte em entrevistas guiadas e montagem de DOCX/PDF, porém adicionaria uma segunda plataforma Python pesada. A ideia de formulários guiados será aproveitada; a dependência inteira não entra neste checkpoint.
+- `pje-mcp-server` (MIT): declara integração com certificados A1/A3, mas o repositório observado tem somente dois commits e afirma suporte amplo sem evidência suficiente de homologação por tribunal. Não será usado como base de produção.
 
 ## Fontes
 

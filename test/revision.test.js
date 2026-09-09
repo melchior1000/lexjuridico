@@ -118,18 +118,16 @@ test('persistência de Telegram distingue tentativa recusada de envio confirmado
   assert.deepEqual(directions,['falha_envio']);
 });
 
-test('fila mantém envio incerto para conferência e não o reenvia automaticamente',async()=>{
-  let sends=0;
-  const shared={_filaNotificacoes:[{msg:'aceita'},{msg:'recusada'},{msg:'timeout'}]};
+test('fila migra para o resumo persistente e não envia diretamente itens individuais',async()=>{
+  const queued=[];let flushes=0;
+  const shared={_filaNotificacoes:[{msg:'primeira'},{msg:'segunda'}]};
   const context=load('let _flushNotificacoesEmCurso = false;', 'server.listen(',{
-    global:shared,_dentroHorarioNotificacao:()=>true,setInterval:()=>{},
-    envTelegram:async msg=>{sends++;if(msg==='timeout') throw new Error('simulado');return msg==='aceita';}
+    global:shared,_dentroHorarioNotificacao:()=>true,setInterval:()=>{},CHAT_ID:'123',processos:[],
+    notificationDigest:{enqueue:async (...args)=>queued.push(args),flush:async()=>{flushes++;return {enviado:true};}},
+    _getSecretariaChatId:()=>''
   });
   await context._flushNotificacoes();
-  assert.equal(shared._filaNotificacoes.length,0);
-  assert.deepEqual(Array.from(shared._notificacoesNaoConfirmadas,item=>item.msg),['recusada','timeout']);
-  await context._flushNotificacoes();
-  assert.equal(sends,3);
+  assert.equal(shared._filaNotificacoes.length,0);assert.equal(queued.length,2);assert.equal(flushes,1);
 });
 
 test('secretário Anthropic ignora modelo legado e usa o TOP configurado',async()=>{
@@ -199,7 +197,7 @@ test('andamento atualizado hoje não oculta um prazo ainda pendente',async()=>{
   let report='';
   const context=motor({horaBrasilia:()=>new Date('2026-09-08T08:00:00'),
     processos:[{id:'teste',nome:'Caso de teste',status:'ATIVO',prazo:'2026-09-08',dias_parado:0}],
-    _diasSemAtualizacao:()=>0,CHAT_ID:'123',envTelegram:async text=>{report=text;return true;},
+    _diasSemAtualizacao:()=>0,CHAT_ID:'123',envTelegramAgendado:async text=>{report=text;return true;},
     _sseNotificar:()=>{},_bumpProcessos:()=>{}
   });
   await context._motorProativoLex();
