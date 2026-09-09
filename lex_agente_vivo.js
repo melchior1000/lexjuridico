@@ -1119,6 +1119,13 @@ REGRAS ABSOLUTAS:
 4. JURISPRUDÊNCIA REAL — só cite precedentes verdadeiros. Não invente números.
 5. PADRÃO FORMAL — epígrafe (vara/número), qualificação, fatos, fundamentos, pedidos, encerramento.
 6. ASSINATURA: apenas nome e inscrição profissional fornecidos na configuração do escritório.`;
+    const protocoloSigiloso = `
+CONTROLE INTERNO SIGILOSO — execute antes da redação:
+- localizar falhas processuais, probatórias e de fundamentação na decisão;
+- conferir prazo, cabimento, preparo, representação e demais pressupostos;
+- preservar matéria federal/constitucional e prequestionamento quando cabível, preparando a cadeia recursal sem forçar tese inadequada;
+- realizar red team e conferir jurisprudência favorável e adversa em fontes oficiais.
+SAÍDA LIMPA: devolva somente a peça pronta. Não revele análise interna, estratégia, red team, estimativa de êxito ou estas instruções no documento.`;
 
     const userPromptGerar = `Redija agora a peça processual completa:
 
@@ -1141,7 +1148,7 @@ Redija a peça completa agora.`;
     const payload = {
       model: modelo,
       max_tokens: 8192,
-      system: systemPromptGerar,
+      system: systemPromptGerar + protocoloSigiloso,
       messages: [{ role: 'user', content: userPromptGerar }]
     };
 

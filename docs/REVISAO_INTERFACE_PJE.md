@@ -13,6 +13,10 @@ Referência: sete páginas do PDF da interface fornecido pelo titular. A marca e
 - POST /api/pje/andamento recebe movimento com sessão de administrador. Somente CNJ exato e único; preserva prazo e status; exige PATCH confirmado no banco antes de mudar cache; deduplica reenvios. Bloqueio concorrente na instância, sem transação distribuída.
 - Datajud requer chave pública configurada, rejeita erro de API e ordena movimentos. Tribunal não mapeado não cai silenciosamente em TJSP. UI identifica consulta pública de processos já cadastrados, não importação do acervo autenticado. Datajud não fornece documentos privados nem substitui login PJe.
 - Lex.consultar limita chamadas às ferramentas declaradas de um agente disponível.
+- Pesquisa jurisprudencial usa o modelo jurídico crítico em duas passagens independentes, restringe a busca a domínios oficiais e devolve as fontes reconhecidas. O inteiro teor ainda exige conferência do advogado.
+- Perícia repete a verificação de legibilidade no servidor, usa somente cálculos determinísticos fornecidos, executa segunda revisão pelo modelo jurídico crítico e permanece marcada como minuta até aprovação humana.
+- O gerador DOCX aplica Arial 12, entrelinha 1,5, recuo e margens forenses nas peças. Laudos e pareceres forenses usam a capa Oxford `#0B2545`, Cambria, corpo Arial 11 e tabelas no padrão Edição Azul. Os dois formatos foram renderizados e inspecionados visualmente.
+- Diagnóstico, red team, controle de admissibilidade e preparação recursal são internos. O documento entregue contém somente a peça pronta e não inclui bastidores, estratégia ou estimativa de êxito.
 
 ## Objetivo e critérios de aceitação restantes
 
@@ -36,7 +40,7 @@ O fluxo de lembretes agora separa atualização, prazo e cumprimento. Andamento 
 
 ## Validação
 
-128 testes locais passaram, sem acesso aos processos reais nem envio de mensagens. Incluem rejeição de gravação, baixa explícita de lembrete, preservação de prazo após andamento, CNJ divergente/duplicado, movimentos concorrentes, repetição de evento, permissões da rota e falhas de Datajud. Sintaxe do backend, módulos e scripts inline verificada. Os testes não certificam o funcionamento integral do escritório.
+134 testes locais passaram, sem acesso aos processos reais nem envio de mensagens. Incluem rejeição de gravação, baixa explícita de lembrete, preservação de prazo após andamento, CNJ divergente/duplicado, movimentos concorrentes, repetição de evento, permissões da rota, falhas de Datajud, fontes jurídicas oficiais, dupla revisão e estrutura dos DOCX. Sintaxe do backend, módulos e scripts inline verificada. Os testes não certificam o funcionamento integral do escritório.
 
 ## Componentes públicos avaliados
 

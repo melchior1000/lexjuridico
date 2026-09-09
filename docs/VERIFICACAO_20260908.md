@@ -38,10 +38,11 @@ Não houve chamada paga de IA, mensagem real enviada, migração, pareamento ou 
   automático. Isso ainda não é fila durável nem recuperação após reinício.
 - Documentos: geração genérica, redação do assessor e minuta pericial pelos canais
   produzem DOCX OpenXML. Os fluxos interrompem a confirmação de sucesso quando o
-  canal recusa o arquivo. ZIP/CRC/conteúdo foram validados; aparência não foi homologada.
+  canal recusa o arquivo. ZIP/CRC/conteúdo foram validados; peças e Edição Azul
+  foram renderizadas e inspecionadas localmente, ainda sem homologação no aparelho do usuário.
 - Webhooks: ambas as entradas WhatsApp exigem segredo antes de consumir o corpo.
   Sem configuração respondem 503; credencial ausente ou divergente recebe 401.
-- Anthropic: todos os tiers usam o TOP configurado, padrão `claude-opus-4-8`,
+- Anthropic: trabalho geral usa o TOP configurado, padrão `claude-opus-5`; pesquisa jurídica e perícia usam `claude-fable-5-1`,
   conforme a preferência do titular. Overrides antigos MID/ECO não reduzem o
   modelo. Secretário, pesquisa nativa e agente vivo também preservam essa seleção.
 
@@ -84,7 +85,7 @@ isolamento de um segundo escritório e preparar implantação/rollback.
 ## Referências dos contratos consultados
 
 - [Telegram Bot API](https://core.telegram.org/bots/api#senddocument): multipart e resposta do envio.
-- [Ciclo de modelos Anthropic](https://platform.claude.com/docs/en/about-claude/model-deprecations): identificação do Opus 4.8.
-- [Catálogo de modelos](https://platform.claude.com/docs/en/models/overview): disponibilidade e verificação via Models API.
+- [Catálogo de modelos Anthropic](https://platform.claude.com/docs/en/about-claude/models/overview): modelos atuais e identificação dos IDs de API.
+- [Busca web Anthropic](https://docs.anthropic.com/en/docs/build-with-claude/tool-use/web-search-tool): filtros de domínio, limites de busca e citações.
 
 Essas fontes descrevem contratos; não demonstram que as contas do LEX estão ativas.

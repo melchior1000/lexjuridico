@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const {EventEmitter} = require('node:events');
 const JSZip = require('jszip');
 const {setup, source} = require('./runtime');
-const {modelsFor} = require('../lib/ai-runtime');
+const {modelsFor,legalModelFor} = require('../lib/ai-runtime');
 const {requestJson, evolutionEndpoint, webhookAuthStatus} = require('../lib/integration-status');
 
 function load(start, end, extra = {}) {
@@ -18,7 +18,8 @@ function load(start, end, extra = {}) {
 
 test('Anthropic mantém o modelo TOP em todos os agentes, inclusive com tiers antigos no ambiente', () => {
   const models = modelsFor('anthropic', {LEX_ANTHROPIC_MODEL_MID:'claude-sonnet-4-6',LEX_ANTHROPIC_MODEL_ECO:'claude-haiku-4-5-20251001'});
-  assert.deepEqual(models, {top:'claude-opus-4-8',mid:'claude-opus-4-8',eco:'claude-opus-4-8'});
+  assert.deepEqual(models, {top:'claude-opus-5',mid:'claude-opus-5',eco:'claude-opus-5'});
+  assert.equal(legalModelFor({}), 'claude-fable-5-1');
 });
 
 function scheduler(now, extra = {}) {
@@ -133,11 +134,11 @@ test('fila migra para o resumo persistente e não envia diretamente itens indivi
 test('secretário Anthropic ignora modelo legado e usa o TOP configurado',async()=>{
   let model;
   const context=load('async function _chamarAnthropicSecretario(', 'async function _escalarParaAdvogado(',{
-    AK:'fake',MODELOS_POR_PROVIDER:{anthropic:{top:'claude-opus-4-8'}},
+    AK:'fake',MODELOS_POR_PROVIDER:{anthropic:{top:'claude-opus-5'}},
     httpsPost:async(host,path,payload)=>{model=payload.model;return {content:[{type:'text',text:'Resposta teste'}]};}
   });
   await context._chamarAnthropicSecretario([],null,'claude-sonnet-4-6');
-  assert.equal(model,'claude-opus-4-8');
+  assert.equal(model,'claude-opus-5');
 });
 
 for(const route of ['/api/webhook-whatsapp','/api/whatsapp/webhook']) {
