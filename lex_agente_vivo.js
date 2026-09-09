@@ -5,7 +5,7 @@
 //   GET  /api/vivo/health
 //   GET  /api/vivo/exportar/:id    — exportarDadosAgente: resumo completo
 //
-//   POST /api/vivo/conversar       — Gestor IA (Opus 4.7) + análise psicológica + PJe
+//   POST /api/vivo/conversar       — Gestor IA + padrão decisório documentado + PJe
 //   POST /api/vivo/aplicar         — aplica proposta do Gestor
 //
 //   POST /api/vivo/peca/conversar  — Redator (Opus 4.7, conversacional)
@@ -20,24 +20,22 @@
 // =====================================================================
 
 'use strict';
+const { rowsFromResult } = require('./lib/supabase');
+const { withProcessLock } = require('./lib/process-lock');
+const { modelsFor, positiveInteger, admission: aiAdmission } = require('./lib/ai-runtime');
 
 // =====================================================================
-// HIERARQUIA DE MODELOS (OTIMIZAÇÃO DE CUSTO — abr/2026)
-// ---------------------------------------------------------------------
-// Opus  : 15/75 USD por M tokens (CARO)   — só pra tarefas críticas.
-// Sonnet: 3/15  USD por M tokens (5x +barato) — intermediário.
-// Haiku : 0.25/1.25 USD por M tokens (60x +barato) — tarefas simples.
+// Todos os agentes usam o TOP Anthropic configurado, sem redução de tier.
 // =====================================================================
-const MODELO_TOP = 'claude-opus-4-20250514';       // Opus 4 — top/caro
-const MODELO_MID = 'claude-sonnet-4-20250514';     // Sonnet 4 — intermediário
-const MODELO_ECO = 'claude-3-5-haiku-20241022';    // Haiku 3.5 — barato
+const modelosAnthropic = modelsFor('anthropic');
+const MODELO_TOP = modelosAnthropic.top;
+const MODELO_MID = modelosAnthropic.mid;
+const MODELO_ECO = modelosAnthropic.eco;
 
 // =====================================================================
 // CONFIGURAÇÃO DE MODELOS POR FUNCIONÁRIO
 // =====================================================================
-// Regra: só mantém Opus onde qualidade é crítica (chat Lex, redação de peças,
-// perícia). Pesquisa/juizes migra para Sonnet — contexto grande mas raciocínio
-// de síntese é suportado bem por Sonnet 4.
+// Os nomes MID/ECO existem por compatibilidade e resolvem para o mesmo TOP.
 const MODELO_GESTOR          = MODELO_TOP;   // chat Lex principal — Opus
 const MODELO_REDATOR         = MODELO_TOP;   // redator de peças/perícia — Opus
 const MODELO_PESQUISADOR     = MODELO_MID;   // pesquisa juízes/jurisprudência — Sonnet
@@ -48,7 +46,7 @@ const MODELO_DEFAULT_LEVE    = MODELO_MID;   // retrocompat (leve = Sonnet agora
 // LIMITES E CONFIGURAÇÕES
 // =====================================================================
 const MAX_HISTORICO        = 20;       // msgs máximas no histórico
-const MAX_TOOL_LOOPS       = 3;        // max loops de tool_result
+const MAX_TOOL_LOOPS       = positiveInteger(process.env.LEX_AI_MAX_TOOL_LOOPS, 3, 8);        // max loops de tool_result
 const ANTHROPIC_TIMEOUT_MS = 180000;   // 3 min (Opus é lento)
 const MAX_RETRIES          = 2;        // retries para 429/5xx/timeout
 const STATUS_VALIDOS       = ['URGENTE','ATIVO','DISTRIBUIDO','MONITORAR','AGUARDANDO','VENCIDO','CONCLUIDO','ENTREGUE'];
@@ -58,7 +56,7 @@ const PRAZO_REGEX          = /^\d{4}-\d{2}-\d{2}$/;
 // PROMPTS DOS FUNCIONÁRIOS
 // =====================================================================
 
-const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório Camargos Advocacia, atuando sob orientação do CEO Kleuber Melchior de Souza (analista jurídico, NÃO advogado) para o advogado titular Dr. Wanderson Farias de Camargos (OAB/MG 118.237).
+const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório configurado no LEX, atuando sob orientação do profissional responsável.
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade, não um robô:
 - Você ENTENDE o que é conversado e DETERMINA a ação correta baseado no contexto.
@@ -77,7 +75,7 @@ Proatividade: antecipe riscos e sugira próximos passos objetivos.
 ANÁLISE DE MAGISTRADO — trabalho incessante:
 - Assim que identificar o nome de um juiz/desembargador/ministro no processo, AUTOMATICAMENTE faça varredura do perfil decisório.
 - Pesquise decisões anteriores desse magistrado sobre temas similares.
-- Levante: tendências, taxa de procedência, temas sensíveis, argumentos que aceita/rejeita.
+- Levante fundamentos recorrentes, provas exigidas e argumentos acolhidos/rejeitados somente nas decisões com fonte confirmada.
 - A cada movimentação do processo onde o magistrado decide algo, ATUALIZE o perfil com a nova decisão.
 - Se receber PDF com decisão, LEIA e extraia o posicionamento do magistrado.
 - Isso é trabalho CONTÍNUO — não espere ninguém mandar. Faz parte do seu serviço.
@@ -99,12 +97,11 @@ Regras processuais que você respeita rigidamente:
 - Visão de longo prazo: cada peça é construção do recurso para STJ/STF.
 - Perfil do julgador importa — se o processo tem juiz/relator, leve em conta.
 
-Análise psicológica do julgador (quando houver juiz/relator identificado):
-- Perfil decisório: conservador/progressista/formalista/pragmático.
-- Score de probabilidade de êxito (0-100%) com justificativa objetiva: baseado nas tendências reais do magistrado, não em otimismo vazio.
-- Gatilhos que convencem este juiz: linguagem que ele usa, teses que ele aceitou, argumentos que ele rejeita.
-- Estratégia de redação recomendada pra este julgador específico.
-- Se não houver perfil disponível, diga explicitamente e recomende pesquisar com o Pesquisador de Juízes.
+Análise documental do julgador:
+- Use decisões e fundamentos com fonte e data. Não deduza ideologia, personalidade ou saúde.
+- Não forneça probabilidade numérica de vitória sem estudo estatístico validado.
+- Distinga o teor da decisão das hipóteses de aplicação. Não generalize um exemplo como padrão.
+- Se faltar material, informe isso e encaminhe à Pesquisa decisória.
 
 Quando for propor atualização, considere:
 - andamento: descrição formal do que foi feito (1-3 frases, tom jurídico)
@@ -113,6 +110,7 @@ Quando for propor atualização, considere:
 - dias_parado: geralmente zerar (0) quando há movimentação nova
 - proxima_acao: o que precisa ser feito depois e por quê
 - prazo: se houver novo prazo, no formato YYYY-MM-DD
+- lembretes_concluidos: IDs exatos dos lembretes que o usuário afirmou ter cumprido. Nunca conclua todos por inferência e nunca baixe por mera atualização.
 
 Setores do escritório:
 - AUTUAÇÃO: cliente novo, coletando documentos, lembrete 10 dias. Sai quando Kleuber diz "cumpriu docs, processo nº X".
@@ -147,8 +145,8 @@ Regra obrigatoria de atendimento:
 - Se nao tiver documento, trabalhe com a informacao verbal e deixe isso explicito.
 - Ao final de CADA resposta, pergunte exatamente: "Quer lancar no sistema? Atualizar andamento? Criar caso novo? Ou apenas consulta?"`;
 
-const PROMPT_REDATOR = `Você é o Redator de Peças do escritório Camargos Advocacia (OAB/MG 118.237 — Kleuber Melchior; titular: Wanderson Farias de Camargos).
-Contexto institucional: Kleuber atua como analista jurídico (NÃO advogado); assinatura técnica do Dr. Wanderson.
+const PROMPT_REDATOR = `Você é o Redator de Peças do escritório configurado no LEX.
+Identificação profissional: utilize exclusivamente os dados configurados para o escritório; se ausentes, deixe o campo para preenchimento.
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade:
 - Ordem direta do Kleuber = execute imediatamente sem questionar.
@@ -182,7 +180,7 @@ Regras absolutas na redação:
 - PREQUESTIONAMENTO — toda peça é peça de construção pra STJ/STF. Marque os dispositivos federais/constitucionais pertinentes.
 - JURISPRUDÊNCIA REAL — só cite precedentes verdadeiros. Se não tiver certeza, não invente.
 - PADRÃO TÉCNICO ALTO — a qualidade da redação comunica competência ao magistrado.
-- ASSINATURA obrigatória: "Wanderson Farias de Camargos — OAB/MG 118.237".
+- ASSINATURA: apenas nome e inscrição profissional fornecidos na configuração do escritório.
 
 Perguntas que você tipicamente faz antes de redigir (só as relevantes):
 - Qual o fato gerador concreto desta peça? (ex: intimação recebida, decisão desfavorável, fato superveniente)
@@ -207,69 +205,10 @@ Regra obrigatoria de atendimento:
 - Se nao tiver documento, trabalhe com a informacao verbal e deixe isso explicito.
 - Ao final de CADA resposta, pergunte exatamente: "Quer lancar no sistema? Atualizar andamento? Criar caso novo? Ou apenas consulta?"`;
 
-const PROMPT_PESQUISADOR_JUIZES = `Você é o Pesquisador de Perfil de Julgadores do escritório Camargos Advocacia.
-Contexto institucional: CEO Kleuber (analista jurídico, NÃO advogado) e Dr. Wanderson (OAB/MG 118.237).
-
-DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO especialista, não um robô:
-- Seu trabalho é INCESSANTE: assim que aparece o nome de um magistrado num processo, você AUTOMATICAMENTE pesquisa o perfil.
-- Não espera ninguém mandar. Viu nome de juiz/desembargador/ministro? PESQUISA.
-- A cada nova decisão do magistrado no processo, ATUALIZE o perfil com o novo posicionamento.
-- Se receber PDF com decisão, LEIA e extraia o posicionamento do magistrado.
-- ORDEM DIRETA do Kleuber → execute imediatamente sem questionar.
-- INICIATIVA PRÓPRIA → pesquise proativamente, mas pergunte antes de gravar no sistema.
-
-Qualidade: somente evidências reais com fonte e data. NUNCA invente decisão.
-Proatividade: sugerir estratégia concreta de argumentação ajustada ao perfil identificado.
-
-Seu trabalho é investigar na web o perfil decisório de juízes, desembargadores, relatores e ministros — pra que as peças sejam ajustadas ao perfil de quem vai julgar.
-
-Fluxo esperado:
-1) Kleuber te informa quem investigar OU você identifica automaticamente o magistrado no contexto do processo.
-2) Se faltar informação mínima (nome ou tribunal), pergunte. Senão, PESQUISE IMEDIATAMENTE.
-3) Use a ferramenta web_search para buscar decisões reais, sentenças, votos do magistrado. Priorize sites oficiais dos tribunais, JusBrasil, ConJur, Migalhas.
-4) Analise como psicanalista judicial: padrão decisório, teses aceitas/rejeitadas, estilo de redação, argumentos que convencem.
-5) Quando tiver material suficiente, chame a ferramenta "consolidar_perfil" com o resultado estruturado.
-6) Você pode fazer múltiplas buscas antes de consolidar — vá refinando.
-7) A CADA MOVIMENTAÇÃO do processo onde o magistrado decide, atualize o perfil. Isso é trabalho CONTÍNUO.
-
-O que entregar — perfil decisório COMPLETO e PROFUNDO (todos os itens obrigatórios):
-- Nome completo, tribunal, UF, MUNICÍPIO/COMARCA, vara/câmara/turma
-- Tendência: conservador/progressista/formalista/pragmático
-- Taxa estimada de procedência no tema do caso
-- Teses que ACEITA (com exemplos reais)
-- Teses que REJEITA (com exemplos reais)
-- Argumentos que CONVENCEM este magistrado
-- Estilo de redação que ele usa e espera
-- Score de probabilidade de êxito (0-100%) com justificativa
-- Estratégia recomendada de argumentação para este julgador
-
-— ALÉM DISSO, obrigatoriamente pesquise e entregue:
-- AUTORES JURÍDICOS / JURISTAS citados pelo magistrado em suas decisões (ex: Alexandre de Moraes, Fredie Didier, Humberto Theodoro Jr., Cassio Scarpinella Bueno etc.). Liste nomes reais aparecendo em sentenças/votos.
-- DOUTRINADORES preferidos — quem citar nas peças para "falar a mesma língua" do juiz.
-- JURISPRUDÊNCIA / TEMAS / SÚMULAS que o magistrado reiteradamente segue (STF, STJ, TST, tribunal do estado).
-- COMPORTAMENTO EM AUDIÊNCIA: como o advogado deve se portar diante deste juiz (tom de voz, formalidade, objetividade, tempo de sustentação, uso de apartes, postura física, como conduzir testemunhas).
-- DESPACHO PESSOAL (quando o advogado sobe ao gabinete ou marca audiência com o juiz): como tratar, protocolo, nível de formalidade, o que evita, o que gosta de ouvir.
-- ARGUMENTOS PARA PEÇAS: que tipo de argumento (técnico-positivista, principiológico, consequencialista, humanitário) funciona melhor para este julgador.
-- CAMINHOS ESTRATÉGICOS: rota processual recomendada (conciliar? instruir rápido? tutela? recorrer cedo? prequestionar desde o início?).
-- GATILHOS POSITIVOS e NEGATIVOS específicos.
-
-Regras:
-- NUNCA invente decisão, citação de doutrina ou nome de jurista. Se não achar, diga "não achei material público deste magistrado".
-- Cite fonte com URL sempre que possível.
-- Seja específico: "em 3 decisões recentes sobre X, rejeitou por Y" > "costuma rejeitar".
-- Se o magistrado tiver posicionamento controvertido ou mudança recente de entendimento, destaque.
-- Vale pra JUIZ, DESEMBARGADOR e MINISTRO — qualquer instância.
-- Se o Kleuber fornecer PDFs de decisões/despachos do processo, EXTRAIA tudo: doutrinadores citados, súmulas mencionadas, estilo de redação, tom, formalidade, modo como trata as partes.
-
-Seu tom: pesquisador objetivo e crítico. Sem bajulação. Sem generalização.
-
-Regra obrigatória de atendimento:
-- Se o usuário pedir análise, PRIMEIRO pergunte se ele tem documento (decisão, petição, certidão etc.) para anexar/colar.
-- Se não tiver documento, trabalhe com a informação verbal e deixe isso explícito.
-- Ao final de CADA resposta, pergunte: "Quer lançar no sistema? Atualizar andamento? Ou apenas consulta?"`;
+const PROMPT_PESQUISADOR_JUIZES = `Analise decisões e fundamentos verificáveis. Não infira personalidade, ideologia ou chance de vitória. Separe hipótese de aplicação e fato documentado. Use fonte oficial e confira autoria, tribunal, data e inteiro teor.`;
 
 const PROMPT_PESQUISADOR_JURIS = `Você é o Pesquisador de Jurisprudência do escritório Camargos Advocacia.
-Contexto institucional: CEO Kleuber (analista jurídico, NÃO advogado) e Dr. Wanderson (OAB/MG 118.237).
+Identificação profissional e poderes devem ser conferidos no cadastro do escritório.
 Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando Kleuber der uma ordem direta, execute imediatamente.
 Qualidade: apenas precedentes reais e tecnicamente aplicáveis.
 Proatividade: indicar próximo ato processual recomendado diante do cenário encontrado.
@@ -339,6 +278,7 @@ const TOOL_PROPOR_ATUALIZACAO = {
       dias_parado:  { type: 'integer', description: 'Dias sem movimentação. Geralmente 0 quando há movimentação nova.' },
       proxima_acao: { type: 'string',  description: 'O que precisa ser feito depois.' },
       prazo:        { type: 'string',  description: 'Novo prazo no formato YYYY-MM-DD. Opcional.' },
+      lembretes_concluidos: { type: 'array', items: {type:'string'}, description: 'IDs dos lembretes efetivamente cumpridos. Use somente quando o usuário afirmar expressamente que a providência foi concluída; mero andamento não baixa lembrete.' },
       justificativa:{ type: 'string',  description: 'Justificativa jurídica breve.' },
       integrar_parecer: { type: 'string', description: 'Resumo essencial do parecer para integrar ao processo ao finalizar.' }
     },
@@ -382,12 +322,7 @@ const TOOL_CONSOLIDAR_PERFIL = {
       decisoes_relevantes:      { type: 'array', items: { type: 'object', properties: { processo:{type:'string'}, tema:{type:'string'}, resultado:{type:'string'}, url:{type:'string'} } } },
       tom_recomendado:          { type: 'string' },
       material_suficiente:      { type: 'boolean', description: 'false se so achou pouco material — avisa Kleuber.' },
-      perfil_psicologico:       { type: 'string', enum: ['conservador','progressista','formalista','pragmatico','tecnico','politico','indefinido'], description: 'Perfil psicológico/decisório dominante do magistrado.' },
-      score_probabilidade:      { type: 'integer', description: 'Score de probabilidade de êxito geral com este julgador (0-100). Baseado em dados reais, não otimismo.' },
-      justificativa_score:      { type: 'string', description: 'Justificativa objetiva do score: em quais casos decidiu a favor/contra e por quê.' },
-      gatilhos_positivos:       { type: 'array', items: { type: 'string' }, description: 'O que faz este juiz decidir a favor: linguagem, argumentos, postura, formalidades.' },
-      gatilhos_negativos:       { type: 'array', items: { type: 'string' }, description: 'O que irrita ou faz este juiz decidir contra: informalidade, teses específicas, petições longas, etc.' },
-      estrategia_redacao:       { type: 'string', description: 'Como redigir a peça especificamente para este julgador.' },
+      limites_amostra: {type:'string',description:'Limitações documentais. Não estimar chance de vitória nem inferir características pessoais.'},
       autores_juridicos_citados: { type: 'array', items: { type: 'string' }, description: 'Autores/juristas que o magistrado cita em decisões (ex: Fredie Didier, Humberto Theodoro Jr., Alexandre de Moraes). Apenas nomes realmente observados em decisões.' },
       doutrinadores_para_citar: { type: 'array', items: { type: 'string' }, description: 'Doutrinadores que o advogado deve citar nas peças para "falar a mesma língua" deste juiz.' },
       jurisprudencia_seguida: { type: 'array', items: { type: 'string' }, description: 'Súmulas, temas de repercussão geral e julgados que o magistrado segue reiteradamente.' },
@@ -581,6 +516,10 @@ function montarContextoProcesso(p) {
 }
 
 function chamarAnthropic(ANTHROPIC_KEY, httpsMod, payload) {
+  return aiAdmission.run(() => chamarAnthropicRequest(ANTHROPIC_KEY, httpsMod, {...payload,model:MODELO_TOP}));
+}
+
+function chamarAnthropicRequest(ANTHROPIC_KEY, httpsMod, payload) {
   return new Promise((resolve, reject) => {
     try {
       if (!ANTHROPIC_KEY) return reject(new Error('ANTHROPIC_KEY ausente'));
@@ -639,81 +578,48 @@ function acharProcesso(processos, processo_id) {
 }
 
 async function buscarDocumentosIndexados(processoId, nomeProcesso, deps) {
-  const pid = processoId != null && String(processoId).trim() ? String(processoId).trim() : null;
-  const nome = nomeProcesso != null && String(nomeProcesso).trim() ? String(nomeProcesso).trim() : null;
-
-  const filtrar = (rows) => {
-    const arr = Array.isArray(rows) ? rows : [];
-    return arr.filter((d) => {
-      if (!d || typeof d !== 'object') return false;
-      const dPid = d.processo_id != null ? String(d.processo_id) : (d.processoId != null ? String(d.processoId) : '');
-      const dNome = String(d.nome_processo || d.nomeProcesso || d.processo_nome || d.nome || '');
-      const okPid = !pid || dPid === pid;
-      const okNome = !nome || dNome.toLowerCase().includes(nome.toLowerCase());
-      return okPid && okNome;
-    });
-  };
-
-  try {
-    if (deps && typeof deps.sbGet === 'function') {
-      if (pid) {
-        const porId = await deps.sbGet('documentos_indexados', { processo_id: pid });
-        if (Array.isArray(porId) && porId.length) return filtrar(porId);
-      }
-      if (nome) {
-        const porNome = await deps.sbGet('documentos_indexados', { nome_processo: nome });
-        if (Array.isArray(porNome) && porNome.length) return filtrar(porNome);
-      }
-      const gerais = await deps.sbGet('documentos_indexados', {});
-      if (Array.isArray(gerais) && gerais.length) return filtrar(gerais);
-    }
-  } catch (e) {
-    console.warn('[VIVO] buscarDocumentosIndexados sbGet falhou:', e.message);
-  }
-
-  const fallback = deps && Array.isArray(deps.documentos_indexados) ? deps.documentos_indexados : [];
-  return filtrar(fallback);
+  const pid=String(processoId||'').trim();
+  if(!pid) throw new Error('Selecione um processo antes de buscar documentos.');
+  if(!acharProcesso(deps.processos||[],pid)) throw new Error('Processo fora do contexto autorizado.');
+  const filter=rows=>(Array.isArray(rows)?rows:[]).filter(d=>String(d.processo_id??d.processoId??'')===pid);
+  if(deps.sbGet) return filter(await deps.sbGet('documentos_indexados',{processo_id:pid}));
+  return filter(deps.documentos_indexados);
 }
 
 async function persistirProcesso(deps, processo_atualizado) {
-  // 1. Atualiza na memória (sempre)
+  const updateData = {};
+  const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao','comarca','instancia','valor','area_direito','tipo_acao','confianca_extracao'];
+  for(const campo of campos) {
+    if(processo_atualizado[campo] !== undefined) updateData[campo] = processo_atualizado[campo];
+  }
+  if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
+  for(const campo of ['autor','reu','demanda','processo','evidencias']) {
+    if(processo_atualizado[campo]) updateData[campo + '_json'] = JSON.stringify(processo_atualizado[campo]);
+  }
+  if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
+  if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
+  const filtro = {id: 'eq.' + processo_atualizado.id};
+  let resposta;
+  if(typeof deps.sbPatch === 'function') {
+    resposta = await deps.sbPatch('processos', updateData, filtro);
+  } else if(typeof deps.sbReq === 'function') {
+    resposta = await deps.sbReq('PATCH', 'processos', updateData, filtro, {'Prefer':'return=representation'});
+  } else {
+    throw new Error('Persistencia indisponivel. Nenhuma alteracao foi confirmada.');
+  }
+  const gravados = rowsFromResult(resposta, 'Salvar processo');
+  if(!gravados.some(row => String(row.id) === String(processo_atualizado.id))) {
+    throw new Error('Banco nao confirmou a atualizacao do processo.');
+  }
+  // Cache so muda depois de o banco confirmar uma linha efetivamente atualizada.
   const arr = deps.processos || [];
   const idx = arr.findIndex(p => String(p.id) === String(processo_atualizado.id));
-  if (idx >= 0) arr[idx] = processo_atualizado;
+  if(idx >= 0) arr[idx] = processo_atualizado;
   else arr.push(processo_atualizado);
-  
-  // 2. Persiste no Supabase (tabela processos)
-  try {
-    if (deps.sbPatch) {
-      const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','nome','numero','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao','comarca','instancia','valor','area_direito','tipo_acao','confianca_extracao'];
-      for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
-      if(processo_atualizado.andamentos) updateData.andamentos = JSON.stringify(processo_atualizado.andamentos);
-      // Preserva dados completos extraídos dos PDFs (autor, réu, demanda, evidências)
-      if(processo_atualizado.autor) updateData.autor_json = JSON.stringify(processo_atualizado.autor);
-      if(processo_atualizado.reu) updateData.reu_json = JSON.stringify(processo_atualizado.reu);
-      if(processo_atualizado.demanda) updateData.demanda_json = JSON.stringify(processo_atualizado.demanda);
-      if(processo_atualizado.processo) updateData.processo_json = JSON.stringify(processo_atualizado.processo);
-      if(processo_atualizado.evidencias) updateData.evidencias_json = JSON.stringify(processo_atualizado.evidencias);
-      if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
-      if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
-      await deps.sbPatch('processos', updateData, { id: 'eq.' + processo_atualizado.id });
-      console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via PATCH');
-      return { ok: true, via: 'supabase' };
-    } else if (deps.sbReq) {
-      const updateData = {};
-      const campos = ['status','juiz','vara','proxacao','observacoes','area','cliente','prazo','tipo','setor','atualizado_em','dias_parado','ultima_atualizacao'];
-      for(const c of campos) { if(processo_atualizado[c] !== undefined) updateData[c] = processo_atualizado[c]; }
-      if(processo_atualizado.integracao_parecer) updateData.resumo = processo_atualizado.integracao_parecer;
-      if(processo_atualizado.descricao) updateData.resumo = processo_atualizado.descricao;
-      await deps.sbReq('PATCH', 'processos', updateData, { id: 'eq.' + processo_atualizado.id });
-      console.log('[VIVO] Processo', processo_atualizado.id, 'persistido no Supabase via sbReq');
-      return { ok: true, via: 'supabase' };
-    }
-  } catch (e) {
-    console.error('[VIVO] Falha ao persistir no Supabase (não-fatal):', e.message);
+  if(typeof deps.onProcessPersisted === 'function') {
+    try { deps.onProcessPersisted(processo_atualizado.id); } catch(e) { console.warn('[VIVO] Falha ao notificar sincronizacao:', e.message); }
   }
-  return { ok: true, via: 'memoria' };
+  return {ok:true, via:'supabase'};
 }
 
 function jsonResponse(res, status, obj, CORS) {
@@ -741,7 +647,7 @@ async function chamarAnthropicComRetry(ANTHROPIC_KEY, httpsMod, payload) {
       const retryable = (st === 429 || st === 529 || st >= 500 ||
         msg.includes('overloaded') || msg.includes('timeout') ||
         msg.includes('econnreset') || msg.includes('socket hang up'));
-      if (!retryable || t >= maxR) throw e;
+      if (e.code === 'LEX_AI_BUSY' || !retryable || t >= maxR) throw e;
       const delay = Math.min(2000 * Math.pow(2, t), 16000);
       console.warn('[VIVO] Retry ' + (t+1) + '/' + maxR + ' em ' + delay + 'ms: ' + e.message);
       await new Promise(r => setTimeout(r, delay));
@@ -798,6 +704,7 @@ function erroSeguro(msg) {
 // =====================================================================
 async function resolverToolUse(deps, payload) {
   const maxLoops = (typeof MAX_TOOL_LOOPS !== 'undefined') ? MAX_TOOL_LOOPS : 3;
+  payload = {...payload, system: (payload.system || '') + '\nREGRA DE EXECUCAO: uma proposta preparada ainda nao foi aplicada. So afirme que houve gravacao quando a ferramenta comprovar persistencia. Ferramentas desconhecidas ou com erro nao foram executadas.'};
   let resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, payload);
   let resultado = extrairRespostaModelo(resposta);
   let textoAcumulado = resultado.texto;
@@ -811,11 +718,12 @@ async function resolverToolUse(deps, payload) {
     const blocos = (resposta.content || []).filter(b => b.type === 'tool_use');
     if (!blocos.length) break;
     const toolResults = await Promise.all(blocos.map(async (b) => {
-      let resultadoTool = {
-        ok: true,
-        registrado: true,
-        mensagem: 'Tool "' + b.name + '" executada com sucesso pelo sistema Lex.'
-      };
+      let resultadoTool = {ok:false, executado:false, mensagem:'Ferramenta nao implementada.'};
+      const propostas = new Set(['propor_atualizacao','pronto_para_redigir','consolidar_perfil','consolidar_jurisprudencia']);
+      if(propostas.has(b.name)) {
+        resultadoTool = {ok:true, executado:false, estado:'proposta_preparada',
+          mensagem:'Dados preparados para a proxima etapa. Ainda nao houve gravacao no processo.'};
+      }
 
       if (b.name === 'buscar_documentos') {
         const input = (b && b.input && typeof b.input === 'object') ? b.input : {};
@@ -831,7 +739,8 @@ async function resolverToolUse(deps, payload) {
       return {
         type: 'tool_result',
         tool_use_id: b.id,
-        content: JSON.stringify(resultadoTool)
+        content: JSON.stringify(resultadoTool),
+        is_error: resultadoTool.ok === false
       };
     }));
     msgs.push({ role: 'assistant', content: resposta.content });
@@ -951,21 +860,27 @@ async function handlerConversar(req, res, body, deps) {
 // =====================================================================
 
 async function handlerAplicar(req, res, body, deps) {
+  return withProcessLock(deps.processos, body && body.processo_id,
+    () => handlerAplicarSerial(req, res, body, deps));
+}
+
+async function handlerAplicarSerial(req, res, body, deps) {
   try {
     const { processo_id, proposta } = body || {};
     if (!processo_id || !proposta) {
       return jsonResponse(res, 400, { error: 'processo_id e proposta obrigatórios' }, deps.CORS);
     }
 
-    const processo = acharProcesso(deps.processos, processo_id);
-    if (!processo) return jsonResponse(res, 404, { error: 'processo não encontrado' }, deps.CORS);
+    const atual = acharProcesso(deps.processos, processo_id);
+    if (!atual) return jsonResponse(res, 404, { error: 'processo não encontrado' }, deps.CORS);
 
-    const antes = JSON.parse(JSON.stringify(processo));
+    const antes = JSON.parse(JSON.stringify(atual));
+    const processo = JSON.parse(JSON.stringify(atual));
     const hoje = new Date().toISOString().slice(0, 10);
     // Status considerados "finais" — não voltam para ATIVO sozinhos
     const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
     // Detecta "houve trabalho" — qualquer campo substantivo preenchido conta
-    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer);
+    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer || proposta.lembretes_concluidos?.length);
 
     if (proposta.andamento) {
       processo.andamentos = processo.andamentos || [];
@@ -983,27 +898,7 @@ async function handlerAplicar(req, res, body, deps) {
       processo.atualizado_em = hoje;
       processo.dias_parado = 0;
       processo.diasParado = 0;
-      // Limpa prazo vencendo (≤5d) — alerta de prazo DEVE sumir quando houve andamento
-      if (proposta.andamento && processo.prazo && !proposta.prazo) {
-        try {
-          const pr = String(processo.prazo).trim();
-          // Aceita DD/MM/YYYY ou YYYY-MM-DD
-          let dt = null;
-          if (/^\d{4}-\d{2}-\d{2}$/.test(pr)) dt = new Date(pr);
-          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(pr)) {
-            const [d,m,a] = pr.split('/').map(Number);
-            dt = new Date(a, m-1, d);
-          }
-          if (dt) {
-            const dRest = Math.ceil((dt - new Date()) / 86400000);
-            if (dRest !== null && dRest <= 5) {
-              console.log('[VIVO] Prazo cumprido (andamento aplicado), limpando:', pr);
-              processo.prazo = '';
-              processo.prazoReal = '';
-            }
-          }
-        } catch(_) {}
-      }
+      // Andamento nao equivale a cumprimento; preserva prazo e prazoReal.
     }
 
     // Aplica status: se proposta trouxe status explícito, respeita. Senão, se houve trabalho, ATIVO.
@@ -1035,10 +930,10 @@ async function handlerAplicar(req, res, body, deps) {
     }
     if (proposta.prazo) {
       const pr = String(proposta.prazo).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(pr)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(pr) && Number.isFinite(Date.parse(pr)) && new Date(pr).toISOString().slice(0,10) === pr) {
         processo.prazo = pr;
       } else {
-        console.warn('[VIVO] Prazo formato inválido ignorado:', proposta.prazo);
+        return jsonResponse(res, 400, {error:'Prazo invalido. Informe uma data existente em YYYY-MM-DD.'}, deps.CORS);
       }
     }
     if (proposta.setor) {
@@ -1052,6 +947,17 @@ async function handlerAplicar(req, res, body, deps) {
       } else {
         console.warn('[VIVO] Setor inválido ignorado:', proposta.setor);
       }
+    }
+    if (Array.isArray(proposta.lembretes_concluidos) && proposta.lembretes_concluidos.length) {
+      const ids = new Set(proposta.lembretes_concluidos.map(id=>String(id||'').trim()).filter(Boolean));
+      let concluidos = 0;
+      processo.lembretes = (Array.isArray(processo.lembretes) ? processo.lembretes : []).map(lembrete=>{
+        const id=String(lembrete?.id||'').trim();
+        if(!id || !ids.has(id) || lembrete.status==='concluido') return lembrete;
+        concluidos++;
+        return {...lembrete,status:'concluido',concluido_em:new Date().toISOString(),concluido_por:'confirmacao_explicita'};
+      });
+      if(!concluidos) return jsonResponse(res,409,{error:'Nenhum lembrete pendente corresponde à seleção. Atualize o processo.'},deps.CORS);
     }
     const integrarParecer = String(proposta.integrar_parecer || '').trim();
     if (integrarParecer) {
@@ -1122,7 +1028,7 @@ async function handlerPecaConversar(req, res, body, deps) {
         const nome = processo.juiz || processo.relator;
         const juiz_id = `${(processo.tribunal || '').toUpperCase()}::${nome.toLowerCase().replace(/\s+/g, '_')}`;
         const cache = await deps.sbGet('perfis_juizes', { juiz_id });
-        if (cache && cache.length > 0) {
+        if (cache && cache.length > 0 && cache[0].perfil_json?.versao === 'decisorio-v1') {
           perfilJuiz = `\n\nPERFIL DO JULGADOR (${nome}):\n${cache[0].resumo || ''}`;
         }
       } catch (e) { /* segue sem perfil */ }
@@ -1187,7 +1093,7 @@ async function handlerPecaGerar(req, res, body, deps) {
         const nome = processo.juiz || processo.relator;
         const juiz_id = `${(processo.tribunal || '').toUpperCase()}::${nome.toLowerCase().replace(/\s+/g, '_')}`;
         const cache = await deps.sbGet('perfis_juizes', { juiz_id });
-        if (cache && cache.length > 0) {
+        if (cache && cache.length > 0 && cache[0].perfil_json?.versao === 'decisorio-v1') {
           perfilJuiz = `\n\nPERFIL DO JULGADOR (${nome}):\n${cache[0].resumo || ''}\n\nAjuste o tom da peça a este perfil.`;
         }
       } catch (e) { console.warn('[VIVO] falha ao carregar perfil do julgador:', e?.message || e); }
@@ -1200,19 +1106,19 @@ async function handlerPecaGerar(req, res, body, deps) {
       ? `\n\nDECISÃO A ANALISAR/ATACAR:\n${decisao_anexada}`
       : (briefing.decisao_a_atacar ? `\n\nDECISÃO A ATACAR:\n${briefing.decisao_a_atacar}` : '');
 
-    const systemPromptGerar = `Você é o redator jurídico sênior do escritório Camargos Advocacia (OAB/MG 118.237 — Kleuber Melchior; titular: Wanderson Farias de Camargos).
-Contexto institucional: Kleuber atua como analista jurídico (NÃO advogado); assinatura técnica do Dr. Wanderson.
+    const systemPromptGerar = `Você é o redator jurídico sênior do escritório configurado no LEX.
+Identificação profissional: utilize exclusivamente os dados configurados para o escritório; se ausentes, deixe o campo para preenchimento.
 Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando Kleuber der uma ordem direta, execute imediatamente.
 Qualidade: rigor técnico e jurisprudência real.
 Proatividade: antecipe riscos recursais e aperfeiçoe a estrutura para fases futuras.
 Sua tarefa é REDIGIR a peça processual solicitada com padrão técnico máximo, pronta para protocolo.
 REGRAS ABSOLUTAS:
-1. INSTRUMENTO CABÍVEL (CPC) — se não for, diga no topo e sugira o correto, mas entregue a peça pedida mesmo assim.
+1. INSTRUMENTO CABÍVEL (CPC) — se não for, diga no topo e sugira o correto, suspenda a redação e informe a peça adequada e os elementos que faltam.
 2. PROIBIDO INOVAR NO PEDIDO (art. 329 CPC) — mesmo destino, caminho diferente quando jurisprudência for desfavorável.
 3. PREQUESTIONAMENTO — marque expressamente dispositivos federais/constitucionais pertinentes.
 4. JURISPRUDÊNCIA REAL — só cite precedentes verdadeiros. Não invente números.
 5. PADRÃO FORMAL — epígrafe (vara/número), qualificação, fatos, fundamentos, pedidos, encerramento.
-6. ASSINATURA obrigatória: "Wanderson Farias de Camargos — OAB/MG 118.237".`;
+6. ASSINATURA: apenas nome e inscrição profissional fornecidos na configuração do escritório.`;
 
     const userPromptGerar = `Redija agora a peça processual completa:
 
@@ -1254,21 +1160,23 @@ Redija a peça completa agora.`;
       } catch (e) { console.warn('[VIVO] falha ao registrar acao vivo_acoes:', e?.message || e); }
     }
 
+    let persistencia = {ok:false, via:null};
     // AUTO-GRAVAR no processo: peça elaborada = atualiza andamento + ATIVO
     if (processo && deps.sbReq) {
       try {
         const hoje = new Date().toISOString().slice(0, 10);
-        processo.andamentos = processo.andamentos || [];
-        processo.andamentos.push({
+        const atualizado = JSON.parse(JSON.stringify(processo));
+        atualizado.andamentos = atualizado.andamentos || [];
+        atualizado.andamentos.push({
           data: hoje,
-          texto: `Peça jurídica elaborada: ${briefing.tipo_peca}. Pronta para protocolo.`,
+          texto: `Peça jurídica elaborada: ${briefing.tipo_peca}. Minuta gerada para revisao do advogado.`,
           origem: 'redator_ia'
         });
-        processo.status = 'ATIVO';
-        processo.atualizado_em = hoje;
-        processo.ultima_atualizacao = hoje;
-        processo.dias_parado = 0;
-        await persistirProcesso(deps, processo);
+        // Minuta gerada não muda o estado processual nem a prioridade.
+        atualizado.atualizado_em = hoje;
+        atualizado.ultima_atualizacao = hoje;
+        atualizado.dias_parado = 0;
+        persistencia = await persistirProcesso(deps, atualizado);
         console.log('[VIVO] Processo atualizado automaticamente após geração de peça:', processo_id);
       } catch (e) { console.warn('[VIVO] falha ao auto-atualizar processo após peça:', e?.message || e); }
     }
@@ -1279,6 +1187,7 @@ Redija a peça completa agora.`;
       tipo_peca: briefing.tipo_peca,
       modelo,
       tem_perfil_juiz: !!perfilJuiz,
+      persistencia,
       briefing
     }, deps.CORS);
 
@@ -1295,92 +1204,14 @@ Redija a peça completa agora.`;
 
 async function handlerJuizConversar(req, res, body, deps) {
   try {
-    const { mensagem, historico, nome, tribunal, instancia } = body || {};
-    if (!mensagem) return jsonResponse(res, 400, { error: 'mensagem obrigatória' }, deps.CORS);
-
-    // Check cache primeiro se a conversa está começando e tem nome+tribunal
-    if ((!historico || historico.length === 0) && nome && tribunal && deps.sbGet) {
-      const juiz_id = `${tribunal.toUpperCase()}::${nome.toLowerCase().replace(/\s+/g, '_')}`;
-      try {
-        const cache = await deps.sbGet('perfis_juizes', { juiz_id });
-        if (cache && cache.length > 0) {
-          const c = cache[0];
-          const tsAt = c.atualizado_em ? new Date(c.atualizado_em).getTime() : 0;
-          const idade = (tsAt > 0 && !isNaN(tsAt)) ? (Date.now() - tsAt) / (1000 * 60 * 60 * 24) : Infinity;
-          if (idade < 90) {
-            return jsonResponse(res, 200, {
-              ok: true,
-              texto: `Já tenho um perfil de ${nome} em cache (${Math.floor(idade)}d atrás):\n\n${c.resumo}\n\nQuer que eu atualize a pesquisa ou continuamos com esse perfil?`,
-              cache_hit: true,
-              perfil_cache: c.perfil_json,
-              modelo: 'cache'
-            }, deps.CORS);
-          }
-        }
-      } catch (e) { /* segue */ }
-    }
-
-    const ctxInicial = nome
-      ? `\n\nALVO DA PESQUISA: ${nome}${tribunal ? ` — ${tribunal}` : ''}${instancia ? ` (${instancia})` : ''}`
-      : '';
-
-    const systemPrompt = `${PROMPT_PESQUISADOR_JUIZES}${ctxInicial}`;
-
-    const messages = sanitizarHistorico(historico);
-    messages.push({ role: 'user', content: mensagem });
-    garantirPrimeiroUser(messages);
-
-    const modelo = deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR;
-    const payload = {
-      model: modelo,
-      max_tokens: 4096,
-      system: systemPrompt,
-      tools: [
-        { type: 'web_search_20250305' },   // CORRIGIDO: 'name' removido — não deve existir em built-in tools
-        TOOL_CONSOLIDAR_PERFIL,
-        TOOL_BUSCAR_DOCUMENTOS
-      ],
-      messages
-    };
-
-    const { texto, toolsUsadas, buscasWeb, stop_reason } = await resolverToolUse(deps, payload);
-
-    const consolidacao = toolsUsadas.find(t => t.name === 'consolidar_perfil');
-
-    // Se consolidou, salva no cache
-    if (consolidacao && consolidacao.input && consolidacao.input.material_suficiente && deps.sbUpsert) {
-      const perfilJson = consolidacao.input;
-      const trib = perfilJson.tribunal || tribunal || '';
-      const nm = perfilJson.nome || nome;
-      if (nm) {
-        const juiz_id = `${trib.toUpperCase()}::${nm.toLowerCase().replace(/\s+/g, '_')}`;
-        try {
-          await deps.sbUpsert('perfis_juizes', {
-            juiz_id, nome: nm,
-            tribunal: trib,
-            instancia: instancia || '',
-            perfil_json: perfilJson,
-            resumo: perfilJson.resumo || '',
-            atualizado_em: new Date().toISOString()
-          }, 'juiz_id');
-        } catch (e) { console.warn('[VIVO] cache perfil save falhou:', e.message); }
-      }
-    }
-
-    return jsonResponse(res, 200, {
-      ok: true,
-      texto,
-      perfil_consolidado: consolidacao ? consolidacao.input : null,
-      buscas_feitas: (buscasWeb || []).length,   // CORRIGIDO: web_search é server_tool_use, não tool_use
-      modelo,
-      stop_reason,
-      cache_hit: false
-    }, deps.CORS);
-
-  } catch (e) {
-    console.error('[VIVO] juiz/conversar erro:', e.message);
-    return jsonResponse(res, 500, { error: e.message }, deps.CORS);
-  }
+    if(!body?.nome || !body?.tribunal) return jsonResponse(res,400,{error:'Informe nome completo e tribunal.'},deps.CORS);
+    if(typeof deps.analisarPerfilJuiz!=='function') return jsonResponse(res,503,{error:'Pesquisa decisória indisponível neste servidor.'},deps.CORS);
+    const perfil=await deps.analisarPerfilJuiz(body.nome,body.tribunal,body.processo_id||null,body.decisoes||null,{});
+    const texto=perfil.achados.length
+      ? perfil.achados.map(a=>`${a.observacao} [${a.fonte_id}]\nTrecho: ${a.trecho}\nHipótese a revisar: ${a.implicacao}`).join('\n\n')
+      : 'Não há material suficiente para caracterizar o padrão decisório. Forneça o texto de decisões assinadas pelo magistrado.';
+    return jsonResponse(res,200,{ok:true,texto:texto+'\n\n'+perfil.advertencia,perfil_consolidado:perfil,cache_hit:false},deps.CORS);
+  } catch(e) { return jsonResponse(res,500,{error:erroSeguro(e.message)},deps.CORS); }
 }
 
 // =====================================================================
@@ -1663,7 +1494,9 @@ async function tratarRota(req, res, url, deps) {
         jurisprudencia:{ modelo: deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR, endpoint: '/api/vivo/juris/conversar' }
       },
       processos_em_memoria: (deps.processos || []).length,
-      supabase_conectado: typeof deps.sbGet === 'function',
+      supabase_conectado: null,
+      supabase_adapter_disponivel: typeof deps.sbGet === 'function',
+      integracoes_verificadas: false,
       anthropic_key_presente: !!deps.ANTHROPIC_KEY
     }, CORS);
     return true;
@@ -1693,6 +1526,12 @@ async function tratarRota(req, res, url, deps) {
   catch (e) { jsonResponse(res, 400, { error: 'body inválido: ' + e.message }, CORS); return true; }
 
   const depsPlus = Object.assign({}, deps, { CORS });
+
+  const escritas = ['/api/vivo/aplicar','/api/vivo/peca/gerar','/api/vivo/gerar_peca'];
+  if(escritas.includes(url) && deps.perfil !== 'admin') {
+    jsonResponse(res, 403, {error:'Sem permissao para alterar processos ou gerar pecas.'}, CORS);
+    return true;
+  }
 
   // Gestor
   if (url === '/api/vivo/conversar')        { await handlerConversar(req, res, body, depsPlus);      return true; }
