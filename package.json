@@ -3,17 +3,18 @@
   "version": "1.0.0",
   "main": "bot.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node bot.js",
-    "dev": "node --watch bot.js"
+    "dev": "node --watch bot.js",
+    "check": "node scripts/check-syntax.js",
+    "status:integracoes": "node scripts/check-integrations.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "@supabase/supabase-js": "^2.45.0",
-    "@anthropic-ai/sdk": "^0.30.0",
-    "node-telegram-bot-api": "^0.66.0",
     "jszip": "^3.10.1",
-    "docx": "^8.5.0",
-    "nodemailer": "^6.9.0",
+    "nodemailer": "10.0.1",
     "pdf-lib": "^1.17.1"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
