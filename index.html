@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<script src="lib/workflow.js"></script>
+<script src="office-ui.js"></script>
+<link rel="stylesheet" href="office-ui.css">
   <!-- LEX v2 - Build 2026-04-22 21:20 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -679,6 +682,23 @@ table{max-width:100%;}
   overflow-wrap:break-word;
   word-break:break-word;
 }
+
+/* Central LEX: controles legíveis e chat contido no celular. */
+.lex-central{max-width:1040px;margin:auto;font-size:16px;line-height:1.5}
+.lex-central h2{font-size:24px;margin:0 0 8px}.lex-central p{color:var(--text2)}
+.lex-sector-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+.lex-sector{background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:20px;min-width:0}
+.lex-sector h3{font-size:18px;margin:0 0 8px}.lex-sector p{font-size:14px}
+.lex-sector button,.lex-central>button{min-height:44px;font-size:14px!important}
+.lex-status{font-size:13px;color:var(--text2);border-left:3px solid var(--gold);padding-left:10px;margin:12px 0}
+#chat-panel{box-sizing:border-box;max-width:100vw}#chat-in{min-width:0}
+#chat-msgs .msg{overflow-wrap:anywhere}.chat-foot{min-width:0;flex-wrap:wrap}
+@media(max-width:700px){
+  #chat-panel{left:0!important;right:0!important;width:100%!important;top:0!important;height:100dvh!important;z-index:1100;padding-bottom:env(safe-area-inset-bottom)}
+  #chat-in{flex:1 0 100%;width:100%;font-size:16px!important;box-sizing:border-box}
+  #chat-msgs .msg{font-size:14px!important}.chat-foot button{min-height:44px;min-width:44px}
+  .chat-foot .chat-send-btn{margin-left:auto}.chat-close{min-width:44px;min-height:44px}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -740,7 +760,7 @@ table{max-width:100%;}
         <button onclick="resetSenhasPadrao()" style="background:none;border:none;color:#555878;font-size:11px;cursor:pointer;font-family:Arial,Helvetica,sans-serif;">Esqueceu a senha? Clique aqui</button>
       </div>
     </div>
-    <div style="text-align:center;margin-top:16px;font-size:10px;color:#555878;">Lex v14.0 · Agente Autônomo · Uso exclusivo do escritório</div>
+    <div style="text-align:center;margin-top:16px;font-size:10px;color:#555878;">LEX · Escritório virtual</div>
   </div>
 </div>
 
@@ -748,10 +768,11 @@ table{max-width:100%;}
   <div class="logo-area">
     <div class="logo-eyebrow">Sistema Jurídico</div>
     <div class="logo-name">Lex</div>
-    <div class="logo-sub">Gestão Processual · v14</div>
+    <div class="logo-sub">Escritório virtual · 2026.09</div>
   </div>
   <nav>
-    <div class="nav-section">Principal</div>
+    <div class="nav-section">Escritório</div>
+    <button class="nav-btn" onclick="ir('trabalho',this)"><span class="nav-icon">◈</span> Hoje / Trabalho</button>
     <button class="nav-btn active" onclick="ir('painel',this)"><span class="nav-icon">◈</span> Painel Geral</button>
     <button class="nav-btn" onclick="ir('processos',this)"><span class="nav-icon">⊞</span> Processos</button>
     <button class="nav-btn" onclick="ir('autuacao',this)"><span class="nav-icon">🗂</span> Autuação</button>
@@ -762,17 +783,17 @@ table{max-width:100%;}
     <div class="nav-section">Inteligência</div>
     <button class="nav-btn" onclick="ir('juris',this)"><span class="nav-icon">⚖</span> Jurisprudência</button>
     <button class="nav-btn" onclick="ir('peticao',this)"><span class="nav-icon">✎</span> Gerador de Peça</button>
-    <button class="nav-btn" onclick="ir('juizes',this)"><span class="nav-icon">◉</span> Perfil de Juízes</button>
-    <div class="nav-section">Sistema</div>
+    <button class="nav-btn" onclick="ir('juizes',this)"><span class="nav-icon">◉</span> Padrão decisório</button>
+    <div class="nav-section">Configuração</div>
+    <button class="nav-btn" onclick="ir('escritorio',this)"><span class="nav-icon">⌂</span> Meu escritório</button>
     <button class="nav-btn" onclick="abrirCentroDados()"><span class="nav-icon">💾</span> Centro de Dados</button>
     <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>
     <input type="file" id="import-file" accept=".json,.zip" style="display:none" onchange="importarBackup(this)">
     <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram Bot</button>
     <button class="nav-btn" onclick="ir('mensagens',this)"><span class="nav-icon">💬</span> Central Mensagens</button>
     <button class="nav-btn" onclick="ir('agenda',this)"><span class="nav-icon">📇</span> Agenda / Contatos</button>
-    <button class="nav-btn" onclick="ir('preparacao',this)"><span class="nav-icon">📋</span> Em Preparação</button>
     <button class="nav-btn" onclick="ir('pericia',this)"><span class="nav-icon">🔬</span> Setor de Perícia</button>
-    <button class="nav-btn" onclick="ir('agentes',this)"><span class="nav-icon">🤖</span> Agentes IA</button>
+    <button class="nav-btn" onclick="ir('agentes',this)"><span class="nav-icon">🤖</span> Central de agentes</button>
     <button class="nav-btn" id="btn-pje" onclick="ir('pje',this)"><span class="nav-icon">🔗</span> PJe <span id="_pjeDot" style="font-size:9px;color:var(--red-soft)">○</span></button>
   </nav>
   <div class="sidebar-bottom">
@@ -837,7 +858,7 @@ table{max-width:100%;}
 <!-- MOBILE BOTTOM NAV -->
 <div id="mobile-nav">
   <div class="mob-nav-items">
-    <button class="mob-nav-btn active" id="mob-painel" onclick="ir('painel',null);mobActive('mob-painel')"><span>◈</span>Painel</button>
+    <button class="mob-nav-btn active" id="mob-painel" onclick="ir('trabalho',null);mobActive('mob-painel')"><span>◈</span>Hoje</button>
     <button class="mob-nav-btn" id="mob-processos" onclick="ir('processos',null);mobActive('mob-processos')"><span>⊞</span>Procs</button>
     <button class="mob-nav-btn" id="mob-autuacao" onclick="ir('autuacao',null);mobActive('mob-autuacao')"><span>🗂</span>Autuação</button>
     <button class="mob-nav-btn" id="mob-agenda" onclick="ir('agenda',null);mobActive('mob-agenda')"><span>📇</span>Contatos</button>
@@ -1337,7 +1358,9 @@ table{max-width:100%;}
 
 <script>
 // ═══════════════ CONSTANTES ═══════════════
-const SK='lex_proc_v1', AK='cam_api_k', JK='cam_juizes_v1', CK='cam_chat_hist', USR_KEY='cam_usuario';
+const SK='lex_proc_v1', JK='cam_juizes_v1', CK='cam_chat_hist', USR_KEY='cam_usuario';
+// Remove a antiga credencial local; o servidor ja e o caminho de autenticacao da IA.
+try { localStorage.removeItem('cam_api_k'); } catch (_) {}
 const EK='lex_escritorio_v1'; // chave configuração do escritório
 
 const WA_CFG_KEY = 'lex_whatsapp_cfg_v1';
@@ -1429,6 +1452,7 @@ async function _tentarReloginSilencioso() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ perfil: sess.perfil, senha: senhaHash })
     });
+    if(!r.ok) throw new Error('Servidor não confirmou a gravação.');
     if(r.ok) {
       const data = await r.json();
       if(data.token) {
@@ -1481,7 +1505,6 @@ async function sincronizarComBot() {
   _syncEmAndamento = true;
   try {
     const ps = getProcs();
-    if(!ps.length) return;
     const r = await fetchComTimeout(SERVIDOR+'/api/sincronizar', {
       method:'POST',
       headers:{'Content-Type':'application/json', 'X-Aparelho-Id':getAparelhoId()},
@@ -1490,6 +1513,7 @@ async function sincronizarComBot() {
     if(r.status === 409) {
       // Servidor mais novo → reconcilia: aceita versão do servidor e descarta local
       const data = await r.json();
+      localStorage.setItem('lex_sync_conflict',JSON.stringify({processos:ps,versao:getVersaoLocal(),criado_em:new Date().toISOString()}));
       console.warn('Lex: cópia local desatualizada — recebendo versão do servidor');
       if(data.processos) {
         // Salva sem disparar nova sync (evita loop)
@@ -1500,7 +1524,7 @@ async function sincronizarComBot() {
         if(typeof renderProcessos==='function') { try{renderProcessos();}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); } }
         const _syncHora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         atualizarUltimaSync(_syncHora);
-        toast('🔄 Atualizado (modificado em '+(data.ultimo_aparelho||'outro aparelho')+')','ok');
+        toast('Outra alteração foi salva. Sua edição está preservada em Hoje / Trabalho para conferir.','alert');
       }
       return;
     }
@@ -1512,7 +1536,7 @@ async function sincronizarComBot() {
       atualizarUltimaSync(_h);
       if(el) { el.textContent='✓ Sincronizado'; el.style.color='var(--green)'; setTimeout(()=>el.textContent='',3000); }
     }
-  } catch(e) { console.warn("Lex: servidor offline ou sem conexão"); }
+  } catch(e) { console.warn("Lex: gravação pendente"); toast("Alteração neste aparelho ainda não foi confirmada no servidor.","alert"); }
   finally { _syncEmAndamento = false; }
 }
 
@@ -2002,7 +2026,7 @@ var _TOUR_STEPS = [
 
   { sel: '.nav-btn[onclick*="juizes"]',
     title: '◉ Perfil de Magistrados',
-    desc: 'Cadastre juizes e desembargadores. O sistema analisa o padrao decisorio: conservador ou inovador, formalista ou flexivel, receptividade por area do direito. Estrategia ouro para peticionar direcionado.' },
+    desc: 'Cadastre o julgador e associe decisões verificadas. O LEX identifica fundamentos, provas exigidas, precedentes citados e limites da amostra, sempre com fonte.' },
 
   { sel: '.nav-btn[onclick*="preparacao"]',
     title: '📋 Em Preparacao',
@@ -2331,6 +2355,12 @@ function varreduraAcao(idx){
   }
 }
 
+function textoVarredura(html) {
+  const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  parsed.querySelectorAll('script,style').forEach(el => el.remove());
+  return parsed.body.textContent || '';
+}
+
 function varreduraListarTudo(){
   document.getElementById('varredura-overlay')?.remove();
   const pendencias = window._varreduraPendencias || [];
@@ -2338,7 +2368,7 @@ function varreduraListarTudo(){
   
   abrirChat(null);
   const resumo = '🤖 VARREDURA COMPLETA DO LEX\n\n' +
-    pendencias.map((p,i)=>(i+1)+'. ' + p.icone + ' ' + p.titulo + '\n   ' + p.detalhe).join('\n\n') +
+    pendencias.map((p,i)=>(i+1)+'. ' + p.icone + ' ' + p.titulo + '\n   ' + textoVarredura(p.detalhe)).join('\n\n') +
     '\n\nQual destes itens quer resolver primeiro? Me diga e eu te ajudo.';
   addMsgEl('ai', resumo);
 }
@@ -2428,36 +2458,7 @@ async function chamarIA(messages, system, maxTokens) {
     console.warn('[chat] servidor falhou:', e?.message || e);
   }
 
-  // Tentativa 2: chave API local (configurada pelo usuário)
-  const key = getKey();
-  if(key){
-    try {
-      const res = await fetchComTimeout('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          'x-api-key': key,
-          'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-direct-browser-access':'true'
-        },
-        body: JSON.stringify({
-          model:'claude-opus-4-20250514',
-          max_tokens: maxTokens||1500,
-          messages, system
-        })
-      }, 30000);
-      const d = await res.json();
-      if(d.error) throw new Error(d.error.message);
-      const _respLocal = d.content?.[0]?.text || '';
-      if(_respLocal) _chamarIA_cacheSet(_cacheKey, _respLocal);
-      return _respLocal;
-    } catch(e) {
-      const motivoSrv = ultimoErroServidor ? (ultimoErroServidor.message||ultimoErroServidor) : 'indisponivel';
-      return '⚠️ Erro de conexao: '+(e.message||'verifique sua chave API')+' | servidor: '+motivoSrv;
-    }
-  }
-
-  // Sem servidor e sem chave: da diagnostico real em vez de "offline" generico
+  // Todas as chamadas de IA passam pelo servidor autenticado.
   const motivoSrv = ultimoErroServidor ? (ultimoErroServidor.message || String(ultimoErroServidor)) : 'sem resposta';
   if(String(motivoSrv).includes('401') || String(motivoSrv).toLowerCase().includes('autentic')) {
     return '⚠️ Sessao expirada. Faca login novamente (menu Sair > entrar). Detalhe: '+motivoSrv;
@@ -2465,9 +2466,9 @@ async function chamarIA(messages, system, maxTokens) {
   if(String(motivoSrv).toLowerCase().includes('anthropic_key')) {
     return '⚠️ Servidor sem ANTHROPIC_KEY configurada. Avise o admin. Detalhe: '+motivoSrv;
   }
-  return '⚠️ Assessor IA indisponivel. Servidor respondeu: "'+motivoSrv+'". Se o problema persistir, configure a chave API local em Menu > Gestao de Senhas > Chave API Anthropic.';
+  return '⚠️ Assessor IA indisponivel. Servidor respondeu: "'+motivoSrv+'". Tente novamente ou consulte o administrador.';
 }
-// Chave API deve ser configurada pelo usuário no sistema — nunca embutida no código
+// Credenciais de IA configuradas somente no servidor.
 const COR={'Cível':'#1ab8d8','Criminal':'#e84545','Ambiental':'#2ec97e','Trabalhista':'#4f6ef7','Tributário':'#9b6ef7','Tributário Municipal':'#9b6ef7','Execução Federal':'#f0832a','Previdenciário':'#c9a84c','Família':'#e879a8'};
 const SC={URGENTE:'#e84545',ATIVO:'#1a73e8',RECURSAL:'#1ab8d8',AGUARDANDO:'#f0832a',EM_PREP:'#9b6ef7',MONITORAR:'#6b7280',VENCIDO:'#e84545',CONCLUIDO:'#2ec97e',GANHO:'#2ec97e',PERDIDO:'#e84545',ARQUIVADO:'#555878',DISTRIBUIDO:'#7c3aed',ENTREGUE:'#059669'};
 
@@ -2515,28 +2516,7 @@ function alertarPreparacoes(){
 }
 
 
-const DEFAULT=[
-  // ── GRUPO VAREJÃO ──
-  {id:101,grupo:"Varejão",nome:"Varejão — Obrigação de Fazer",partes:"Wanderson vs. Varejão das Madeiras / Eric",area:"Cível",tribunal:"2ª Vara Cível — Unaí/MG",numero:"5009280-55.2024.8.13.0704",status:"URGENTE",prazo:"",prazoReal:"",valor:"",descricao:"Processo raiz — 1ª instância Unaí. CDC aplicável. Prova emprestada central. Perícia em andamento (Valdenice — grafotécnica; engenharia/florestal). Estratégia: usar áudios de confissão como prova emprestada nos recursos.",frentes:["Instrução probatória em curso","Pedido de suspensão dos conexos (art. 313 V CPC)","Perícia grafotécnica Valdenice"],provas:["MP3 4 — Eric (confissão)","MP3 5 — Neilton","Áudio 3 — Andoaldo","Laudo Valdenice (grafotécnica)","Ata ID 10622674565","Ata audiência 04/02/2026"],andamentos:[{data:"20/03/2026",txt:"Petição de juntada de documentos protocolada — áudios vinculados aos embargos de declaração"},{data:"04/02/2026",txt:"Audiência de instrução realizada — ata lavrada com fatos supervenientes relevantes"}],arquivos:[]},
-  {id:102,grupo:"Varejão",nome:"Varejão — Monitória + Execução",partes:"Varejão vs. Wanderson",area:"Cível",tribunal:"2ª Vara Cível — Unaí/MG",numero:"5006941-xx.2024.8.13.0704 / 5007420-xx.2024.8.13.0704",status:"URGENTE",prazo:"",prazoReal:"",valor:"409000",descricao:"Monitória dos cheques + Execução de R$409K. Não suspensos automaticamente. Prioridade: embargos de declaração para interromper prazos + petição de apensamento requerendo conexão com processo principal.",frentes:["Embargos de declaração (urgente)","Petição de apensamento/conexão","Impugnação à execução"],provas:["Cheques vinculados à operação fraudulenta","Prova da nulidade do negócio (obj. ilícito — art. 166 II CC)"],andamentos:[{data:"20/03/2026",txt:"Processos não suspensos automaticamente — aguardando decisão sobre conexão"}],arquivos:[]},
-  {id:103,grupo:"Varejão",nome:"Varejão — Recursos TJMG",partes:"Wanderson vs. Varejão / Eric",area:"Cível",tribunal:"TJMG — 21ª Câmara Cível",numero:"AI 4947559-46.2025.8.13.0000 / AgInt 1.0000.25.406740-8/001 / Ap 1.0000.25.500967-2/001",status:"URGENTE",prazo:"",prazoReal:"",valor:"",descricao:"Três recursos simultâneos na mesma câmara. Agravo de Instrumento ativo. Agravo Interno pendente. Apelação Cível — julgamento marcado 18/03/2026. Estratégia: fatos supervenientes da audiência 04/02 já juntados. Se não suspenso: Agravo Interno + embargos.",frentes:["Agravo de Instrumento (4947559) — ativo","Agravo Interno (406740) — pendente","Apelação Cível (500967) — pós-julgamento 18/03"],provas:["Petição fato superveniente protocolada","Ata audiência 04/02/2026","Áudios de confissão"],andamentos:[{data:"20/03/2026",txt:"Petição de fato superveniente protocolada nos agravos — julgamento apelação era 18/03/2026"},{data:"18/03/2026",txt:"Data do julgamento da apelação — verificar resultado no DJEN"}],arquivos:[]},
-  {id:104,grupo:"Varejão",nome:"Varejão — Representação Criminal MP",partes:"Wanderson (vítima) vs. Eduardo / Eric / Neilton / Andoaldo",area:"Criminal",tribunal:"MP / Delegacia — Unaí/MG",numero:"Em apuração",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"Representação ao MP por crime ambiental (art. 46 Lei 9.605/98 — >100 caminhões sem DOF), sonegação fiscal (art. 1º II Lei 8.137/90 — notas à bandeira), estelionato (art. 171 CP — madeira 2ª por 1ª) e falsidade documental (art. 298 CP — 18 ordens de serviço com divergência gráfica).",frentes:["Crime ambiental — ausência DOF","Sonegação fiscal — notas à bandeira","Estelionato — produto diverso","Falsidade documental — perícia em andamento"],provas:["MP3 4 — Eric","MP3 5 — Neilton","Áudio 3 — Andoaldo","Laudo grafotécnico Valdenice","Estimativa multa IBAMA R$1.185.000"],andamentos:[{data:"20/03/2026",txt:"Representação ao MP protocolada com base probatória completa"}],arquivos:[]},
-  // ── GRUPO COFCO ──
-  {id:201,grupo:"COFCO",nome:"COFCO — Execução Principal",partes:"COFCO vs. Wanderson",area:"Execução Federal",tribunal:"TJMG — Unaí/MG",numero:"5004158-61.2024.8.13.0704",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"Execução principal. Penhora matrícula 53.648 (pequena propriedade rural — impenhorável Lei 8.629/93). Impugnação protocolada 02/02/2026 com REsp 2.080.023/MG e REsp 1.284.708/PR. Oferta de substituição Fazenda Babaçu. Alta chance de desconstituir penhora da pequena propriedade.",frentes:["Impugnação à penhora mat. 53.648 (protocolada)","Oferta substituição Fazenda Babaçu","Petição reforço oferta Babaçu (pendente)"],provas:["CAR — pequena propriedade rural","Lei 8.629/93 — impenhorabilidade","REsp 2.080.023/MG","REsp 1.284.708/PR","Matrícula Fazenda Babaçu"],andamentos:[{data:"02/02/2026",txt:"Impugnação à penhora da matrícula 53.648 protocolada — pequena propriedade rural impenhorável"},{data:"13/01/2026",txt:"Intimação da penhora — prazo de 15 dias para impugnar"}],arquivos:[]},
-  {id:202,grupo:"COFCO",nome:"COFCO — Agravo (Fazenda Santa Luzia)",partes:"COFCO vs. Wanderson",area:"Cível",tribunal:"TJMG / TJSP",numero:"A confirmar — vinculado a 5004158-61.2024.8.13.0704",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"COFCO quer 100% da Fazenda Santa Luzia (mat. 7572, 640ha, avaliada R$9,75M). Juiz limitou a 50% pela meação. COFCO agravou. Contrarrazões: meação protegida + frustração da safra como evento superveniente. Argumento de pequena propriedade NÃO se aplica aqui (excede 4 módulos fiscais).",frentes:["Contrarrazões ao agravo da COFCO","Defesa da meação (50%)","Argumento frustração da safra"],provas:["Matrícula 7.572","Avaliação R$9,75M","Documentos frustração safra","Decisão limitando penhora a 50%"],andamentos:[{data:"20/03/2026",txt:"Contrarrazões ao agravo da COFCO — protocolar (prazo em aberto)"}],arquivos:[]},
-  // ── CEF ──
-  {id:301,grupo:"CEF",nome:"CEF — Execução vs. Kleuber",partes:"CEF vs. Kleuber Melchior de Souza",area:"Execução Federal",tribunal:"TRF-6",numero:"6002060-50.2025.4.06.3818 / Embargos 6002846-94.2025.4.06.3818",status:"URGENTE",prazo:"27/03/2026",prazoReal:"30/03/2026",valor:"",descricao:"Garantia oferecida: Fazenda Babaçu (Silves/AM, 2.997ha, ~R$17,4M, mat. 1.253). Prazo real 30/03/2026 para emenda dos embargos (Event 16). Dação em pagamento bloqueada — Portaria PGFN 6.757/2022 (disparidade de valores). Juíza Tania Zucchi de Moraes.",frentes:["Emenda dos embargos — Event 16 (URGENTE)","Garantia Fazenda Babaçu","Desbloqueio contas (art. 854 §3º CPC)"],provas:["Fazenda Babaçu — Matrícula 1.253","Avaliação ~R$17,4M","Portaria PGFN 6.757/2022"],andamentos:[{data:"15/03/2026",txt:"Petição de garantia com Fazenda Babaçu protocolada"},{data:"10/03/2026",txt:"Manifestação desbloqueio contas (art. 854 §3º CPC)"}],arquivos:[]},
-  {id:302,grupo:"CEF",nome:"CEF — Execução vs. Wanderson",partes:"CEF vs. Wanderson Farias de Camargos",area:"Execução Federal",tribunal:"TRF-6",numero:"A confirmar",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"CEF executando Wanderson — processo separado. Petições de justiça gratuita + comprovação hipossuficiência (extratos + sentença MS). Saldos irrisórios R$499,70 e R$7,85 comprovam hipossuficiência.",frentes:["Justiça gratuita","Agravo de Instrumento TRF-6"],provas:["Extratos bancários — saldos irrisórios","Sentença concessão MS","R$499,70 e R$7,85"],andamentos:[{data:"20/03/2026",txt:"Petições de gratuidade e hipossuficiência elaboradas — aguardar protocolo"}],arquivos:[]},
-  // ── DEMAIS ──
-  {id:401,grupo:"Trabalhista",nome:"Nathalia Evangelista",partes:"Nathalia (OAB/DF 73.111) vs. L.A. Consultoria / Wanderson",area:"Trabalhista",tribunal:"TRT-10 — Brasília/DF",numero:"0001692-35.2025.5.10.0008",status:"ATIVO",prazo:"",prazoReal:"",valor:"316498",descricao:"Reclamante é advogada. Pedido R$316.498,95. Contestação completa (22-25 páginas) elaborada: teses de prêmios por desempenho, ilegitimidade passiva, violação LGPD e prova emprestada de auditoria interna. Risco da prova ilícita: baixo. Vulnerabilidade: transição pagamentos variáveis 2021-2022.",frentes:["Contestação protocolada","Ações paralelas: OAB/ANPD/cível"],provas:["Recibos variáveis 2021-2022","Registros viagem Brasília/Bahia","Auditoria interna (prova emprestada)"],andamentos:[{data:"12/03/2026",txt:"Contestação definitiva protocolada — aguardar manifestação da reclamante e designação de audiência"}],arquivos:[]},
-  {id:402,grupo:"Tributário",nome:"SAEGUSSA — IRPJ/CSLL",partes:"SAEGUSSA vs. Receita Federal",area:"Tributário",tribunal:"DRJ / CARF",numero:"17227.724417/2025-76",status:"ATIVO",prazo:"",prazoReal:"",valor:"158000",descricao:"Débito IRPJ/CSLL ~R$158K. Probabilidade 70-75% DRJ, 65-70% CARF. Contrato honorários R$6K + 5% êxito.",frentes:["Impugnação","Ação Anulatória"],provas:["ECF corrigida","Contrato R$6K + 5%"],andamentos:[],arquivos:[]},
-  {id:403,grupo:"Tributário",nome:"ISSQN — Auto 036/2026",partes:"Camargos Advocacia vs. Município Unaí",area:"Tributário Municipal",tribunal:"Adm./TJMG",numero:"Auto 036/2026",status:"ATIVO",prazo:"",prazoReal:"",valor:"907000",descricao:"Autuação ~R$907K. ISS fixo (STJ Tema 1.323). 8 argumentos. Firma: sócio único + secretária — preenche todos os requisitos. Alta probabilidade de êxito.",frentes:["Impugnação Administrativa"],provas:["Sócio único + secretária","DL 406/68","Tema 1.323 STJ"],andamentos:[],arquivos:[]},
-  {id:404,grupo:"Família",nome:"Eliane Gonçalves",partes:"Eliane vs. Camargos (causa própria)",area:"Cível",tribunal:"TJMG / STJ",numero:"5010924-33.2024.8.13.0704",status:"RECURSAL",prazo:"",prazoReal:"",valor:"",descricao:"1ª instância perdida. Estratégia: enriquecimento sem causa (art. 884 CC) — excesso ~R$35K sobre valor locativo total. Viável no STJ sem reexame fático. Duas vulnerabilidades na AIJ: notificação 'desinteresse em compra' e aceitação do sinal R$100K.",frentes:["Apelação TJMG","REsp STJ"],provas:["Excesso ~R$35K locativo","Notificação desinteresse em compra","Aceitação sinal R$100K"],andamentos:[],arquivos:[]},
-  {id:405,grupo:"Tocantins",nome:"Kleuber — Execução Tocantins",partes:"Exequente vs. Kleuber Melchior de Souza",area:"Execução Federal",tribunal:"TJTO",numero:"A confirmar — TJTO",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"Execução no Tocantins. Embargos à execução + impugnação de penhora já elaborados. Monitoramento remoto. Aguardar intimação de leilão ou decisão do juiz. Complete o número clicando em Editar.",frentes:["Embargos à execução","Impugnação à penhora"],provas:["A definir — editar processo"],andamentos:[{data:"20/03/2026",txt:"Monitoramento remoto — aguardar intimação de leilão ou decisão"}],arquivos:[]},
-  {id:501,grupo:"INCRA",nome:"INCRA — Declaratória de Nulidade",partes:"Kleuber vs. INCRA / União",area:"Cível",tribunal:"TRF-6",numero:"1000620-78.2023.4.06.3817",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"Declaratória de nulidade de matrículas 25.833 e 27.036 (Unaí/MG — terra pública irregular). Petição inicial + tutela antecipada protocoladas. Réplica já protocolada. Alta chance de nulidade. Estratégico para blindar imóveis.",frentes:["Réplica protocolada","Aguardar manifestação INCRA","Perícia agrária pendente","Pedido apensamento — matrículas conexas"],provas:["Matrícula 25.833","Matrícula 27.036","Petição inicial + tutela antecipada","Réplica protocolada"],andamentos:[{data:"20/03/2026",txt:"Réplica protocolada — aguardando manifestação do INCRA e designação de perícia agrária"}],arquivos:[]},
-  {id:502,grupo:"Banco do Brasil",nome:"Banco do Brasil — Exceção de Pré-Executividade",partes:"BB vs. Kleuber / Wanderson",area:"Execução Federal",tribunal:"Justiça Federal — Brasília/DF",numero:"A confirmar",status:"ATIVO",prazo:"",prazoReal:"",valor:"",descricao:"Exceção de pré-executividade + documentos de quitação parcial. Foco em nulidade de título. Prazo: 15 dias da citação — verificar intimação recente. Complete o número clicando em Editar.",frentes:["Exceção de pré-executividade","Quitação parcial — documentação","Nulidade do título"],provas:["Documentos de quitação parcial","A confirmar — editar processo"],andamentos:[{data:"20/03/2026",txt:"Exceção de pré-executividade elaborada — verificar prazo da citação"}],arquivos:[]},
-  {id:203,grupo:"COFCO",nome:"COFCO — Cumprimento de Sentença (Honorários)",partes:"Souto Correa Advogados (COFCO) vs. Wanderson",area:"Cível",tribunal:"11ª Vara Cível — Foro Regional Santo Amaro/SP · TJSP",numero:"0020974-18.2024.8.26.0002",status:"URGENTE",prazo:"",prazoReal:"",valor:"",descricao:"Cumprimento de sentença de honorários sucumbenciais. Embargos à Execução de Wanderson foram julgados IMPROCEDENTES (21/10/2021). Apelação NEGADA com majoração dos honorários para 12% sobre valor atualizado da causa (contrato original R$933.000). Trânsito em julgado 16/02/2024. Cobrado pelo escritório Souto Correa (advogados da COFCO) diretamente, com fundamento no art. 23 Lei 8.906/94 e art. 85 §15 CPC. URGENTE: verificar penhora e prazo para impugnar.",frentes:["Cumprimento de sentença — honorários 12%","Impugnação ao cumprimento (verificar prazo)","Verificar valor atualizado e memória de cálculo"],provas:["Acórdão TJSP — negou provimento + majorou honorários","Trânsito em julgado 16/02/2024","Contrato original COFCO R$933.000","Memória de cálculo Souto Correa"],andamentos:[{data:"05/07/2024",txt:"Cumprimento de sentença protocolado pelo Souto Correa — honorários sucumbenciais 12% sobre valor atualizado"},{data:"16/02/2024",txt:"Trânsito em julgado certificado — título executivo formado"},{data:"21/10/2021",txt:"Sentença de 1ª grau: embargos à execução de Wanderson julgados IMPROCEDENTES"}],arquivos:[]}
-];
+const DEFAULT=[]; // Uma instalação nova começa sem dados de outro escritório.
 
 // ═══ TOAST ═══
 // Banner do Motor Proativo do Lex — REMOVIDO (no-op).
@@ -3008,6 +2988,7 @@ async function sincronizarPjeAgora() {
     }, 30000);
     if (!r.ok) throw new Error('Servidor retornou ' + r.status);
     const data = await r.json();
+    if(data.ok !== true) throw new Error('Consulta incompleta: '+(data.falhas||'algumas')+' falha(s). Os dados anteriores foram preservados.');
     const antigos = getPjeProcessos();
     const novos = data.processos || [];
     // Detecta movimentacoes novas
@@ -3020,7 +3001,7 @@ async function sincronizarPjeAgora() {
     setPjeProcessos(novos);
     const agora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     localStorage.setItem(_PJE_LAST_KEY, agora);
-    if (statusEl) { statusEl.textContent = 'Sincronizado ' + agora + ' — ' + novos.length + ' proc.'; statusEl.style.color = 'var(--green)'; }
+    if (statusEl) { statusEl.textContent = 'Consulta pública ' + agora + ' — ' + novos.length + ' processos já cadastrados. Não importa o acervo PJe.'; statusEl.style.color = 'var(--green)'; }
     renderPjeProcessosList();
   } catch(e) {
     if (statusEl) { statusEl.textContent = 'Falha: ' + e.message; statusEl.style.color = 'var(--red)'; }
@@ -3032,7 +3013,7 @@ function renderPjeProcessosList() {
   if (!cont) return;
   const ps = getPjeProcessos();
   if (!ps.length) {
-    cont.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:12px 0">Nenhum processo importado. Clique em Sincronizar.</div>';
+    cont.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:12px 0">Nenhum processo monitorado nesta consulta. A importação do acervo autenticado ainda está pendente.</div>';
     return;
   }
   cont.innerHTML = ps.map(function(p) {
@@ -3095,7 +3076,7 @@ function ativarApp(perfil){
   try{document.getElementById('perfil-label').textContent=PERFIS[perfil]?.label||_perms.label||perfil;}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   iniciarPollingComandos();
   try{atualizarUrgentes();}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
-  try{renderPainel();}catch(e){document.getElementById('content').innerHTML='<div style="padding:20px">Sistema carregado.</div>';}
+  try{ir(perfil==='admin'?'trabalho':'painel',null);}catch(e){document.getElementById('content').textContent='Não foi possível abrir a central. Recarregue a página.';}
   try{setTimeout(verificarNotificacoes,800);}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   setTimeout(iniciarTgPolling,1500);
   setTimeout(verificarBackupAuto,800);
@@ -3208,7 +3189,6 @@ function _exportarSemZip() {
 function renderGestaoSenhas(){
   if(!podeConfig()){document.getElementById('content').innerHTML='<div style="font-size:13px;color:var(--red)">Acesso restrito ao Administrador.</div>';return;}
   const senhas=getSenhas();
-  const chaveAtual=getKey()||'';
   const esc=getEscritorio();
   const info={admin:'Administrador',secretaria:'Secretária'};
   document.getElementById('content').innerHTML=`
@@ -3233,19 +3213,6 @@ function renderGestaoSenhas(){
       </div>
       <button onclick="salvarEscritorio()" class="btn-primary" style="font-size:12px;padding:9px 18px;">💾 Salvar configurações</button>
       ${esc.configurado?'<span style="margin-left:12px;font-size:11px;color:var(--green)">✓ Configurado</span>':'<span style="margin-left:12px;font-size:11px;color:var(--orange)">⚠ Não configurado — configure para personalizar documentos</span>'}
-    </div>
-
-    <!-- CHAVE API -->
-    <div style="background:var(--surface);border:1px solid color-mix(in srgb, var(--accent) 27%, transparent);border-radius:14px;padding:20px 22px;margin-bottom:20px;">
-      <div style="font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:14px;">🤖 CHAVE API ANTHROPIC</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Necessária como fallback local quando o servidor estiver offline.</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input id="api-key-input" type="password" class="fi" style="flex:1;min-width:140px;font-family:monospace;font-size:12px;" placeholder="sk-ant-api03-..." value="${chaveAtual}">
-        <button onclick="toggleVerApiKey()" class="btn-outline" style="font-size:12px;padding:8px 14px;flex-shrink:0;">👁 Ver</button>
-        <button onclick="salvarApiKey()" class="btn-primary" style="font-size:12px;padding:9px 18px;flex-shrink:0;">💾 Salvar chave</button>
-      </div>
-      <div id="api-key-status" style="margin-top:8px;font-size:12px;"></div>
-      ${chaveAtual?'<div style="margin-top:8px;font-size:11px;color:var(--green);">✓ Chave configurada</div>':'<div style="margin-top:8px;font-size:11px;color:var(--orange);">⚠ Sem chave local — usando servidor</div>'}
     </div>
 
     <!-- GESTÃO FINANCEIRA / RECARGA API -->
@@ -3445,7 +3412,7 @@ function renderGestaoSenhas(){
         <div>🤖 <strong>Modo Autônomo</strong> — salva processos/clientes diretamente do PDF sem pedir confirmação no chat</div>
         <div>📱 <strong>Webhook WhatsApp</strong> — receptor nativo para Evolution API via <code>window.receberWebhookWhatsApp(payload)</code></div>
         <div>🧠 <strong>processamentoAutonomo()</strong> — núcleo de agência: classifica documento e roteia para módulo correto</div>
-        <div>🔄 <strong>Modelo atualizado</strong> — agora usa claude-opus-4-20250514 (Opus 4 — máxima inteligência)</div>
+        <div>🔄 <strong>Modelo atualizado</strong> — seleção centralizada no servidor</div>
         <div>🛡 <strong>Anti-duplicidade CNJ reforçada</strong> — normalização <code>.replace(/[\s.\-\/]/g,'')</code> confirmada em todas as rotas</div>
         <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">← Inclui tudo do v13: busca universal · ciclo inteligente · sugestão IA · saúde do processo · processos conexos</div>
       </div>
@@ -3716,21 +3683,6 @@ function verNoPje(id){
   window.open(link, '_blank');
 }
 
-function toggleVerApiKey(){
-  const inp=document.getElementById('api-key-input');
-  if(!inp)return;
-  inp.type=inp.type==='password'?'text':'password';
-}
-function salvarApiKey(){
-  const k=document.getElementById('api-key-input')?.value?.trim();
-  const st=document.getElementById('api-key-status');
-  if(!k){st.innerHTML='<span style="color:var(--red)">Cole a chave API primeiro.</span>';return;}
-  if(!k.startsWith('sk-ant')){st.innerHTML='<span style="color:var(--orange)">⚠ Chave inválida — deve começar com sk-ant...</span>';return;}
-  setKey(k);
-  st.innerHTML='<span style="color:var(--green)">✓ Chave salva! IA ativada em todo o sistema.</span>';
-  setTimeout(()=>renderGestaoSenhas(),1500);
-}
-
 function toggleAutonomoMode(){
   window.autonomoMode = !window.autonomoMode;
   localStorage.setItem('lex_autonomo_mode', window.autonomoMode ? '1' : '0');
@@ -3792,12 +3744,6 @@ function saveProcs(d){
   clearTimeout(window._syncTimer);
   window._syncTimer=setTimeout(sincronizarComBot,800);
 }
-function getKey(){
-  const stored=localStorage.getItem(AK);
-  if(stored) return stored;
-  return null; // Configure sua chave API no sistema
-}
-function setKey(k){localStorage.setItem(AK,k);}
 function getChatHist(id){try{const h=JSON.parse(localStorage.getItem(CK)||'{}');return h[id]||[];}catch(e){return[];}}
 function saveChatHist(id,msgs){try{const h=JSON.parse(localStorage.getItem(CK)||'{}');h[id]=msgs.slice(-30);localStorage.setItem(CK,JSON.stringify(h));}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }}
 if(!localStorage.getItem(SK)) saveProcs(DEFAULT);
@@ -3810,7 +3756,7 @@ function calcAjustado(s){const dt=parsePrazo(s);if(!dt)return{prazo:'',prazoReal
 // ═══════════════════════════════════════════════════════════════════════
 // CICLO DE STATUS — fonte ÚNICA de verdade para mudanças de status
 // Regra CEO (ordem de prioridade):
-//   evento='andamento'     → ATIVO (exceto CONCLUIDO/ENTREGUE/ARQUIVADO/EM_PREP), zera dias_parado, limpa prazo <=5d
+//   evento='andamento'     → ATIVO (exceto CONCLUIDO/ENTREGUE/ARQUIVADO/EM_PREP), zera dias_parado, preserva prazo
 //   evento='parado_5d'     → URGENTE (só se status atual = ATIVO)
 //   evento='prazo_critico' → URGENTE (ATIVO ou AGUARDANDO)
 //   evento='distribuir'    → DISTRIBUIDO
@@ -3838,10 +3784,7 @@ function cicloStatus(procId, evento, opts){
       p.ultima_atualizacao = hoje;
       p.dias_parado = 0;
       p.diasParado = 0;
-      if(p.prazo){
-        const dRest = diasRestantes(p.prazo);
-        if(dRest !== null && dRest <= 5){ p.prazo = ''; p.prazoReal = ''; }
-      }
+      // Novo andamento nao comprova o cumprimento de um prazo.
       break;
     case 'parado_5d':
       if(stAtual === 'ATIVO') p.status = 'URGENTE';
@@ -4134,9 +4077,9 @@ function ir(p,btn){
   pag=p; procAtivo=null; fecharSidebar(); esconderBackBar();
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  const t={painel:'Painel Geral',processos:'Processos',autuacao:'Autuação',processos_admin:'Processo Administrativo',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens',agenda:'Agenda / Contatos',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe',pericia:'Setor de Perícia'};
+  const t={trabalho:'Hoje / Trabalho',escritorio:'Meu escritório',painel:'Painel Geral',processos:'Processos',autuacao:'Autuação',processos_admin:'Processo Administrativo',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens',agenda:'Agenda / Contatos',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe',pericia:'Setor de Perícia'};
   document.getElementById('page-title').textContent=t[p]||p;
-  ({painel:renderPainel,processos:renderProcessos,autuacao:renderAutuacao,processos_admin:renderProcessosAdministrativos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens,agenda:renderAgenda,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderPje,pericia:renderPericia})[p]?.();
+  ({trabalho:renderTrabalho,escritorio:renderEscritorio,painel:renderPainel,processos:renderProcessos,autuacao:renderAutuacao,processos_admin:renderProcessosAdministrativos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens,agenda:renderAgenda,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderFontesProcessos,pericia:renderPericia})[p]?.();
 }
 
 // ═══════════════ BUSCA ═══════════════
@@ -4180,6 +4123,7 @@ function renderPainel(){
   _renderPainelReal();
 }
 function _renderPainelReal(){
+  if(typeof pag!=='undefined' && pag!=='painel')return;
   _renderPainelUltimo = Date.now();
   const ps=getProcs(), alertas=alertasPrazo();
   const urgentes=ps.filter(p=>p.status==='URGENTE').length;
@@ -4228,9 +4172,9 @@ function _renderPainelReal(){
   ].filter(g=>g.f.length);
 
   // Setores — organização por "pastas"
-  const setorJudicial=ps.filter(p=>p.setor==='judicial'&&p.status!=='EM_PREP');
-  const setorAdmin=ps.filter(p=>p.setor==='administrativo'&&p.status!=='EM_PREP');
-  const setorPrep=ps.filter(p=>p.setor==='autuacao'||p.status==='EM_PREP');
+  const setorJudicial=ps.filter(p=>LexWorkflow.sector(p)==='judicial');
+  const setorAdmin=ps.filter(p=>LexWorkflow.sector(p)==='administrativo');
+  const setorPrep=getPrep();
   const setorEntregue=ps.filter(p=>p.status==='ENTREGUE'||p.status==='CONCLUIDO');
   const setorDistrib=ps.filter(p=>p.status==='DISTRIBUIDO');
 
@@ -4270,6 +4214,7 @@ function _renderPainelReal(){
     ${paradosBanner}
     ${resumoHtml}
     ${setoresHtml}
+    <button class="work-metric" onclick="ir('autuacao',null)" style="margin-bottom:16px"><span>Em preparação</span><strong>${setorPrep.length}</strong></button>
     <div class="stats-row">
       <div class="stat-card" style="border-top:2px solid var(--accent)"><div class="stat-label">Total</div><div class="stat-num" style="color:var(--accent)">${ps.length}</div><div class="stat-sub">processos</div></div>
       <div class="stat-card" style="border-top:2px solid var(--red)"><div class="stat-label">Urgentes</div><div class="stat-num" style="color:var(--red)">${urgentes}</div><div class="stat-sub">atenção imediata</div></div>
@@ -4377,11 +4322,11 @@ function _autuacaoDocsFaltantes(caso){
   // o faltando é o texto livre preenchido pelo usuario — extrai cada linha
   const faltandoManual = (caso.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
   // Combina: tudo que a IA marcou como faltando + falta o que nao tem no caso.faltando completo
-  return Array.from(new Set([...obrig, ...faltandoManual]));
+  return Array.from(new Set([...obrig, ...faltandoManual])).filter(d=>!(caso.docsRecebidos||[]).some(r=>r.toLowerCase()===d.toLowerCase()));
 }
 
 // Marca um doc como recebido no caso (remove da lista de faltantes)
-function _autuacaoMarcarDoc(casoId, docNome){
+async function _autuacaoMarcarDoc(casoId, docNome){
   const cs = getPrep();
   const i = cs.findIndex(c=>c.id===casoId);
   if(i<0){ toast('Caso não encontrado','erro'); return; }
@@ -4389,11 +4334,12 @@ function _autuacaoMarcarDoc(casoId, docNome){
   const atual = (c.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const novos = atual.filter(d=>d.toLowerCase() !== docNome.toLowerCase());
   c.faltando = novos.join('\n');
+  c.docsRecebidos=Array.from(new Set([...(c.docsRecebidos||[]),docNome]));
   // Acrescenta no obs
   const marca = '\n[AUTUACAO] Recebido: ' + docNome + ' em ' + new Date().toLocaleDateString('pt-BR');
   c.obs = (c.obs||'') + marca;
   cs[i] = c;
-  savePrep(cs);
+  try { await lexSavePreparation(c); } catch(e){toast(e.message,'erro');return;}
   renderAutuacao();
   toast('✓ '+docNome+' marcado como recebido','ok');
 }
@@ -4451,7 +4397,7 @@ function renderAutuacao(){
             ${faltas.map(f=>`<span onclick="_autuacaoMarcarDoc(${c.id},'${f.replace(/'/g,"\\'")}')" style="background:var(--surface);border:1px dashed var(--orange);border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;color:var(--text2)" title="Clique para marcar como recebido">✕ ${f}</span>`).join('')}
           </div>
         </div>`
-      : `<div style="background:var(--green-soft);border:1px solid color-mix(in srgb, var(--green) 30%, transparent);border-radius:8px;padding:8px 10px;margin:8px 0;color:var(--green);font-size:11px;font-weight:700">✓ Todos os documentos recebidos — pronto para distribuir</div>`;
+      : `<div style="background:var(--green-soft);border:1px solid color-mix(in srgb, var(--green) 30%, transparent);border-radius:8px;padding:8px 10px;margin:8px 0;color:var(--green);font-size:11px;font-weight:700">✓ Sem pendências listadas — confira os documentos antes de distribuir</div>`;
     return `<div style="background:${corFundo};border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
         <div style="flex:1">
@@ -5293,7 +5239,7 @@ async function _gerarAba(p, aba, container, procId){
       ? `\n\n⚠️ DADOS REAIS DO JULGADOR CADASTRADO NO LEX:\nNome: ${juizEncontrado.nome}\nTribunal: ${juizEncontrado.tribunal} ${juizEncontrado.vara||''}\nCargo: ${juizEncontrado.cargo||'Magistrado'}\nObservações: ${juizEncontrado.notas||'sem notas'}\n\nPRIORIZE estas informações reais sobre o julgador na sua análise.`
       : '';
 
-    prompt = `RADIOGRAFIA DO JULGADOR — ANÁLISE ESTRATÉGICA
+    prompt = `PADRÃO DECISÓRIO DOCUMENTADO — ANÁLISE ESTRATÉGICA
 
 PROCESSO: ${p.nome}
 NÚMERO: ${p.numero||'não informado'}
@@ -5305,25 +5251,25 @@ FRENTES: ${(p.frentes||[]).join(', ')}
 ANDAMENTOS RECENTES:
 ${andamentos||'Nenhum registrado'}${juizCadastrado}
 
-Com base nas informações do processo, do tribunal e da área do direito, faça uma RADIOGRAFIA DO JULGADOR respondendo:
+Use somente decisões e documentos identificados acima. Não infira personalidade, ideologia, reputação ou comportamento. Não trate o padrão geral do tribunal como característica pessoal do julgador. Se faltarem decisões com autoria e fonte confirmadas, informe que a amostra é insuficiente.
 
-1. PERFIL PROVÁVEL DO JULGADOR
-   Com base no tribunal (${p.tribunal}), área (${p.area}) e histórico do processo, qual é o perfil decisório típico deste tipo de julgador?${juizEncontrado?' Considere os dados reais do magistrado cadastrado.':''}
+1. MATERIAL ANALISADO
+   Liste decisão, data, processo e fonte usados; se não houver, declare a insuficiência.
 
-2. O QUE ELE ESTÁ BUSCANDO
-   Com base nos andamentos e na fase processual, o que o julgador parece estar querendo resolver, entender ou definir indiretamente?
+2. QUESTÕES JURÍDICAS EFETIVAMENTE DECIDIDAS
+   Separe o que consta da decisão das hipóteses de aplicação ao caso atual.
 
-3. LINHA DE RACIOCÍNIO DETECTADA
-   Que tendência jurídica ou linha de pensamento está sendo seguida? (garantista, pragmático, formalista, ativista, restritivo, etc.)
+3. FUNDAMENTOS E PRECEDENTES
+   Quais normas, precedentes e razões foram expressamente utilizados?
 
-4. ARGUMENTOS QUE FUNCIONAM
-   Que tipo de argumento este perfil de julgador costuma aceitar bem? (legal, doutrinário, econômico, social, precedente vinculante?)
+4. PROVAS EXIGIDAS OU VALORIZADAS
+   Quais elementos probatórios foram exigidos ou considerados decisivos nas fontes?
 
-5. O QUE EVITAR
-   Que tipo de argumento ou postura costuma irritar ou prejudicar junto a este perfil?
+5. TESES ACOLHIDAS E REJEITADAS
+   Aponte apenas o que estiver documentado, com referência à fonte.
 
-6. COMO CONDUZIR O PROCESSO A NOSSO FAVOR
-   Estratégia específica para alinhar nossa atuação com o que este julgador valoriza.
+6. APLICAÇÃO POSSÍVEL AO CASO
+   Indique semelhanças, diferenças e riscos de generalização.
 
 7. CONSTRUÇÃO PARA STJ/STF
    Se a instância atual for desfavorável, quais teses precisam de prequestionamento explícito AGORA para preservar a via recursal?`;
@@ -5384,8 +5330,8 @@ Faça uma análise estratégica REALISTA e CRÍTICA:
 1. AVALIAÇÃO HONESTA DA SITUAÇÃO
    Qual é o cenário real? Estamos em posição favorável, neutra ou desfavorável? Por quê?
 
-2. PROBABILIDADE DE ÊXITO
-   Estimativa realista (%) e os fatores que mais influenciam.
+2. FORÇA E LACUNAS DA PROVA
+   Classifique a documentação como suficiente, parcial ou insuficiente e explique os fatores determinantes. Não atribua percentual de vitória.
 
 3. VIABILIDADE RECURSAL
    Se a reversão na instância atual for improvável, o que construir agora para o STJ/STF? Quais teses precisam de prequestionamento?
@@ -5970,7 +5916,7 @@ async function _jurisChatEnviar(){
   input.value='';input.disabled=true;
   const chatBox=document.getElementById('_jurisChatMsgs');
   let userMsg=texto;if(_jurisAnexoAtual)userMsg+=' 📎 '+_jurisAnexoAtual.nome;
-  chatBox.innerHTML+='<div style="display:flex;justify-content:flex-end"><div style="max-width:75%;padding:10px 14px;border-radius:12px;background:var(--accent);color:white"><div style="font-size:10px;opacity:0.7;margin-bottom:3px;font-weight:600">Kleuber</div><div style="font-size:12px;white-space:pre-wrap">'+_escHtml(userMsg)+'</div></div></div>';
+  chatBox.innerHTML+='<div style="display:flex;justify-content:flex-end"><div style="max-width:75%;padding:10px 14px;border-radius:12px;background:var(--accent);color:white"><div style="font-size:10px;opacity:0.7;margin-bottom:3px;font-weight:600">Você</div><div style="font-size:12px;white-space:pre-wrap">'+_escHtml(userMsg)+'</div></div></div>';
   chatBox.innerHTML+='<div id="_jurisLoading" style="display:flex;justify-content:flex-start"><div style="padding:10px 14px;border-radius:12px;background:var(--surface2);border:1px solid var(--border)"><div style="font-size:11px;color:var(--text3)">🧠 Analisando...</div></div></div>';
   chatBox.scrollTop=chatBox.scrollHeight;
 
@@ -6038,6 +5984,27 @@ async function buscarJuris(){
     if(!res.ok) throw new Error('Servidor retornou '+res.status);
     const d = await res.json();
     if(!d.sucesso && d.error) throw new Error(d.error);
+
+    // Resposta atual: relatório textual revisado duas vezes, com fontes oficiais.
+    if(d.resposta){
+      const fontes = Array.isArray(d.fontes) ? d.fontes : [];
+      const links = fontes.map(f=>{
+        try {
+          const u=new URL(f.url);
+          if(u.protocol!=='https:' || !(u.hostname==='jus.br' || u.hostname.endsWith('.jus.br') || u.hostname.endsWith('.gov.br'))) return '';
+          return `<li><a href="${lexEscape(u.href)}" target="_blank" rel="noopener noreferrer">${lexEscape(f.titulo||u.hostname)}</a></li>`;
+        } catch(_){ return ''; }
+      }).filter(Boolean).join('');
+      el.innerHTML=`
+        <div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:12px;padding:16px 18px">
+          <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px">🔎 Pesquisa revisada em fontes oficiais</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">${Number(d.buscas_realizadas||0)} consultas · modelo jurídico forte · dupla verificação</div>
+          <div style="font-size:12px;color:var(--text);white-space:pre-wrap;line-height:1.6">${lexEscape(d.resposta)}</div>
+          ${links?`<div style="margin-top:14px"><b style="font-size:12px">Fontes oficiais</b><ul style="margin:6px 0 0 18px">${links}</ul></div>`:''}
+          <div style="margin-top:14px;padding:9px 11px;background:var(--orange-soft);border-radius:8px;font-size:11px;color:var(--text2)">⚠ ${lexEscape(d.aviso||'Confira o inteiro teor antes de citar ou protocolar.')}</div>
+        </div>`;
+      return;
+    }
 
     const sentidoColor = d.sentido_predominante === 'favorável' ? 'var(--green)'
                        : d.sentido_predominante === 'desfavorável' ? 'var(--red)' : 'var(--orange)';
@@ -6157,14 +6124,14 @@ async function _gerarPeticaoForcado(pid, tipo, instr){
   const juizCtx = juizDoProc ? `\nJULGADOR IDENTIFICADO: ${juizDoProc.nome} — ${juizDoProc.tribunal} ${juizDoProc.vara}\nPERFIL: ${juizDoProc.notas||'Sem notas'}` : '';
 
   try{
-    const _aiResp=await chamarIA([{role:'user',content:`Você é o LEX, estrategista jurídico sênior do escritório ${esc.nome||'Camargos Advocacia'} (${esc.registro||''}). Redija ${tipo} no mais alto nível técnico.
+    const _aiResp=await chamarIA([{role:'user',content:`Você é o LEX, estrategista jurídico sênior do escritório ${esc.nome||'escritório configurado'} (${esc.registro||''}). Redija ${tipo} no mais alto nível técnico.
 
 REGRAS ABSOLUTAS:
 1. Analise a descrição e andamentos ANTES de redigir
 2. Não inove em teses não ventiladas anteriormente
 3. Fundamente com legislação e jurisprudência REAL (cite números reais de Súmulas e Temas)
 4. Estrutura formal completa: cabeçalho, qualificação, fatos, fundamentos, pedidos
-5. Assinatura: ${esc.responsavel||'Wanderson Farias de Camargos'} — OAB/MG nº ${(esc.registro||'').replace(/[^\d]/g,'')||'118.237'}
+5. Assinatura: ${esc.responsavel||'[advogado responsável não configurado]'} — ${esc.registro||'[OAB não configurada]'}
 ${juizCtx}
 
 PROCESSO: ${p.nome}
@@ -6427,7 +6394,7 @@ async function _juizChatEnviar(){
   // Mostrar msg do usuário
   let userMsg=texto;
   if(_juizAnexoAtual) userMsg+=(userMsg?' · ':'')+'📎 '+_juizAnexoAtual.nome;
-  chatBox.innerHTML+='<div style="display:flex;justify-content:flex-end"><div style="max-width:75%;padding:10px 14px;border-radius:12px;background:var(--accent);color:white"><div style="font-size:10px;opacity:0.7;margin-bottom:3px;font-weight:600">Kleuber</div><div style="font-size:13px;white-space:pre-wrap">'+_escHtml(userMsg)+'</div></div></div>';
+  chatBox.innerHTML+='<div style="display:flex;justify-content:flex-end"><div style="max-width:75%;padding:10px 14px;border-radius:12px;background:var(--accent);color:white"><div style="font-size:10px;opacity:0.7;margin-bottom:3px;font-weight:600">Você</div><div style="font-size:13px;white-space:pre-wrap">'+_escHtml(userMsg)+'</div></div></div>';
   chatBox.scrollTop=chatBox.scrollHeight;
   
   // Loading
@@ -6723,191 +6690,24 @@ async function _juizAnalisar(i){
 
 // Ver perfil detalhado em modal
 function _juizVerPerfil(i){
-  const all=window._juizes||[];
-  const jz=all[i];if(!jz)return;
+  const jz=(window._juizes||[])[i];if(!jz)return;
   const pf=jz.perfil||{};
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:#00000099;z-index:600;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;z-index:700';
-  
-  const recArea=pf.receptividade_por_area||{};
-  const recHTML=Object.entries(recArea).map(([a,n])=>{
-    const corNv={'alta':'var(--green)','média':'var(--orange)','baixa':'var(--red)','desconhecida':'var(--text3)'};
-    const cn=corNv[n]||'var(--text3)';
-    const pct={'alta':85,'média':55,'baixa':25,'desconhecida':10};
-    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-      <div style="width:80px;font-size:11px;color:var(--text2);text-align:right;text-transform:capitalize">${a}</div>
-      <div style="flex:1;height:18px;background:var(--surface2);border-radius:4px;overflow:hidden;position:relative">
-        <div style="height:100%;width:${pct[n]||10}%;background:${cn};border-radius:4px;transition:width .5s"></div>
-        <span style="position:absolute;right:6px;top:2px;font-size:9px;font-weight:700;color:var(--text)">${n}</span>
-      </div>
-    </div>`;
-  }).join('');
-
-  ov.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:640px;padding:0;margin:auto;overflow:hidden">
-    <!-- HEADER -->
-    <div style="background:linear-gradient(135deg,#6366f120,var(--surface));padding:20px 24px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:var(--text)">⚖️ ${jz.nome}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px">${jz.tribunal||'—'} ${jz.vara?'· '+jz.vara:''}</div>
-          ${pf._gerado_em?`<div style="font-size:10px;color:var(--text3);margin-top:2px">Análise: ${pf._gerado_em} · Base: ${pf.base_analise||'—'} · Confiança: ${pf.nivel_confianca_perfil||'—'}</div>`:''}
-        </div>
-        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;font-size:13px;cursor:pointer;color:var(--text3)">✕</button>
-      </div>
-    </div>
-    <div style="padding:20px 24px;max-height:70vh;overflow-y:auto">
-      ${!pf.postura_geral?'<div style="text-align:center;padding:30px;color:var(--text3)">Perfil não analisado ainda. Clique em "🤖 Analisar" na lista.</div>':`
-      <!-- TAGS DE PERFIL -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <div style="background:#6366f115;border:1px solid #6366f133;border-radius:10px;padding:8px 14px;text-align:center">
-          <div style="font-size:9px;font-weight:600;color:#6366f1;text-transform:uppercase">Postura</div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${pf.postura_geral}</div>
-        </div>
-        <div style="background:#10b98115;border:1px solid #10b98133;border-radius:10px;padding:8px 14px;text-align:center">
-          <div style="font-size:9px;font-weight:600;color:#10b981;text-transform:uppercase">Estilo</div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${pf.estilo_decisorio}</div>
-        </div>
-        <div style="background:#f59e0b15;border:1px solid #f59e0b33;border-radius:10px;padding:8px 14px;text-align:center">
-          <div style="font-size:9px;font-weight:600;color:#f59e0b;text-transform:uppercase">Decisões</div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${pf.extensao_decisoes}</div>
-        </div>
-        <div style="background:#8b5cf615;border:1px solid #8b5cf633;border-radius:10px;padding:8px 14px;text-align:center">
-          <div style="font-size:9px;font-weight:600;color:#8b5cf6;text-transform:uppercase">Liminares</div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${pf.perfil_em_liminares||'—'}</div>
-        </div>
-        <div style="background:#ec489915;border:1px solid #ec489933;border-radius:10px;padding:8px 14px;text-align:center">
-          <div style="font-size:9px;font-weight:600;color:#ec4899;text-transform:uppercase">Recursos</div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${pf.perfil_em_recursos||'—'}</div>
-        </div>
-      </div>
-
-      <!-- ESTRATÉGIA OURO -->
-      <div style="background:linear-gradient(135deg,#fbbf2418,#f59e0b08);border:1px solid #f59e0b44;border-radius:12px;padding:16px;margin-bottom:16px">
-        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:6px">🏆 ESTRATÉGIA OURO — A sacada principal</div>
-        <div style="font-size:13px;color:var(--text);line-height:1.6">${pf.estrategia_ouro||'—'}</div>
-      </div>
-
-      <!-- LINGUAGEM RECOMENDADA -->
-      ${pf.linguagem_recomendada?`
-      <div style="background:color-mix(in srgb, var(--accent) 3%, transparent);border:1px solid color-mix(in srgb, var(--accent) 13%, transparent);border-radius:12px;padding:16px;margin-bottom:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px">📝 COMO REDIGIR PARA ESTE JUIZ</div>
-        <div style="font-size:12px;color:var(--text);line-height:1.6">${pf.linguagem_recomendada}</div>
-      </div>`:''}
-
-      <!-- PONTOS FORTES + ATENÇÃO -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-        <div style="background:color-mix(in srgb, var(--green) 3%, transparent);border:1px solid color-mix(in srgb, var(--green) 13%, transparent);border-radius:10px;padding:14px">
-          <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">✅ Argumentos que funcionam</div>
-          ${(pf.pontos_fortes_para_peticionar||[]).map(p=>'<div style="font-size:12px;color:var(--text2);margin-bottom:5px;line-height:1.4;padding-left:12px;border-left:2px solid var(--green)">'+p+'</div>').join('')}
-        </div>
-        <div style="background:color-mix(in srgb, var(--red) 3%, transparent);border:1px solid color-mix(in srgb, var(--red) 13%, transparent);border-radius:10px;padding:14px">
-          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:8px">⚠️ O que evitar</div>
-          ${(pf.pontos_de_atencao||[]).map(p=>'<div style="font-size:12px;color:var(--text2);margin-bottom:5px;line-height:1.4;padding-left:12px;border-left:2px solid var(--red)">'+p+'</div>').join('')}
-        </div>
-      </div>
-
-      <!-- RECEPTIVIDADE POR ÁREA -->
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:10px">📊 Receptividade por Área</div>
-        ${recHTML}
-      </div>
-
-      <!-- ════════════════════════════════════════════════════════════════
-           REFORM: Seções de inteligência judicial profunda
-           ════════════════════════════════════════════════════════════════ -->
-      ${pf.orientacao_advogado?`
-      <div style="background:linear-gradient(135deg,#6366f118,#6366f108);border:1px solid #6366f155;border-radius:12px;padding:16px;margin-bottom:16px">
-        <div style="font-size:11px;font-weight:700;color:#6366f1;margin-bottom:6px">🎯 ORIENTAÇÃO AO ADVOGADO — Resumo Executivo</div>
-        <div style="font-size:12.5px;color:var(--text);line-height:1.6;white-space:pre-wrap">${pf.orientacao_advogado}</div>
-      </div>`:''}
-
-      ${pf.comportamento_em_audiencia?`
-      <div style="background:color-mix(in srgb, var(--accent) 4%, transparent);border:1px solid color-mix(in srgb, var(--accent) 15%, transparent);border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px">🎤 COMO SE PORTAR EM AUDIÊNCIA</div>
-        <div style="font-size:12px;color:var(--text);line-height:1.6;white-space:pre-wrap">${pf.comportamento_em_audiencia}</div>
-      </div>`:''}
-
-      ${pf.despacho_pessoal?`
-      <div style="background:color-mix(in srgb, #8b5cf6 4%, transparent);border:1px solid color-mix(in srgb, #8b5cf6 20%, transparent);border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:#8b5cf6;margin-bottom:6px">🤝 DESPACHO PESSOAL COM O JUIZ</div>
-        <div style="font-size:12px;color:var(--text);line-height:1.6;white-space:pre-wrap">${pf.despacho_pessoal}</div>
-      </div>`:''}
-
-      ${(Array.isArray(pf.argumentos_para_peticoes)&&pf.argumentos_para_peticoes.length)?`
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:8px">💡 ARGUMENTOS PARA PEÇAS</div>
-        ${pf.argumentos_para_peticoes.map(a=>'<div style="font-size:12px;color:var(--text2);margin-bottom:5px;line-height:1.5;padding-left:12px;border-left:2px solid #6366f1">'+a+'</div>').join('')}
-      </div>`:''}
-
-      ${(Array.isArray(pf.caminhos_estrategicos)&&pf.caminhos_estrategicos.length)?`
-      <div style="background:color-mix(in srgb, var(--green) 3%, transparent);border:1px solid color-mix(in srgb, var(--green) 15%, transparent);border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">🧭 CAMINHOS ESTRATÉGICOS</div>
-        ${pf.caminhos_estrategicos.map(a=>'<div style="font-size:12px;color:var(--text2);margin-bottom:5px;line-height:1.5;padding-left:12px;border-left:2px solid var(--green)">'+a+'</div>').join('')}
-      </div>`:''}
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        ${(Array.isArray(pf.autores_juridicos_citados)&&pf.autores_juridicos_citados.length)?`
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px">
-          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:8px">📚 AUTORES CITADOS PELO JUIZ</div>
-          ${pf.autores_juridicos_citados.map(a=>'<div style="font-size:11.5px;color:var(--text2);margin-bottom:3px">• '+a+'</div>').join('')}
-        </div>`:''}
-
-        ${(Array.isArray(pf.doutrinadores_para_citar)&&pf.doutrinadores_para_citar.length)?`
-        <div style="background:color-mix(in srgb, #f59e0b 4%, transparent);border:1px solid color-mix(in srgb, #f59e0b 20%, transparent);border-radius:10px;padding:14px">
-          <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:8px">✨ CITE NAS PEÇAS</div>
-          ${pf.doutrinadores_para_citar.map(a=>'<div style="font-size:11.5px;color:var(--text2);margin-bottom:3px">• '+a+'</div>').join('')}
-        </div>`:''}
-      </div>
-
-      ${(Array.isArray(pf.jurisprudencia_seguida)&&pf.jurisprudencia_seguida.length)?`
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:8px">⚖️ JURISPRUDÊNCIA QUE O JUIZ SEGUE</div>
-        ${pf.jurisprudencia_seguida.map(a=>'<div style="font-size:11.5px;color:var(--text2);margin-bottom:4px;padding-left:10px;border-left:2px solid #6366f155">'+a+'</div>').join('')}
-      </div>`:''}
-
-      ${(pf._pdfs_analisados||pf._processo_vinculado||pf._buscas_web)?`
-      <div style="font-size:10px;color:var(--text3);margin-bottom:10px;padding:8px 12px;background:var(--surface2);border-radius:8px;line-height:1.6">
-        ${pf._pdfs_analisados?('📎 '+pf._pdfs_analisados+' PDF(s) analisado(s). '):''}${pf._processo_vinculado?('🔗 Vinculado ao processo #'+pf._processo_vinculado+'. '):''}${pf._buscas_web?('🌐 '+pf._buscas_web+' busca(s) na web.'):''}
-        ${(Array.isArray(pf._buscas_web_queries)&&pf._buscas_web_queries.length)?('<div style="margin-top:4px;color:var(--text3)"><b>Queries:</b> '+pf._buscas_web_queries.slice(0,5).map(q=>'<span style="background:var(--surface);padding:1px 5px;border-radius:3px;margin-right:3px;font-size:9px">'+_escPJ(q).substring(0,60)+'</span>').join('')+'</div>'):''}
-      </div>`:''}
-
-      ${(Array.isArray(pf.teses_aceita)&&pf.teses_aceita.length)||(Array.isArray(pf.teses_rejeita)&&pf.teses_rejeita.length)?`
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        ${(Array.isArray(pf.teses_aceita)&&pf.teses_aceita.length)?`
-        <div style="background:color-mix(in srgb, var(--green) 3%, transparent);border:1px solid color-mix(in srgb, var(--green) 15%, transparent);border-radius:10px;padding:14px">
-          <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">✅ TESES QUE ELE ACEITA</div>
-          ${pf.teses_aceita.map(a=>'<div style="font-size:11.5px;color:var(--text2);margin-bottom:5px;line-height:1.45;padding-left:10px;border-left:2px solid var(--green)">'+a+'</div>').join('')}
-        </div>`:''}
-        ${(Array.isArray(pf.teses_rejeita)&&pf.teses_rejeita.length)?`
-        <div style="background:color-mix(in srgb, var(--red) 3%, transparent);border:1px solid color-mix(in srgb, var(--red) 15%, transparent);border-radius:10px;padding:14px">
-          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:8px">❌ TESES QUE ELE REJEITA</div>
-          ${pf.teses_rejeita.map(a=>'<div style="font-size:11.5px;color:var(--text2);margin-bottom:5px;line-height:1.45;padding-left:10px;border-left:2px solid var(--red)">'+a+'</div>').join('')}
-        </div>`:''}
-      </div>`:''}
-
-      ${(pf.indice_reforma_estimado||pf.tempo_medio_decisao||pf.tendencia_ideologica)?`
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-        ${pf.tendencia_ideologica?`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:10.5px"><b style="color:var(--text3)">Tendência:</b> ${pf.tendencia_ideologica}</div>`:''}
-        ${pf.indice_reforma_estimado?`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:10.5px"><b style="color:var(--text3)">Reforma 2ª inst:</b> ${pf.indice_reforma_estimado}</div>`:''}
-        ${pf.tempo_medio_decisao?`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:10.5px"><b style="color:var(--text3)">Celeridade:</b> ${pf.tempo_medio_decisao}</div>`:''}
-      </div>`:''}
-
-      ${pf.modelo_peticao_sugerido?`
-      <div style="background:color-mix(in srgb, #f59e0b 5%, transparent);border:1px solid color-mix(in srgb, #f59e0b 20%, transparent);border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:6px">📝 ESTRUTURA SUGERIDA DE PETIÇÃO</div>
-        <div style="font-size:12px;color:var(--text);line-height:1.6;white-space:pre-wrap">${pf.modelo_peticao_sugerido}</div>
-      </div>`:''}
-
-      <!-- Botão: Gerar modelo de peça completo -->
-      <div style="display:flex;gap:8px;justify-content:center;margin:16px 0 10px;flex-wrap:wrap">
-        <button class="btn-primary" style="padding:10px 18px;font-size:12px;font-weight:700" onclick="_juizGerarPecaModelo(${i})">📝 Gerar Modelo de Petição para este Juiz</button>
-      </div>
-
-      ${pf.advertencia?`<div style="background:color-mix(in srgb, var(--orange) 3%, transparent);border:1px solid color-mix(in srgb, var(--orange) 13%, transparent);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--orange)">⚠️ ${pf.advertencia}</div>`:''}`}
-    </div>
-  </div>`;
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  document.body.appendChild(ov);
+  ov.className='modal-overlay';ov.style.cssText='display:flex;z-index:1100;padding:12px;overflow:auto';
+  const novo=pf.versao==='decisorio-v1';
+  ov.innerHTML=`<section class="lex-sector" role="dialog" aria-modal="true" aria-label="Análise decisória" style="max-width:760px;width:100%;margin:auto;max-height:90dvh;overflow:auto">
+    <button class="btn-outline" data-fechar style="float:right">Fechar</button><h2>Análise decisória</h2>
+    <p>${lexEscape(jz.nome)} · ${lexEscape(jz.tribunal||'Tribunal não informado')}</p>
+    ${!novo?'<p>Este perfil é anterior à revisão de fontes. Reanalise para obter conclusões documentadas.</p>':`
+      <div class="lex-status">${pf.status==='material_insuficiente'?'Material insuficiente':'Achados para revisão do advogado'}</div>
+      <p>${lexEscape(pf.advertencia)}</p>
+      ${(pf.achados||[]).map(a=>`<article class="lex-sector" style="margin:12px 0"><h3>${lexEscape(a.categoria)}</h3><p>${lexEscape(a.observacao)}</p><blockquote>${lexEscape(a.trecho)}</blockquote><p>Fonte ${lexEscape(a.fonte_id)} · autoria a conferir</p><p><strong>Hipótese de aplicação:</strong> ${lexEscape(a.implicacao)}</p></article>`).join('')}
+      <h3>Fontes da análise</h3>${(pf.fontes||[]).map(f=>{let url='';try{const u=new URL(f.url);if(u.protocol==='https:'&&u.hostname.endsWith('.jus.br'))url=u.href;}catch{}return `<p>${lexEscape(f.id)} · ${url?`<a href="${lexEscape(url)}" target="_blank" rel="noopener noreferrer">${lexEscape(f.titulo)}</a>`:lexEscape(f.titulo)}</p>`;}).join('')}
+      ${(pf.limitacoes||[]).map(t=>`<p>${lexEscape(t)}</p>`).join('')}
+      ${pf.achados?.length?`<button class="btn-primary" onclick="_juizGerarPecaModelo(${i})">Preparar minuta para revisão</button>`:''}`}
+    </section>`;
+  ov.querySelector('[data-fechar]').onclick=()=>ov.remove();
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});document.body.appendChild(ov);
 }
 
 // Analisar todos os juízes pendentes
@@ -7181,12 +6981,12 @@ async function _renderPjeAsync(cfg) {
   // Detecta se o agente está rodando neste computador
   const agente = await detectarAgenteLocal();
   const agenteAtivo = !!agente;
-  const pjeConectado = agente?.pjeLogado || false;
+  const pjeConectado = agente?.pjeLogado === true;
 
   const statusAgenteHtml = agenteAtivo
     ? `<div style="display:flex;align-items:center;gap:8px">
         <span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block"></span>
-        <span style="color:var(--green);font-weight:700;font-size:13px">Agente ativo — ${agente.maquina}</span>
+        <span style="color:var(--green);font-weight:700;font-size:13px">Agente ativo — ${lexEscape(agente.maquina || "Computador do escritório")}</span>
        </div>`
     : `<div style="display:flex;align-items:center;gap:8px">
         <span style="width:10px;height:10px;border-radius:50%;background:var(--text3);display:inline-block"></span>
@@ -7202,7 +7002,7 @@ async function _renderPjeAsync(cfg) {
   document.getElementById('content').innerHTML = `
     <div style="max-width:640px">
       <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;margin-bottom:6px">🔗 Integração PJe</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;font-weight:300">Cada computador se integra com seu próprio certificado. O LEX detecta automaticamente se o agente está rodando.</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;font-weight:300">Conecte sua conta do tribunal para trazer processos e andamentos ao LEX. O cadastro da OAB identifica o advogado; não substitui a autenticação exigida pelo tribunal.</div>
 
       <!-- STATUS CARD -->
       <div style="background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:22px;margin-bottom:16px">
@@ -7219,13 +7019,13 @@ async function _renderPjeAsync(cfg) {
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:13px;color:var(--text2)">Integração:</span>
             <span style="background:${cfg.ativo?'var(--green-soft)':'var(--red-soft)'};border:1px solid ${cfg.ativo?'var(--green)':'var(--red)'};border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;color:${cfg.ativo?'var(--green)':'var(--red)'}">
-              ${cfg.ativo ? 'ON' : 'OFF'}
+              ${cfg.ativo ? 'Habilitada' : 'Desabilitada'}
             </span>
           </div>
           ${cfg.ultimaSinc ? `<div style="font-size:11px;color:var(--text3)">Última sincronização: ${cfg.ultimaSinc} · ${cfg.ultimaAgente||''}</div>` : ''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn-green" onclick="ativarPje(true)" style="border:none">✅ Ativar Integração</button>
+          <button class="btn-green" onclick="ativarPje(true)" style="border:none">Habilitar consulta</button>
           <button class="btn-danger" onclick="ativarPje(false)">⛔ Desativar</button>
           ${agenteAtivo && !pjeConectado ? `<button class="btn-primary" onclick="conectarPjeLocal()">🔌 Conectar PJe</button>` : ''}
           ${pjeConectado ? `<button class="btn-outline" onclick="sincronizarAgora()">🔄 Sincronizar Agora</button>` : ''}
@@ -7283,22 +7083,17 @@ async function _renderPjeAsync(cfg) {
         <div id="pje-connect-status" style="margin-top:10px;font-size:12px"></div>
       </div>` : ''}
 
-      <!-- O QUE O AGENTE FAZ -->
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:12px">O QUE O AGENTE FAZ</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.9">
-          <div>🔍 <strong>Ao abrir o LEX</strong> — busca andamentos novos de todos os processos ativos automaticamente</div>
-          <div>📬 <strong>Intimações</strong> — detecta intimações e avisa no chat da IA com prazo calculado</div>
-          <div>📄 <strong>Documentos</strong> — lista PDFs disponíveis para você escolher o que baixar</div>
-          <div>📤 <strong>Petições</strong> — carrega o arquivo no PJe e aguarda <strong>sua confirmação visual</strong> antes de protocolar</div>
-          <div>⏰ <strong>Prazos</strong> — consulta prazos direto no tribunal e atualiza o calendário do LEX</div>
-        </div>
+      <div class="lex-sector" style="margin-bottom:16px">
+        <h3>Conectar, confirmar, importar</h3>
+        <p>1. Escolha o tribunal e entre com sua conta oficial.</p>
+        <p>2. Se solicitado, confirme o código do autenticador ou o certificado no tribunal.</p>
+        <p>3. Após confirmar a sessão, o conector poderá consultar os processos autorizados. A importação completa do acervo ainda está em implantação.</p>
+        <p>Andamentos devem manter origem e CNJ. Um andamento novo não cria nem substitui um prazo automaticamente.</p>
       </div>
-
             <!-- PROCESSOS IMPORTADOS DO PJe -->
       <div style="background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:18px 20px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-size:10px;color:var(--text3);letter-spacing:2px">PROCESSOS DO PJe</div>
+          <div style="font-size:10px;color:var(--text3);letter-spacing:2px">PROCESSOS MONITORADOS</div>
           <div style="display:flex;align-items:center;gap:8px">
             <span id="pje-sinc-status" style="font-size:11px;color:var(--text3)"></span>
             <button class="btn-outline" style="padding:5px 12px;font-size:11px" onclick="sincronizarPjeAgora()">🔄 Sincronizar</button>
@@ -7308,24 +7103,11 @@ async function _renderPjeAsync(cfg) {
       </div>
 
 
-      <!-- INSTALAR AGENTE -->
-      ${!agenteAtivo ? `
-      <div style="background:linear-gradient(135deg,#0a0a1f,#0d0d22);border:1px solid color-mix(in srgb, var(--accent) 27%, transparent);border-radius:14px;padding:22px">
-        <div style="font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:12px">INSTALAR O AGENTE LOCAL</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.9;margin-bottom:14px">
-          O Lex Agente é um pequeno programa que fica rodando em segundo plano. Instale uma vez em cada computador do escritório.
-        </div>
-        <div style="background:#000;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;color:#2ec97e;line-height:2">
-          <div style="color:#9da6cc;margin-bottom:4px"># 1. Instalar Node.js em nodejs.org (se não tiver)</div>
-          <div># 2. Baixar a pasta lex-agente e abrir o terminal nela:</div>
-          <div>npm install</div>
-          <div>npx playwright install chromium</div>
-          <div style="color:#9da6cc;margin-top:4px"># 3. Iniciar (fazer isso todo dia ao abrir o escritório):</div>
-          <div>node lex-agente.js</div>
-          <div style="color:#9da6cc"># Ou duplo clique em INICIAR.bat (Windows)</div>
-        </div>
-        <div style="margin-top:12px;font-size:11px;color:var(--text3)">Após iniciar o agente, recarregue esta página — o LEX detecta automaticamente.</div>
-      </div>` : ''}
+      ${!agenteAtivo ? `<div class="lex-sector"><h3>Conexão com o tribunal pendente</h3>
+        <p>O conector PJe ainda precisa ser instalado e validado no computador do escritório. Esta versão não inclui o instalador.</p>
+        <p>No iPhone, o acesso ao computador do escritório depende de um pareamento que ainda está em implantação. O botão de ativação não realiza esse pareamento.</p>
+        <p>Cadastro inicial do advogado, certificado e autenticação adicional seguem as etapas do tribunal escolhido.</p></div>` : ''}
+
     </div>`;
 }
 
@@ -7336,7 +7118,7 @@ function ativarPje(status) {
   const dot = document.getElementById('_pjeDot');
   if (dot) { dot.textContent = status ? '●' : '○'; dot.style.color = status ? 'var(--green)' : 'var(--red-soft)'; }
   renderPje();
-  toast('PJe integração ' + (status ? 'ATIVADA ✓' : 'DESATIVADA ⭕'), 'ok');
+  toast(status ? 'Preferência salva. A conexão com o tribunal ainda precisa ser confirmada.' : 'Consulta automática desabilitada.', 'ok');
 }
 
 async function conectarPjeLocal() {
@@ -7362,6 +7144,9 @@ async function conectarPjeComCredenciais() {
   const pfxSenha  = document.getElementById('pje-pfx-senha')?.value || '';
   const statusEl  = document.getElementById('pje-connect-status');
 
+  try { const destino=new URL(urlPje); if(destino.protocol!=='https:' || !destino.hostname.endsWith('.jus.br') || destino.username || destino.password || (destino.port && destino.port!=='443')) throw new Error(); }
+  catch { toast('Use o endereço HTTPS oficial do tribunal, terminado em .jus.br.', 'erro'); return; }
+
   // Validação por tipo
   if (tipoAcesso === 'usuario_senha' && (!usuario || !senha)) {
     toast('Informe usuário e senha', 'erro'); return;
@@ -7386,20 +7171,26 @@ async function conectarPjeComCredenciais() {
     }, 35000);
     const dados = await r.json();
 
-    if (!dados.ok && dados.erro) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ ${dados.erro}</span>`;
+    if (!r.ok || dados.ok !== true) {
+      if (statusEl) statusEl.textContent = dados.erro || 'Conexão não confirmada pelo agente.';
       return;
     }
-    if (dados.status === 'aguardando_login_manual') {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--orange)">⚠️ ${dados.mensagem}</span>`;
+    if (['aguardando_login_manual','aguardando_mfa','sessao_expirada'].includes(dados.status)) {
+      if (statusEl) statusEl.textContent = dados.mensagem || 'Conclua a autenticação na página oficial do tribunal e depois confirme aqui.';
       toast('PJe aberto — faça login manualmente', 'ok');
       return;
     }
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--green)">✅ Conectado!</span>';
+    if(dados.status !== 'confirmado' || dados.pjeLogado !== true) {
+      if(statusEl) statusEl.textContent='O agente respondeu, mas não comprovou a sessão do tribunal.';
+      return;
+    }
+    if (statusEl) statusEl.textContent = 'Sessão PJe confirmada pelo conector.';
     toast('✅ PJe conectado!', 'ok');
     setTimeout(() => renderPje(), 1500);
   } catch(e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--red)">❌ Agente não respondeu. Verifique se lex-agente.js está rodando.</span>';
+    if (statusEl) statusEl.textContent = 'O conector não respondeu. A conexão não foi confirmada.';
+  } finally {
+    for(const id of ['pje-senha','pje-pfx-senha']) { const input=document.getElementById(id); if(input) input.value=''; }
   }
 }
 
@@ -7407,7 +7198,7 @@ async function confirmarLoginManual() {
   try {
     const r = await fetchComTimeout(AGENTE_URL + '/confirmar-login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' }, 5000);
     const dados = await r.json();
-    if (dados.status === 'confirmado') {
+    if (r.ok && dados.ok === true && dados.status === 'confirmado' && dados.pjeLogado === true) {
       toast('✅ Login confirmado!', 'ok');
       setTimeout(() => renderPje(), 800);
     } else {
@@ -7523,8 +7314,20 @@ async function enviarTgChat(){
 }
 
 const PK='lex_prep_v1';
-function getPrep(){try{return JSON.parse(localStorage.getItem(PK)||'[]');}catch(e){return[];}}
-function savePrep(d){localStorage.setItem(PK,JSON.stringify(d));}
+function getPrep(){
+  let legacy=[];try{legacy=JSON.parse(localStorage.getItem(PK)||'[]');}catch(e){}
+  const processes=getProcs();const rows=new Map();
+  for(const c of legacy) {
+    const p=processes.find(p=>String(p.id)===String(c.id));
+    if(!p || LexWorkflow.sector(p)==='autuacao') rows.set(String(c.id),c);
+  }
+  for(const p of processes) if(LexWorkflow.sector(p)==='autuacao') rows.set(String(p.id),{...(rows.get(String(p.id))||{}),...p,...(p.preparacao||{}),id:p.id,nome:p.nome,status:p.status});
+  return [...rows.values()];
+}
+function savePrep(d){
+  localStorage.setItem(PK,JSON.stringify(d));
+  if(typeof _getCE==='function') _saveCE(LexWorkflow.reconcileCalendar(_getCE(),d));
+}
 
 // ═══════════════ EM PREPARAÇÃO v2 ═══════════════
 // IndexedDB para fotos e PDFs (suporta arquivos grandes)
@@ -7546,15 +7349,8 @@ const _PSL=[
 
 // Sincroniza previsão com calendário
 function _pSync(c){
-  if(!c?.previsao)return;
-  try{
-    const[dd,mm,aa]=c.previsao.split('/');
-    const k=`${aa}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
-    const ce=_getCE();if(!ce[k])ce[k]=[];
-    ce[k]=ce[k].filter(e=>e.prepId!==c.id);
-    ce[k].push({titulo:`[PREP] ${c.nome}`,tipo:'prazo_entrega',obs:`Em Preparação`,prepId:c.id,cor:c.status==='URGENTE'?'#e84545':c.status==='PRONTO'?'#2ec97e':'#9b6ef7',ts:Date.now()});
-    _saveCE(ce);
-  }catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
+  const cases=getPrep().filter(p=>String(p.id)!==String(c?.id));if(c)cases.push(c);
+  _saveCE(LexWorkflow.reconcileCalendar(_getCE(),cases));
 }
 
 function renderPreparacao(){
@@ -7884,7 +7680,7 @@ async function _pIntakeSend() {
     // comprovante. (B) CLIENTE NOVO sem doc — conversa pedindo dados pessoais, tipo
     // de demanda (judicial/administrativo), provas/docs que comprovem fatos/danos.
     const temDocAnexado = !!(window._pUltimaAnalise && (Date.now() - window._pUltimaAnalise.ts) < 300000);
-    const system = `Voce e o Agente do Setor EM PREPARACAO do escritorio Camargos Advocacia — o melhor cadastrador juridico do Brasil.
+    const system = `Voce e o Agente do Setor EM PREPARACAO do escritório configurado no LEX — o melhor cadastrador juridico do Brasil.
 
 MODO ATUAL: ${temDocAnexado ? 'PROCESSO EM ANDAMENTO (doc anexado com cabecalho)' : 'CLIENTE NOVO (sem doc inicial)'}.
 
@@ -8879,18 +8675,18 @@ async function _pSv(){
   const btn=document.getElementById('_pBSv');if(btn){btn.textContent='⏳...';btn.disabled=true;}
   try{
     const casos=getPrep();const isEd=_pEId!==null;const id=isEd?_pEId:Date.now();
-    const caso={id,nome,tipo:document.getElementById('pt')?.value||'',area:document.getElementById('pa')?.value||'Cível',partes:document.getElementById('pp')?.value||'',tribunal:document.getElementById('ptr')?.value||'',previsao:document.getElementById('ppv')?.value||'',valor:document.getElementById('pvl')?.value||'',faltando:document.getElementById('pfl')?.value||'',obs:document.getElementById('pob')?.value||'',resumo:(document.getElementById('pob')?.value||'').substring(0,200),status:document.getElementById('pst')?.value||'EM_PREP',criadoEm:isEd?(casos.find(c=>c.id===id)?.criadoEm||new Date().toLocaleDateString('pt-BR')):new Date().toLocaleDateString('pt-BR'),docsCount:0};
+    const caso={...(isEd?casos.find(c=>String(c.id)===String(id))||{}:{}),id,nome,tipo:document.getElementById('pt')?.value||'',area:document.getElementById('pa')?.value||'Cível',partes:document.getElementById('pp')?.value||'',tribunal:document.getElementById('ptr')?.value||'',previsao:document.getElementById('ppv')?.value||'',valor:document.getElementById('pvl')?.value||'',faltando:document.getElementById('pfl')?.value||'',obs:document.getElementById('pob')?.value||'',resumo:(document.getElementById('pob')?.value||'').substring(0,200),status:document.getElementById('pst')?.value||'EM_PREP',criadoEm:isEd?(casos.find(c=>c.id===id)?.criadoEm||new Date().toLocaleDateString('pt-BR')):new Date().toLocaleDateString('pt-BR'),docsCount:0};
     for(const doc of _pTmp)await _pSvDoc({cId:String(id),slot:doc.slot,nome:doc.nome,base64:doc.base64,tipo:doc.tipo});
     const dx=await _pGtDocs(id);caso.docsCount=dx.length;
     if(isEd){const idx=casos.findIndex(c=>c.id===id);if(idx>=0)casos[idx]=caso;else casos.push(caso);}else casos.push(caso);
-    savePrep(casos);_pSync(caso);
+    await lexSavePreparation(caso,dx);_pSync(caso);
     document.getElementById('_pMOv')?.remove();renderPreparacao();
     toast(isEd?'✓ Atualizado!':'✓ Caso adicionado!','ok');
   }catch(e){toast('Erro: '+e.message,'erro');}
   finally{if(btn){btn.textContent='💾 Salvar';btn.disabled=false;}}
 }
 
-function _pSt(id,st){const cs=getPrep();const i=cs.findIndex(c=>c.id===id);if(i<0)return;cs[i].status=st;savePrep(cs);_pSync(cs[i]);renderPreparacao();toast('✓ Status: '+st,'ok');}
+async function _pSt(id,st){const c=getPrep().find(c=>String(c.id)===String(id));if(!c)return;try{await lexSavePreparation({...c,status:st});renderPreparacao();toast('Status salvo.','ok');}catch(e){toast(e.message,'erro');}}
 function excluirPrep(id){if(!confirm('Excluir este caso?'))return;savePrep(getPrep().filter(c=>c.id!==id));renderPreparacao();toast('Excluído','ok');}
 
 async function _pDistr(id){
@@ -8946,25 +8742,22 @@ function _dSelSetor(btn, setor){
   document.getElementById('_distrOv')._setor=setor;
 }
 
-function _pDistrConfirm(id){
-  const c=getPrep().find(x=>x.id===id);if(!c)return;
-  const setor=document.getElementById('_distrOv')?._setor||'judicial';
-  const num=(document.getElementById('_distrNum')?.value||'').trim();
-  document.getElementById('_distrOv')?.remove();
-  savePrep(getPrep().filter(x=>x.id!==id));
-  let status='DISTRIBUIDO';let setorFinal=setor;let tipo=setor==='administrativo'?'administrativo':'judicial';
-  if(setor==='entregue'){status='ENTREGUE';setorFinal='judicial';tipo='judicial';}
-  const setorLabel={'administrativo':'Administrativo','judicial':'Judicial','entregue':'Entregue ao Cliente'};
-  const hoje=new Date().toLocaleDateString('pt-BR');
+async function _pDistrConfirm(id){
+  const c=getPrep().find(x=>String(x.id)===String(id));if(!c)return;
+  const modal=document.getElementById('_distrOv');
+  if(modal?.dataset.saving==='true')return;
+  const setor=modal?._setor||'judicial';const numero=(document.getElementById('_distrNum')?.value||'').trim();
   try{
-    const ps=getProcs();
-    ps.push({id:Date.now(),nome:c.nome,grupo:c.area||'Outros',numero:num||'',partes:c.partes||'',area:c.area||'Cível',tipo:tipo,setor:setorFinal,tribunal:c.tribunal||'',status:status,prazo:'',prazoReal:'',proxacao:setor==='entregue'?'Acompanhar satisfação do cliente':'Acompanhar — setor '+(setorLabel[setor]||setor),valor:c.valor||'',descricao:(c.obs||'')+(c.tipo?'\nTipo original: '+c.tipo:''),frentes:c.frentes||[],provas:c.provas||[],atualizado_em:new Date().toISOString().slice(0,10),ultima_atualizacao:new Date().toISOString().slice(0,10),dias_parado:0,andamentos:[{data:hoje,txt:'📤 DISTRIBUÍDO → Setor '+(setorLabel[setor]||setor)+(num?' · Nº '+num:'')+(c.previsao?'\nPrevisão original: '+c.previsao:'')}],arquivos:[]});
-    saveProcs(ps);atualizarUrgentes();toast('✓ Distribuído → '+(setorLabel[setor]||setor)+'!','ok');
-    // Lex Consciência — analisa a distribuição
-    const _novoProcId = ps[ps.length-1]?.id;
-    if(_novoProcId) lexConsciencia(_novoProcId, 'Processo distribuído da preparação para setor '+(setorLabel[setor]||setor)+'. Cliente: '+c.nome+'. Área: '+(c.area||'?')+'. Tipo: '+(c.tipo||'?'), 'Distribuição');
-  }catch(e){toast('Erro ao distribuir.','erro');}
-  renderPreparacao();ir('processos',document.querySelector('.nav-btn[onclick*="processos"]'));
+    if(modal)modal.dataset.saving='true';
+    // O ID e os documentos permanecem os mesmos ao mudar de setor.
+    const docs=await _pGtDocs(id);
+    const caso={...c,setor:'autuacao',descricao:c.obs||c.descricao||'',preparacao:{...c},arquivos:docs};
+    const data=await lexApi('/api/processo/distribuir',{method:'POST',body:JSON.stringify({caso,setor,numero})});
+    localStorage.setItem(SK,JSON.stringify(data.processos));setVersaoLocal(data.versao);
+    savePrep(getPrep().filter(x=>String(x.id)!==String(id)));
+    modal?.remove();atualizarUrgentes();ir('trabalho',null);toast('Distribuição confirmada. Contagens atualizadas.','ok');
+  }catch(e){toast(e.message,'erro');}
+  finally{if(modal)modal.dataset.saving='false';}
 }
 
 async function _pDet(id){
@@ -9055,7 +8848,7 @@ const AGENTES_PADRAO=[
 
 // ═══════════════════════════════════════════════════════════════════
 // [SETOR_PERICIA] Setor de Pericia — frontend
-// Triagem preliminar (Sonnet/MID, economico) + Laudo (Opus/TOP, qualidade)
+// Triagem e minuta em modelo jurídico forte, com revisão independente.
 // Anexa ao processo e permite download DOCX/PDF
 // ═══════════════════════════════════════════════════════════════════
 window._periciaState = window._periciaState || {
@@ -9082,7 +8875,7 @@ function renderPericia(){
   <div style="max-width:1100px;margin:0 auto;padding:18px;">
     <div style="background:linear-gradient(135deg,#9333ea,#6366f1);padding:16px;border-radius:12px;color:#fff;margin-bottom:16px;">
       <div style="font-size:18px;font-weight:800;">🔬 Setor de Pericia — Perito Contabil/Financeiro</div>
-      <div style="font-size:12px;opacity:.9;margin-top:4px;">Triagem preliminar (Sonnet) + Laudo minimo 8 paginas (Opus 4). Integrado aos processos do Lex.</div>
+      <div style="font-size:12px;opacity:.9;margin-top:4px;">Triagem e minuta em modelo jurídico forte, com segunda revisão, cálculos controlados e validação humana.</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;" class="pericia-grid">
@@ -9119,8 +8912,8 @@ function renderPericia(){
     </div>
 
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-      <button class="btn-primary" onclick="_periciaTriagem()" style="background:#0ea5e9;color:#fff;padding:10px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔍 Fazer Triagem (economica)</button>
-      <button class="btn-primary" onclick="_periciaGerarLaudo()" style="background:#9333ea;color:#fff;padding:10px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:700;">📋 Gerar Laudo (Opus 4 — min 8 pag)</button>
+      <button class="btn-primary" onclick="_periciaTriagem()" style="background:#0ea5e9;color:#fff;padding:10px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:700;">🔍 Fazer triagem técnica</button>
+      <button class="btn-primary" onclick="_periciaGerarLaudo()" style="background:#9333ea;color:#fff;padding:10px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:700;">📋 Gerar minuta pericial revisada</button>
       <button onclick="_periciaReset()" style="background:var(--bg);color:var(--text);padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">Limpar</button>
     </div>
 
@@ -9274,7 +9067,7 @@ async function _periciaGerarLaudo(){
     return;
   }
   const r = document.getElementById('per_resultado');
-  r.innerHTML = '<div style="padding:14px;background:var(--card);border-radius:8px;">📋 Gerando laudo pericial com Opus 4 (pode levar 60-120s)...</div>';
+  r.innerHTML = '<div style="padding:14px;background:var(--card);border-radius:8px;">📋 Gerando e revisando a minuta pericial (pode levar alguns minutos)...</div>';
   try {
     const procs = (typeof getProcs==='function') ? (getProcs()||[]) : [];
     const proc = st.processo_id ? procs.find(p=>String(p.id)===String(st.processo_id)) : null;
@@ -9287,6 +9080,7 @@ async function _periciaGerarLaudo(){
     if(res?.error){ throw new Error(res.error); }
     st.laudo = res.laudo;
     st.estatisticas = res.estatisticas;
+    st.controleQualidade = res.controle_qualidade || null;
     _periciaRenderLaudo();
   } catch(e){
     r.innerHTML = '<div style="padding:14px;background:#fee;color:#c00;border-radius:8px;">Erro gerar laudo: '+(e.message||e)+'</div>';
@@ -9302,15 +9096,16 @@ function _periciaRenderLaudo(){
   r.innerHTML = `
   <div style="background:var(--card);padding:14px;border-radius:10px;border:1px solid var(--border);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-      <div style="font-weight:700;">📋 Laudo Pericial — ${st.tipo||'contabil'}</div>
+      <div style="font-weight:700;">📋 Minuta Pericial — ${st.tipo||'contabil'}</div>
       <div style="font-size:12px;color:var(--text2);">${s.palavras||0} palavras · ~${s.paginas_aprox||'?'} paginas</div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
       <button onclick="_periciaBaixar('docx')" style="background:#2563eb;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;">⬇️ Baixar DOCX</button>
       <button onclick="_periciaBaixar('pdf')"  style="background:#dc2626;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;">⬇️ Baixar PDF</button>
-      ${st.processo_id?`<button onclick="_periciaAnexar()" style="background:#10b981;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;">📎 Anexar ao processo [${st.processo_id}]</button>`:''}
+      ${st.processo_id?`<button onclick="_periciaAnexar()" style="background:#10b981;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;">📎 Guardar minuta no processo [${st.processo_id}]</button>`:''}
       <button onclick="navigator.clipboard.writeText(window._periciaState.laudo||'');toast('Copiado','ok')" style="background:var(--bg);color:var(--text);padding:8px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;">📋 Copiar</button>
     </div>
+    <div style="margin-bottom:10px;padding:9px 11px;background:var(--orange-soft);border-radius:8px;font-size:11px;color:var(--text2)">⚠ Dupla revisão por IA concluída. Revisão e aprovação humana continuam obrigatórias antes de assinar ou protocolar.</div>
     <pre style="white-space:pre-wrap;background:var(--bg);padding:12px;border-radius:6px;max-height:520px;overflow:auto;font-family:inherit;font-size:13px;line-height:1.5;">${(st.laudo||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre>
   </div>`;
 }
@@ -9340,6 +9135,7 @@ async function _periciaBaixar(formato){
 async function _periciaAnexar(){
   const st = window._periciaState;
   if(!st.laudo || !st.processo_id){ toast('Vincule processo e gere o laudo','erro'); return; }
+  if(!confirm('Guardar esta MINUTA no processo interno do LEX? Isso não significa aprovação nem protocolo no PJe.')) return;
   try {
     const res = await chamarServidor('/api/pericia/anexar', {
       processo_id: st.processo_id,
@@ -9347,7 +9143,7 @@ async function _periciaAnexar(){
       tipo_pericia: st.tipo
     });
     if(res?.error) throw new Error(res.error);
-    toast('Laudo anexado ao processo '+st.processo_id,'ok');
+    toast('Minuta guardada no processo '+st.processo_id,'ok');
   } catch(e){ toast('Erro anexar: '+(e.message||e),'erro'); }
 }
 
@@ -9357,55 +9153,45 @@ function _periciaReset(){
   renderPericia();
 }
 
-function renderAgentes(){
-  if(!podeConfig()){
-    document.getElementById('content').innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:48px">🔒</div><div style="font-size:16px;color:var(--text);margin-top:12px">Acesso restrito ao Administrador.</div></div>';
-    return;
-  }
-  const agentes = getAgentes().length ? getAgentes() : AGENTES_PADRAO;
-  document.getElementById('content').innerHTML=`
-    <div style="font-size:13px;color:var(--text2);font-weight:300;margin-bottom:20px">Gerencie os agentes IA do escritório. Cada agente tem seu próprio bot no Telegram e especialidade.</div>
-    ${agentes.map(a=>`
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-        <div style="display:flex;align-items:center;gap:14px">
-          <div style="font-size:17px">${a.icone}</div>
-          <div>
-            <div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:600">${a.nome}</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:2px">${a.descricao}</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">Especialidade: ${a.especialidade}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <div style="background:${a.ativo?'var(--green-soft)':'var(--surface2)'};border:1px solid ${a.ativo?'var(--green)':'var(--border2)'};border-radius:20px;padding:4px 12px;font-size:11px;color:${a.ativo?'var(--green)':'var(--text3)'};font-weight:700">${a.ativo?'● Ativo':'○ Inativo'}</div>
-          <button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="configurarAgente('${a.id}')">Configurar</button>
-        </div>
-      </div>`).join('')}
-    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:8px">
-      <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:10px">COMO ATIVAR UM AGENTE</div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.8">
-        <div>1. Crie um bot no <strong>@BotFather</strong> no Telegram → /newbot</div>
-        <div>2. Copie o token gerado</div>
-        <div>3. Clique em <strong>Configurar</strong> no agente desejado</div>
-        <div>4. Cole o token e ative</div>
-        <div>5. O agente passa a responder no novo bot com sua especialidade</div>
-      </div>
-    </div>`;
+function lexEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const LEX_SETORES = [
+  {nome:'Autuação e clientes', agente:'Cadastrador/Autuação', pagina:'autuacao', entrega:'Cadastro do cliente, abertura do caso e documentos pendentes.'},
+  {nome:'Jurídico judicial', agente:'Jurídico judicial', pagina:'peticao', entrega:'Análise do caso e minuta em DOCX para revisão do advogado.'},
+  {nome:'Jurídico administrativo', agente:'Jurídico administrativo', pagina:'processos_admin', entrega:'Procedimentos, impugnações e recursos administrativos.'},
+  {nome:'Pesquisa e decisões', agente:'Pesquisa decisória', pagina:'juizes', entrega:'Fundamentos, provas e precedentes nas decisões, com fontes e limitações.'},
+  {nome:'Perícia e cálculos', agente:'Pericial', pagina:'pericia', entrega:'Minuta de parecer, quesitos e memória de cálculo com os dados fornecidos.'},
+  {nome:'Prazos e acompanhamento', agente:'Cobrador', pagina:'prazos', entrega:'Consulta de prazos e identificação de processos sem atualização.'},
+  {nome:'Identificação de processos', agente:'Roteador', pagina:'processos', entrega:'Localização do caso antes de consultar ou alterar informações.'},
+  {nome:'Tribunais e PJe', agente:'PJe', pagina:'pje', entrega:'Conexão e importação do acervo ainda pendentes de implantação.'}
+];
+async function renderAgentes(){
+  if(!podeConfig()){ document.getElementById('content').textContent='Acesso restrito ao Administrador.'; return; }
+  const host=document.getElementById('content');
+  host.innerHTML='<section class="lex-central" id="lex-central"><h2>LEX · Central de agentes</h2><p>Consultando os agentes registrados no servidor…</p></section>';
+  const target=document.getElementById('lex-central');
+  let status=null;
+  try {
+    const r=await fetchComTimeout(SERVIDOR+'/api/agentes/status', {headers:{Authorization:'Bearer '+getAuthToken()}},10000);
+    if(r.ok){ const d=await r.json(); if(d.ok && Array.isArray(d.agentes)) status=d; }
+  } catch(e) { /* O painel continua acessível, sem afirmar disponibilidade. */ }
+  if(!target.isConnected) return;
+  target.innerHTML=`<h2>LEX · Central de agentes</h2>
+    <p>Um assistente para acompanhar o escritório. Escolha o setor, vincule o processo e prepare sua solicitação.</p>
+    <div class="lex-status" role="status">${status?'Registro do servidor consultado. A execução com IA e a entrega pelos canais ainda precisam ser verificadas.':'Servidor não confirmou os agentes. Verifique a conexão ou a versão publicada.'}</div>
+    <button class="btn-primary" onclick="abrirChat(null)">Conversar com o LEX</button>
+    <p>WhatsApp e Telegram compartilham o atendimento do servidor. Você não precisa criar um bot para cada setor.</p>
+    <div class="lex-sector-grid">${LEX_SETORES.map((setor,i)=>{
+      const agente=status?.agentes.find(a=>a.nome===setor.agente);
+      return `<article class="lex-sector"><h3>${lexEscape(setor.nome)}</h3><div>Agente ${lexEscape(setor.agente)}</div>
+        <p>${lexEscape(setor.entrega)}</p><div class="lex-status">${!agente?'Registro não confirmado':agente.implementado?'Funções implementadas · operação a verificar':'Integração pendente'}</div>
+        <button class="btn-outline" onclick="ir(LEX_SETORES[${i}].pagina)">Abrir setor</button></article>`;
+    }).join('')}</div>
+    <p>Uma tarefa só deve aparecer como concluída após confirmar a gravação ou a entrega. Minutas e atos no tribunal exigem revisão do advogado.</p>`;
 }
 
-function configurarAgente(id){
-  if(!podeConfig()){alert('Acesso restrito ao Administrador.');return;}
-  const agentes = getAgentes().length ? getAgentes() : AGENTES_PADRAO;
-  const a = agentes.find(x=>x.id===id);
-  if(!a)return;
-  const token=prompt('Token do bot Telegram para '+a.nome+':\n(deixe vazio para usar o bot principal)');
-  if(token===null)return;
-  const ativo=confirm('Ativar o agente '+a.nome+'?');
-  const idx=agentes.findIndex(x=>x.id===id);
-  agentes[idx]={...a,token:token||'',ativo};
-  saveAgentes(agentes);
-  toast('✓ Agente '+a.nome+' '+(ativo?'ativado':'desativado')+'!','ok');
-  renderAgentes();
-}
+function configurarAgente(){ renderAgentes(); }
 let _tgLastUpdate=0;
 let _tgPollingAtivo=false;
 let _tgPollingTimer=null;
@@ -9789,7 +9575,7 @@ async function abrirGestorWeb(id) {
       </div>
       <div id="gestor-msgs" style="flex:1;overflow-y:auto;padding:16px;min-height:280px;max-height:50vh">
         <div style="background:var(--surface2);border-left:3px solid var(--gold);padding:12px 14px;border-radius:8px;font-size:13px;color:var(--text2);line-height:1.5">
-          <b style="color:var(--gold)">Gestor:</b> Oi Kleuber! Estou com o <b>${p.nome}</b> aberto.<br>
+          <b style="color:var(--gold)">Gestor:</b> Estou com o <b>${p.nome}</b> aberto.<br>
           ${p.status==='URGENTE'?'🚨 Está <b>URGENTE</b>':''}${p.prazo?' com prazo '+p.prazo:''}${p.proxacao?'. Próxima ação registrada: <i>'+p.proxacao+'</i>':''}
           <br><br>Me diga o que aconteceu, ou pergunte o que precisar. Vou propor atualizações e debater estratégia.
         </div>
@@ -9947,6 +9733,7 @@ function _renderPropostaGestor(p) {
   if(novaProxacao) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">🎯 <b>Próxima ação:</b> '+novaProxacao+'</div>';
   if(novoPrazo === '') html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">⏱ <b>Prazo:</b> zerar</div>';
   else if(novoPrazo) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📅 <b>Prazo novo:</b> '+novoPrazo+'</div>';
+  if(Array.isArray(p.lembretes_concluidos) && p.lembretes_concluidos.length) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">✅ <b>Baixar lembrete(s):</b> '+p.lembretes_concluidos.join(', ')+' — somente após confirmação</div>';
   if(p.justificativa) html += '<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border2)">💭 '+p.justificativa+'</div>';
   html += '<div style="display:flex;gap:8px;margin-top:10px">';
   html += '<button onclick="aplicarPropostaGestor()" style="flex:1;background:var(--green);border:none;border-radius:6px;padding:8px;color:#fff;font-weight:700;cursor:pointer;font-size:12px">✅ Aplicar</button>';
@@ -9966,6 +9753,7 @@ async function aplicarPropostaGestor() {
       setor:        p.setor || undefined,
       proxima_acao: p.proxima_acao || p.nova_proxacao,
       prazo:        p.prazo !== undefined ? p.prazo : p.novo_prazo,
+      lembretes_concluidos: Array.isArray(p.lembretes_concluidos) ? p.lembretes_concluidos : undefined,
       dias_parado:  typeof p.dias_parado === 'number' ? p.dias_parado : undefined,
       justificativa: p.justificativa,
       integrar_parecer: p.integrar_parecer || undefined
@@ -9988,21 +9776,13 @@ async function aplicarPropostaGestor() {
         const idOriginal = local.id;
         // Campos que o backend envia e devem sobrescrever o local
         const camposServidor = ['status','setor','tipo','proxacao','proxima_acao','prazo','prazoReal',
-          'dias_parado','diasParado','atualizado_em','ultima_atualizacao','andamentos','descricao',
+          'dias_parado','diasParado','atualizado_em','ultima_atualizacao','andamentos','lembretes','descricao',
           'integracao_parecer','nome','partes','area','tribunal','numero','valor'];
         for(const campo of camposServidor){
           if(d.processo[campo] !== undefined) local[campo] = d.processo[campo];
         }
         local.id = idOriginal;
-        // Se houve andamento e prazo antigo já passou/vencendo, limpar (prazo cumprido)
-        if(local.prazo && !d.processo.prazo) {
-          const dRest = diasRestantes(local.prazo);
-          if(dRest !== null && dRest <= 5) {
-            console.log('[LEX] Prazo antigo cumprido, limpando:', local.prazo);
-            local.prazo = '';
-            local.prazoReal = '';
-          }
-        }
+        // Ausencia de prazo na resposta nao autoriza apagar o prazo local.
         ps[idx] = local;
         console.log('[LEX] Processo atualizado localmente — status:', local.status, 'setor:', local.setor);
         if(typeof saveProcs === 'function') saveProcs(ps);
@@ -10251,7 +10031,7 @@ async function enviarChat(){
 - Cada petição deve ser pensada como peça do processo de construção recursal
 - Ao sugerir argumentos, verifique admissibilidade no STJ (prequestionamento, etc.)
 - Quando jurisprudência for desfavorável, busque rota alternativa (requalificação da relação, ataque processual, fundamento diverso) — não inove no pedido
-- Advogado signatário: ${_esc.responsavel||'Wanderson Farias de Camargos'} OAB/MG ${_esc.registro||''}`;
+- Advogado signatário: ${_esc.responsavel||'[advogado responsável não configurado]'} ${_esc.registro||''}`;
 
   const _prepsCtx=getPrep().slice(0,10).map(p=>`• [PREP] ${p.nome} | ${p.tipo||'—'} | Previsão: ${p.previsao||'—'} | Status: ${p.status}`).join('\n');
   const sys=`Você é o Assessor Jurídico IA do ${_esc.nome||'escritório'} (${_esc.registro||''}). Seja técnico, preciso e direto. Linguagem formal jurídica brasileira. Cite jurisprudência real com números reais. NUNCA diga que não encontrou um processo sem antes verificar toda a lista abaixo — ela contém TODOS os ${ps.length} processos do escritório.
@@ -10497,7 +10277,7 @@ function limparMsgCiclo(){
   window._cicloPend=[];
 }
 
-// Registra ação de salvar — QUALQUER atualização = ATIVO + limpa prazo cumprido
+// Registra ação de salvar — Atualização = ATIVO, preservando prazo ate baixa expressa
 function registrarAcaoSalvar(procId,acao){
   if(!procId)return;
   const ps=getProcs();
@@ -10507,7 +10287,7 @@ function registrarAcaoSalvar(procId,acao){
   p._ultimaAcao=acao||'Salvo';
   p._ultimaAtualiz=new Date().toISOString();
   saveProcs(ps);
-  // Regra CEO centralizada: delega ciclo de status (ATIVO + zera dias + limpa prazo vencido)
+  // Regra CEO centralizada: delega ciclo de status (ATIVO + zera dias, preservando prazo)
   cicloStatus(procId, 'andamento');
   toast('✓ Processo atualizado — status ATIVO','ok');
   if(typeof renderPainel==='function'&&document.getElementById('page-title')?.textContent==='Painel Geral')renderPainel();
@@ -10758,13 +10538,8 @@ function cicloAtualizacaoInteligente(){
     // PROTEÇÃO CEO: processo atualizado HOJE (dias_parado=0) NUNCA é revertido para URGENTE neste ciclo.
     const atualizadoHoje = (p.dias_parado === 0 || p.diasParado === 0);
 
-    // URGENTE + prazo vencido >7d → ATIVO
-    if(p.status==='URGENTE'&&d!==null&&d<-7){
-      mudancas.push(`${p.nome}: URGENTE → ATIVO (prazo vencido há ${Math.abs(d)}d)`);
-      p.status='ATIVO';n++;
-    }
-    // ATIVO + prazo ≤5d → URGENTE (só se NÃO foi atualizado hoje, pois atualização zera prazo crítico)
-    if(p.status==='ATIVO'&&d!==null&&d>=0&&d<=5&&!atualizadoHoje){
+    // Prazo crítico independe de o processo ter recebido andamento hoje.
+    if(p.status==='ATIVO'&&d!==null&&d>=0&&d<=5){
       mudancas.push(`${p.nome}: ATIVO → URGENTE (prazo em ${d}d)`);
       p.status='URGENTE';n++;
     }
@@ -11867,7 +11642,7 @@ async function atualizarAndamentoProcessoExistente(){
   const hoje = new Date().toISOString().slice(0,10);
   ps[idx].andamentos.unshift({data:hoje, txt});
   saveProcs(ps);
-  // Regra CEO centralizada: ATIVO + zera dias + limpa prazo cumprido
+  // Regra CEO centralizada: ATIVO + zera dias, preservando prazo
   cicloStatus(chatCtx.id, 'andamento');
   try{
     const tk = (typeof getAuthToken==='function' ? (getAuthToken()||'') : '');
@@ -12767,10 +12542,7 @@ async function renderAgenda(){
     else { contatos = _getAgenda(); }
   } catch(e) { contatos = _getAgenda(); }
   
-  // Pré-adiciona Kleuber se não existir
-  if(!contatos.find(c=>c.telefone==='61999917171')){
-    contatos.unshift({id:1,nome:'Kleuber Melchior de Souza (CEO)',telefone:'61999917171',telegram_id:'696337324',cpf:'',email:'',processo_id:null,processo_nome:'',obs:'CEO — Admin do escritório',criado_em:new Date().toISOString()});
-  }
+
   
   const procs = getProcs();
   
@@ -13048,7 +12820,7 @@ async function _centralEnviar(){
       if(chatBox) {
         const hora = new Date().toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
         chatBox.innerHTML += '<div style="display:flex;justify-content:flex-end"><div style="max-width:70%;padding:10px 14px;border-radius:12px;background:var(--accent);color:white">'
-          + '<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:0.7">Kleuber (Lex)</div>'
+          + '<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:0.7">Você</div>'
           + '<div style="font-size:13px;white-space:pre-wrap">' + _escHtml(texto) + '</div>'
           + '<div style="font-size:9px;opacity:0.5;text-align:right;margin-top:4px">' + hora + '</div></div></div>';
         chatBox.scrollTop = chatBox.scrollHeight;

@@ -1,0 +1,11 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>LEX · Importar</title><link rel="stylesheet" href="popup.css"></head><body>
+<h1>LEX · Importar do tribunal</h1><p>Faça login no tribunal normalmente e selecione o texto do andamento antes de abrir o conector.</p>
+<label for="server">Servidor do seu LEX</label><input id="server" placeholder="https://seu-servidor.example">
+<label for="token">Código temporário do LEX</label><input id="token" type="password" autocomplete="off">
+<button id="save">Conectar ao meu LEX</button><button id="capture">Ler seleção da página</button>
+<label for="cnj">Processo CNJ</label><input id="cnj">
+<label for="day">Data do andamento</label><input id="day" type="date">
+<label for="text">Texto que será importado</label><textarea id="text" rows="7"></textarea>
+<p id="source"></p><button id="send" disabled>Conferi · Importar no processo</button><p id="status" role="status"></p>
+<small>Importação assistida. Não assina, protocola, acessa cookies ou guarda o PIN do certificado. O código do LEX expira em 8 horas.</small>
+<script src="popup.js"></script></body></html>
