@@ -1,0 +1,16 @@
+name: Test PF/PJ
+on:
+  push:
+    branches: [fix/cadastro-pf-pj-20260910]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts
+      - run: npm test
