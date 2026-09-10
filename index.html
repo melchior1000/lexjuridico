@@ -7339,6 +7339,18 @@ async function _pDlDoc(id){const db=await _pODB();return new Promise((res,rej)=>
 function _pB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});}
 
 let _pEId=null,_pTmp=[];
+function _pTipoPessoaUI(){
+  const tipo=document.getElementById('ptipoPessoa')?.value||'';
+  const pf=document.getElementById('pfpj-pf'),pj=document.getElementById('pfpj-pj');
+  if(pf)pf.style.display=tipo==='PF'?'grid':'none';
+  if(pj)pj.style.display=tipo==='PJ'?'grid':'none';
+}
+function _pSincronizaNomePessoa(){
+  const tipo=document.getElementById('ptipoPessoa')?.value||'';
+  const nome=tipo==='PJ'?(document.getElementById('prazaoSocial')?.value||''):(document.getElementById('pnomeCompleto')?.value||'');
+  const pn=document.getElementById('pn');if(pn&&nome.trim())pn.value=nome.trim();
+}
+
 const _PSL=[
   {id:'rg_f',l:'RG — Frente',i:'🪪'},{id:'rg_v',l:'RG — Verso',i:'🪪'},
   {id:'cpf',l:'CPF',i:'📄'},{id:'cnh_f',l:'CNH — Frente',i:'🚗'},
@@ -7584,7 +7596,20 @@ async function abrirModalPrep(id){
       </div>
     </div>
     
-    <div class="fg"><label class="fl">Nome / Identificação</label><input class="fi" id="pn" value="${caso?.nome||''}" placeholder="Ex: João Silva — BPC/LOAS"></div>
+    <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:8px">👤 TIPO DE PESSOA</div>
+    <div class="fg"><label class="fl">Pessoa Física ou Jurídica</label><select class="fs" id="ptipoPessoa" onchange="_pTipoPessoaUI()"><option value=""${!caso?.tipo_pessoa?' selected':''}>Não informado</option><option value="PF"${caso?.tipo_pessoa==='PF'?' selected':''}>Pessoa Física</option><option value="PJ"${caso?.tipo_pessoa==='PJ'?' selected':''}>Pessoa Jurídica</option></select></div>
+    <div id="pfpj-pf" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="fg"><label class="fl">Nome completo</label><input class="fi" id="pnomeCompleto" value="${caso?.nome_completo||''}" oninput="_pSincronizaNomePessoa()" placeholder="Nome completo"></div>
+      <div class="fg"><label class="fl">CPF</label><input class="fi" id="pcpf" value="${caso?.cpf||''}" inputmode="numeric" placeholder="000.000.000-00"></div>
+    </div>
+    <div id="pfpj-pj" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="fg"><label class="fl">Razão social</label><input class="fi" id="prazaoSocial" value="${caso?.razao_social||''}" oninput="_pSincronizaNomePessoa()" placeholder="Razão social"></div>
+      <div class="fg"><label class="fl">CNPJ</label><input class="fi" id="pcnpj" value="${caso?.cnpj||''}" inputmode="numeric" placeholder="00.000.000/0000-00"></div>
+      <div class="fg"><label class="fl">Nome fantasia</label><input class="fi" id="pnomeFantasia" value="${caso?.nome_fantasia||''}" placeholder="Nome fantasia"></div>
+      <div class="fg"><label class="fl">Representante</label><input class="fi" id="prepresentante" value="${caso?.representante||''}" placeholder="Representante legal"></div>
+      <div class="fg" style="grid-column:1/-1"><label class="fl">CNPJs de filiais</label><textarea class="fta" id="pfiliais" placeholder="Um CNPJ por linha">${Array.isArray(caso?.filiais)?caso.filiais.join('\n'):''}</textarea></div>
+    </div>
+    <div class="fg"><label class="fl">Nome / Identificação do caso</label><input class="fi" id="pn" value="${caso?.nome||''}" placeholder="Ex: João Silva — BPC/LOAS"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="fg"><label class="fl">Tipo de Ação</label><input class="fi" id="pt" value="${caso?.tipo||''}" placeholder="Ex: BPC, Revisional..."></div>
       <div class="fg"><label class="fl">Área</label><select class="fs" id="pa">${['Previdenciário','Cível','Trabalhista','Tributário','Família','Criminal','Administrativo','Outro'].map(a=>`<option${(caso?.area||'Previdenciário')===a?' selected':''}>${a}</option>`).join('')}</select></div>
@@ -7607,7 +7632,7 @@ async function abrirModalPrep(id){
   </div>`;
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
-  setTimeout(()=>document.getElementById('pn')?.focus(),80);
+  setTimeout(()=>{_pTipoPessoaUI();document.getElementById('pn')?.focus();},80);
 }
 
 function _pCap(slId,orig){
@@ -8675,7 +8700,7 @@ async function _pSv(){
   const btn=document.getElementById('_pBSv');if(btn){btn.textContent='⏳...';btn.disabled=true;}
   try{
     const casos=getPrep();const isEd=_pEId!==null;const id=isEd?_pEId:Date.now();
-    const caso={...(isEd?casos.find(c=>String(c.id)===String(id))||{}:{}),id,nome,tipo:document.getElementById('pt')?.value||'',area:document.getElementById('pa')?.value||'Cível',partes:document.getElementById('pp')?.value||'',tribunal:document.getElementById('ptr')?.value||'',previsao:document.getElementById('ppv')?.value||'',valor:document.getElementById('pvl')?.value||'',faltando:document.getElementById('pfl')?.value||'',obs:document.getElementById('pob')?.value||'',resumo:(document.getElementById('pob')?.value||'').substring(0,200),status:document.getElementById('pst')?.value||'EM_PREP',criadoEm:isEd?(casos.find(c=>c.id===id)?.criadoEm||new Date().toLocaleDateString('pt-BR')):new Date().toLocaleDateString('pt-BR'),docsCount:0};
+    const caso={...(isEd?casos.find(c=>String(c.id)===String(id))||{}:{}),id,nome,tipo_pessoa:document.getElementById('ptipoPessoa')?.value||'',cpf:document.getElementById('pcpf')?.value||'',cnpj:document.getElementById('pcnpj')?.value||'',nome_completo:document.getElementById('pnomeCompleto')?.value||'',razao_social:document.getElementById('prazaoSocial')?.value||'',nome_fantasia:document.getElementById('pnomeFantasia')?.value||'',representante:document.getElementById('prepresentante')?.value||'',filiais:(document.getElementById('pfiliais')?.value||'').split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean),tipo:document.getElementById('pt')?.value||'',area:document.getElementById('pa')?.value||'Cível',partes:document.getElementById('pp')?.value||'',tribunal:document.getElementById('ptr')?.value||'',previsao:document.getElementById('ppv')?.value||'',valor:document.getElementById('pvl')?.value||'',faltando:document.getElementById('pfl')?.value||'',obs:document.getElementById('pob')?.value||'',resumo:(document.getElementById('pob')?.value||'').substring(0,200),status:document.getElementById('pst')?.value||'EM_PREP',criadoEm:isEd?(casos.find(c=>c.id===id)?.criadoEm||new Date().toLocaleDateString('pt-BR')):new Date().toLocaleDateString('pt-BR'),docsCount:0};
     for(const doc of _pTmp)await _pSvDoc({cId:String(id),slot:doc.slot,nome:doc.nome,base64:doc.base64,tipo:doc.tipo});
     const dx=await _pGtDocs(id);caso.docsCount=dx.length;
     if(isEd){const idx=casos.findIndex(c=>c.id===id);if(idx>=0)casos[idx]=caso;else casos.push(caso);}else casos.push(caso);
