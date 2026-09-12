@@ -1,12 +1,4 @@
-const evolutionUrl = String(
-  process.env.EVOLUTION_URL || process.env.EVO_URL || ''
-).replace(/\/$/, '');
-const apiKey = String(
-  process.env.EVOLUTION_KEY || process.env.EVO_KEY || ''
-);
-const instanceName = String(
-  process.env.EVOLUTION_INSTANCE || process.env.EVO_INSTANCE || process.env.EVO_INST || 'LEX-JURIDICO'
-);
+const {url:evolutionUrl, key:apiKey, instance:instanceName} = require('../lib/evolution-config').evolutionConfig();
 
 async function request(path, options = {}) {
   const controller = new AbortController();
@@ -38,9 +30,14 @@ async function request(path, options = {}) {
   try {
     const fetchInstances = await request('/instance/fetchInstances');
     if (!fetchInstances.ok) {
-      console.log(`[LEX Evolution] listar instâncias: HTTP ${fetchInstances.status}`);
+      console.log(`[LEX Evolution] listar instâncias: HTTP ${fetchInstances.status}; criação cancelada`);
+      return;
     }
-    const list = Array.isArray(fetchInstances.body) ? fetchInstances.body : [];
+    if (!Array.isArray(fetchInstances.body)) {
+      console.log('[LEX Evolution] lista de instâncias inválida; criação cancelada');
+      return;
+    }
+    const list = fetchInstances.body;
     const exists = list.some((item) => {
       const name = item?.name || item?.instance?.instanceName || item?.instanceName;
       return String(name || '').toLowerCase() === instanceName.toLowerCase();
@@ -61,10 +58,6 @@ async function request(path, options = {}) {
 
     console.log(`[LEX Evolution] criar ${instanceName}: HTTP ${created.status}`);
     if (!created.ok) {
-      const safe = typeof created.body === 'string'
-        ? created.body.slice(0, 500)
-        : created.body;
-      console.log('[LEX Evolution] resposta:', safe);
       return;
     }
     console.log(`[LEX Evolution] instância ${instanceName} criada`);

@@ -1,8 +1,7 @@
 const http = require('http');
 
 const port = Number(process.env.PORT || 10000);
-const evolutionUrl = String(process.env.EVOLUTION_URL || '').replace(/\/$/, '');
-const apiKey = String(process.env.EVOLUTION_KEY || '');
+const {url:evolutionUrl, key:apiKey, instance:instanceName} = require('../lib/evolution-config').evolutionConfig();
 const adminSecret = String(process.env.LEX_EVOLUTION_ADMIN_SECRET || '');
 
 function json(res, status, body) {
@@ -17,7 +16,7 @@ async function createInstance(req, res) {
   const upstream = await fetch(`${evolutionUrl}/instance/create`, {
     method: 'POST',
     headers: { 'content-type':'application/json', apikey: apiKey },
-    body: JSON.stringify({ instanceName:'LEX-JURIDICO', integration:'WHATSAPP-BAILEYS', qrcode:true })
+    body: JSON.stringify({ instanceName, integration:'WHATSAPP-BAILEYS', qrcode:true })
   });
   const text = await upstream.text();
   res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') || 'application/json; charset=utf-8' });
