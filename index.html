@@ -3610,30 +3610,48 @@ async function salvarWhatsappConfig(){
   toast('WhatsApp atualizado','ok');
 }
 
+function whatsappStatusTexto(estado){
+  return ({conectado:'conectado', desativado:'desativado', desconectado:'desconectado',
+    aguardando_pareamento:'aguardando pareamento no WhatsApp', nao_configurado:'configuração incompleta no servidor',
+    instancia_nao_confirmada:'instância não confirmada', numero_nao_confirmado:'número não confirmado',
+    numero_divergente:'WhatsApp conectado com outro número', resposta_invalida:'resposta inválida do provedor',
+    falha_autenticacao:'chave recusada pela Evolution', instancia_ausente:'instância não encontrada na Evolution',
+    falha_na_verificacao:'não foi possível verificar a conexão', sessao_expirada:'entre novamente no LEX',
+    sem_permissao:'sem permissão para consultar', nao_verificado:'conexão não verificada'})[estado] || 'conexão não verificada';
+}
+
 async function atualizarWhatsStatusUI(){
   const st = document.getElementById('wa-status');
   const ul = document.getElementById('wa-ultima-msg');
-  if(!st || !ul) return;
-  const tk = getAuthToken() || '';
-  let cfg = getWhatsappCfg();
+  if(!st || !ul) return null;
+  let resultado = {conectado:false, estado:'falha_na_verificacao'};
   try{
-    const r = await fetchComTimeout(SERVIDOR + '/api/whatsapp/status', { headers:{'Authorization':'Bearer '+tk} }, 8000);
-    if(r.ok){
+    const r = await fetchComTimeout(SERVIDOR + '/api/whatsapp/status', { headers:{'Authorization':'Bearer '+(getAuthToken() || '')} }, 35000);
+    if(!r.ok){
+      resultado.estado = r.status===401 ? 'sessao_expirada' : r.status===403 ? 'sem_permissao' : 'falha_na_verificacao';
+    }else{
       const d = await r.json();
-      cfg = {...cfg, ativo:d.ativo, numero:d.numero||cfg.numero, status:d.conectado?'conectado':'desconectado', ultima_mensagem:d.ultima_mensagem||null};
-      saveWhatsappCfg(cfg);
+      if(typeof d.conectado !== 'boolean') throw new Error('Resposta inválida');
+      resultado = {...d, estado:d.conectado ? 'conectado' : (d.estado || (d.ativo ? 'desconectado' : 'desativado'))};
+      saveWhatsappCfg({ativo:d.ativo, numero:d.numero||getWhatsappCfg().numero,
+        status:d.conectado?'conectado':'desconectado', estado:resultado.estado, ultima_mensagem:d.ultima_mensagem||null});
     }
-  }catch(_){ console.warn('[whatsapp] status indisponivel:', _?.message || _); }
-  const tag = cfg.status==='conectado' ? ['#2ec97e','conectado'] : (cfg.ativo ? ['#f0832a','conectando'] : ['#9da6cc','desconectado']);
-  st.innerHTML = '<span class="status-dot" style="background:'+tag[0]+'"></span>'+tag[1];
-  ul.textContent = cfg.ultima_mensagem ? new Date(cfg.ultima_mensagem).toLocaleString('pt-BR') : '—';
+  }catch(_){ resultado = {conectado:false, estado:'falha_na_verificacao'}; }
+  const cor = resultado.conectado ? '#2ec97e' : '#9da6cc';
+  st.innerHTML = '<span class="status-dot" style="background:'+cor+'"></span>' + whatsappStatusTexto(resultado.estado);
+  ul.textContent = resultado.ultima_mensagem ? new Date(resultado.ultima_mensagem).toLocaleString('pt-BR') : '—';
+  return resultado;
 }
 
 async function testarWhatsappConexao(){
+  if(testarWhatsappConexao.emCurso) return;
+  testarWhatsappConexao.emCurso = true;
   const st = document.getElementById('wa-status');
-  if(st) st.innerHTML = '<span class="status-dot" style="background:#f0832a"></span>conectando';
-  await atualizarWhatsStatusUI();
-  toast('Teste de conexão finalizado','ok');
+  if(st) st.textContent = 'verificando conexão…';
+  try{
+    const resultado = await atualizarWhatsStatusUI();
+    if(resultado) toast(whatsappStatusTexto(resultado.estado), resultado.conectado ? 'ok' : 'erro');
+  }finally{ testarWhatsappConexao.emCurso = false; }
 }
 
 async function salvarPjeAvancado(){

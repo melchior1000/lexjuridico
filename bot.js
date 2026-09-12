@@ -156,9 +156,7 @@ const MODELO_LEGAL = legalModelFor();
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_KEY || '';
 
-const EVO_URL  = process.env.EVOLUTION_URL || '';
-const EVO_KEY  = process.env.EVOLUTION_KEY || '';
-const EVO_INST = process.env.EVOLUTION_INSTANCE || '';
+const {url:EVO_URL, key:EVO_KEY, instance:EVO_INST} = require('./lib/evolution-config').evolutionConfig();
 
 const LEX_WHATSAPP_NUMBER = brazilMobile(process.env.LEX_WHATSAPP_NUMBER);
 const WHATSAPP_CONFIG = {
