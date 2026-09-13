@@ -1,0 +1,13 @@
+'use strict';
+const fs=require('node:fs');
+const path='lib/integration-status.js';
+let s=fs.readFileSync(path,'utf8');
+const oldRegex="if (/meu processo|meu caso|andamento|numero do processo|n[uú]mero do processo|sentenca|recurso|peticao|audiencia|prazo do processo/.test(n)) return {kind:'existing_case',escalate:true,archive:false,reply:'Neste canal eu não abro processo automaticamente por segurança. Me passe seu nome e o número do caso; o responsável retorna com a informação correta.'};";
+const newRegex="if (/\\bprocesso\\b|meu caso|andamento|numero do processo|n[uú]mero do processo|sentenca|recurso|peticao|audiencia|prazo do processo/.test(n)) return {kind:'existing_case',escalate:true,archive:false,reply:'Entendi. Por segurança, eu não abro dados do processo automaticamente neste canal. Me informe seu nome e, se tiver em mãos, o número do processo. Eu registro e o responsável retorna com a informação correta.'};";
+if(!s.includes(oldRegex)) throw new Error('Trecho de processo não encontrado; abortando sem alterar');
+s=s.replace(oldRegex,newRegex);
+const oldDecision="decision=publicWhatsappDecision(text,decisionData);";
+const newDecision=`let history=[];\n    if(typeof store.history==='function'){try{history=await store.history(sender,{limit:6});}catch{history=[];}}\n    const lastLex=history.find(x=>x.direcao==='saida_lex');\n    const cleanNow=String(text||'').trim();\n    const looksLikeName=/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{2,60}$/.test(cleanNow)&&cleanNow.split(/\\s+/).length<=5;\n    if(looksLikeName&&lastLex&&/nome|empresa/i.test(String(lastLex.texto||''))){\n      decision={kind:'identify',escalate:false,archive:false,reply:'Prazer, '+cleanNow+'. Agora me conte, em uma frase, o que você precisa do escritório.'};\n    } else {\n      decision=publicWhatsappDecision(text,decisionData);\n      const lastReply=lastLex?String(lastLex.texto||'').trim():'';\n      if(lastReply&&decision.reply===lastReply){\n        decision={...decision,reply:decision.kind==='general'?'Entendi. Me conte um pouco mais do que você precisa para eu encaminhar corretamente.':decision.reply};\n      }\n    }`;
+if(!s.includes(oldDecision)) throw new Error('Ponto de decisão não encontrado; abortando sem alterar');
+s=s.replace(oldDecision,newDecision);
+fs.writeFileSync(path,s);
