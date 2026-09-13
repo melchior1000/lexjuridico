@@ -1,1 +1,0 @@
-Acceptance: (1) `Oi`, `mesa` or `resumo` from the configured owner number lists up to 10 waiting contacts; (2) each row shows its own name, number and latest message; (3) `responder NUMERO TEXTO` forwards the exact text only to that number; (4) `resolver NUMERO` archives only that contact; (5) legal free text is not converted into an owner-desk command.
