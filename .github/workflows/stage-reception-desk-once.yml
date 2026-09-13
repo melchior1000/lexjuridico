@@ -1,0 +1,99 @@
+name: Stage reception desk once
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch and validate branch
+        run: |
+          git checkout -B fix/office-reception-desk origin/main
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('lib/office-routes.js'); s=p.read_text()
+          s=s.replace("const receptionStore=createReceptionStore();\nasync function officeRoutes(req,res,deps) {", """const receptionStore=createReceptionStore();
+const {requestJson,evolutionEndpoint}=require('./integration-status');
+const {evolutionConfig}=require('./evolution-config');
+async function sendReceptionWhatsapp(numero,text,deps={}) {
+  if(typeof deps.sendWhatsapp==='function') return deps.sendWhatsapp(numero,text);
+  const cfg=evolutionConfig();
+  if(!cfg.url||!cfg.key||!cfg.instance) throw Object.assign(new Error('WhatsApp do escritório não está configurado no servidor'),{status:503});
+  const result=await requestJson(evolutionEndpoint(cfg.url,'message/sendText/'+encodeURIComponent(cfg.instance)),{method:'POST',headers:{apikey:cfg.key},timeoutMs:15000,data:{number:numero,text}});
+  return !!(result?.key?.id && !result.error);
+}
+async function officeRoutes(req,res,deps) {""",1)
+          s=s.replace("if(!['admin','advogado'].includes(profile)) {json(403,{error:'Acesso restrito ao responsável jurídico'});return true;}","const receptionPath=path.startsWith('/api/escritorio/recepcao');\n  if(!['admin','advogado'].includes(profile) && !(profile==='secretaria' && receptionPath)) {json(403,{error:'Acesso restrito ao responsável jurídico'});return true;}",1)
+          s=s.replace("if(profile!=='admin') {json(403,{error:'Recepção restrita ao administrador'});return true;}\n      const filter=String(parsedUrl.searchParams.get('status')||'aguardando_advogado');","if(!['admin','advogado','secretaria'].includes(profile)) {json(403,{error:'Perfil sem acesso à recepção'});return true;}\n      const filter=String(parsedUrl.searchParams.get('status')||'aguardando_advogado');",1)
+          anchor="""      json(200,{ok:true,status:filter,contatos:rows});
+    } else if(path==='/api/escritorio/recepcao/arquivar' && req.method==='POST') {
+      if(profile!=='admin') {json(403,{error:'Recepção restrita ao administrador'});return true;}
+"""
+          assert anchor in s
+          repl="""      json(200,{ok:true,status:filter,contatos:rows});
+    } else if(path==='/api/escritorio/recepcao/historico' && req.method==='GET') {
+      const numero=String(parsedUrl.searchParams.get('numero')||'').replace(/\\D/g,'');
+      if(!/^55\\d{10,11}$/.test(numero)) {json(422,{error:'Número de WhatsApp inválido'});return true;}
+      const eventos=typeof receptionStore.history==='function'?await receptionStore.history(numero,{limit:80}):[];
+      json(200,{ok:true,numero,eventos:[...eventos].reverse()});
+    } else if(path==='/api/escritorio/recepcao/responder' && req.method==='POST') {
+      const body=await deps.body(req);const numero=String(body?.numero||'').replace(/\\D/g,'');const texto=String(body?.texto||'').trim();
+      if(!/^55\\d{10,11}$/.test(numero)) {json(422,{error:'Número de WhatsApp inválido'});return true;}
+      if(!texto) {json(422,{error:'Digite a mensagem antes de enviar'});return true;}
+      if(texto.length>4000) {json(422,{error:'Mensagem acima de 4000 caracteres'});return true;}
+      const enviado=await sendReceptionWhatsapp(numero,texto,deps);
+      if(!enviado) {json(502,{error:'Não foi possível confirmar o envio pelo WhatsApp do escritório'});return true;}
+      if(typeof receptionStore.appendEvent==='function') await receptionStore.appendEvent({numero,nome:'Contato',direcao:'saida_operador',texto,classe:'geral',nivel:'ciencia'});
+      json(200,{ok:true,numero,enviado:true});
+    } else if(path==='/api/escritorio/recepcao/arquivar' && req.method==='POST') {
+      if(!['admin','advogado','secretaria'].includes(profile)) {json(403,{error:'Perfil sem acesso à recepção'});return true;}
+"""
+          s=s.replace(anchor,repl,1); p.write_text(s)
+
+          p=Path('office-ui.js'); s=p.read_text()
+          s=s.replace("${archived?'':`<button class=\"btn-outline\" onclick=\"lexArchiveReception('${number}')\">Arquivar</button>`}","${archived?'':`<div class=\"work-actions\"><button class=\"btn-primary\" onclick=\"lexOpenReceptionConversation('${number}')\">Abrir</button><button class=\"btn-outline\" onclick=\"lexArchiveReception('${number}')\">Arquivar</button></div>`}",1)
+          s=s.replace("status.textContent='Fonte: Supabase · atualização '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'. Para responder pelo WhatsApp do escritório, use /responder NUMERO mensagem no seu 7171.';","status.textContent='Fonte: Supabase · atualização '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'. Abra um contato para ver o histórico e responder pelo WhatsApp do escritório.';",1)
+          anchor="""async function lexArchiveReception(numero){
+  if(!confirm('Arquivar este contato da recepção?')) return;
+  try{await lexApi('/api/escritorio/recepcao/arquivar',{method:'POST',body:JSON.stringify({numero})});await renderRecepcaoLex();}
+  catch(e){toast(e.message,'erro');}
+}
+"""
+          assert anchor in s
+          s=s.replace(anchor,anchor+"""async function lexOpenReceptionConversation(numero){
+  const host=document.getElementById('content');if(!host)return;
+  host.innerHTML=`<section class=\"work-home\"><div class=\"work-title\"><div><div class=\"work-eyebrow\">WhatsApp do escritório</div><h1>Conversa</h1><p>${lexEscape(numero)}</p></div><button class=\"btn-outline\" onclick=\"renderRecepcaoLex()\">Voltar à recepção</button></div><div id=\"lex-conversation-status\" class=\"work-notice\">Carregando histórico…</div><div id=\"lex-conversation-history\" class=\"lex-conversation-history\"></div><section class=\"work-command lex-conversation-compose\"><label for=\"lex-conversation-text\">Responder pelo WhatsApp do escritório</label><textarea id=\"lex-conversation-text\" rows=\"3\" maxlength=\"4000\"></textarea><button class=\"btn-primary\" id=\"lex-conversation-send\" onclick=\"lexSendReception('${lexEscape(numero)}')\">Enviar</button></section></section>`;
+  try{const d=await lexApi('/api/escritorio/recepcao/historico?numero='+encodeURIComponent(numero));const events=Array.isArray(d.eventos)?d.eventos:[];document.getElementById('lex-conversation-history').innerHTML=events.length?events.map(e=>{const who=e.direcao==='entrada'?'Contato':e.direcao==='saida_operador'?'Escritório':'LEX';return `<article class=\"lex-conversation-event ${e.direcao==='entrada'?'from-contact':'from-office'}\"><div><strong>${lexEscape(who)}</strong><span>${lexEscape(lexReceptionTime(e.criado_em))}</span></div><p>${lexEscape(e.texto||'')}</p></article>`;}).join(''):'<div class=\"lex-reception-empty\">Nenhuma mensagem registrada.</div>';document.getElementById('lex-conversation-status').textContent='Histórico persistente · '+events.length+' evento(s).';}catch(e){document.getElementById('lex-conversation-status').textContent=e.message;}
+}
+async function lexSendReception(numero){const text=document.getElementById('lex-conversation-text')?.value.trim();if(!text){toast('Digite a mensagem antes de enviar.','alert');return;}const btn=document.getElementById('lex-conversation-send');if(btn)btn.disabled=true;try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({numero,texto:text})});toast('Mensagem enviada pelo WhatsApp do escritório.','ok');await lexOpenReceptionConversation(numero);}catch(e){toast(e.message,'erro');}finally{if(btn&&btn.isConnected)btn.disabled=false;}}
+""",1)
+          nav="""      const central=[...nav.querySelectorAll('.nav-btn')].find(b=>/Central Mensagens/i.test(b.textContent||''));
+      if(central)central.after(btn);else nav.appendChild(btn);
+"""
+          assert nav in s
+          s=s.replace(nav,nav+"""      if(!document.getElementById('lex-nav-whatsapp')){const zap=document.createElement('button');zap.id='lex-nav-whatsapp';zap.className='nav-btn';zap.innerHTML='<span class=\"nav-icon\">💬</span> WhatsApp';zap.onclick=()=>lexOpenReception(zap);const telegram=[...nav.querySelectorAll('.nav-btn')].find(b=>/Telegram Bot/i.test(b.textContent||''));if(telegram)telegram.after(zap);else if(central)central.after(zap);else nav.appendChild(zap);}
+""",1)
+          css=".lex-reception-empty{padding:18px 8px;text-align:center;color:var(--text3);font-size:12px}"
+          assert css in s
+          s=s.replace(css,css+".lex-conversation-history{display:grid;gap:10px;margin:14px 0 18px}.lex-conversation-event{max-width:760px;border:1px solid var(--border2);border-radius:14px;padding:12px;background:var(--surface2)}.lex-conversation-event.from-office{margin-left:auto}.lex-conversation-event>div{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--text3)}.lex-conversation-event p{margin:8px 0 0;white-space:pre-wrap;line-height:1.45}.lex-conversation-compose{max-width:760px}",1); p.write_text(s)
+
+          Path('test/reception-desk.test.js').write_text("""const test=require('node:test');const assert=require('node:assert/strict');const {officeRoutes}=require('../lib/office-routes');function response(){let status=0,body='';return {res:{writeHead:s=>status=s,end:b=>body=b||''},get:()=>({status,body:body?JSON.parse(body):{}})}}function req(url,method='GET',body={}){return {url,method,_body:body,headers:{}}}function deps(profile,sendWhatsapp){return {headers:{'Content-Type':'application/json'},authenticate:()=>profile,body:async r=>r._body,records:{},processStore:{},engine:{},docx:()=>Buffer.alloc(0),aiAvailable:()=>false,setOffice:()=>{},log:()=>{},sendWhatsapp}}test('secretaria acessa recepcao mas nao trabalho juridico',async()=>{let r=response();await officeRoutes(req('/api/escritorio/recepcao/historico?numero=5561988888888'),r.res,deps('secretaria',async()=>true));assert.equal(r.get().status,200);r=response();await officeRoutes(req('/api/trabalho'),r.res,deps('secretaria',async()=>true));assert.equal(r.get().status,403)});test('secretaria responde pelo balcao sem reescrita',async()=>{const sent=[];const r=response();await officeRoutes(req('/api/escritorio/recepcao/responder','POST',{numero:'5561988888888',texto:'Recebemos. Retorno hoje.'}),r.res,deps('secretaria',async(numero,texto)=>{sent.push({numero,texto});return true}));assert.equal(r.get().status,200);assert.deepEqual(sent,[{numero:'5561988888888',texto:'Recebemos. Retorno hoje.'}])});const fs=require('node:fs');test('ui tem whatsapp historico e responder',()=>{const src=fs.readFileSync(require.resolve('../office-ui.js'),'utf8');for(const n of ['lex-nav-whatsapp','lexOpenReceptionConversation','/api/escritorio/recepcao/historico','/api/escritorio/recepcao/responder'])assert.ok(src.includes(n),n)});""")
+          Path('.github/workflows/stage-reception-desk-once.yml').unlink()
+          PY
+          npm ci --ignore-scripts
+          npm run check
+          node --test test/reception-desk.test.js
+          npm test
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Balcão: WhatsApp na régua, histórico e resposta no LEX"
+          git push --force origin HEAD:fix/office-reception-desk
