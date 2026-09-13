@@ -32,7 +32,7 @@ function safeBody(body) {
   return 'detalhes_omitidos';
 }
 
-(async () => {
+module.exports = (async () => {
   if (!evolutionUrl || !apiKey) {
     console.log(`[LEX Evolution] configuração ausente; url=${!!evolutionUrl} chave=${!!apiKey}; bootstrap ignorado`);
     return;

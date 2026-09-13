@@ -4,8 +4,8 @@
   "main": "bot.js",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "start": "node scripts/bootstrap-evolution-instance.js && node bot.js",
-    "dev": "node scripts/bootstrap-evolution-instance.js && node --watch bot.js",
+    "start": "node bot.js",
+    "dev": "node --watch bot.js",
     "check": "node scripts/check-syntax.js",
     "status:integracoes": "node scripts/check-integrations.js"
   },
