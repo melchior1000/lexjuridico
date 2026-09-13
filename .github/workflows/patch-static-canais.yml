@@ -1,0 +1,44 @@
+name: Patch static canais
+on:
+  push:
+    branches: [fix/static-canais-menu]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/static-canais-menu
+      - name: Patch index.html
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='''    <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>\n    <input type="file" id="import-file" accept=".json,.zip" style="display:none" onchange="importarBackup(this)">\n    <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram Bot</button>'''
+          new='''    <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>\n    <input type="file" id="import-file" accept=".json,.zip" style="display:none" onchange="importarBackup(this)">\n    <div class="nav-section">Canais</div>\n    <button class="nav-btn" id="lex-nav-whatsapp" onclick="ir('whatsapp',this)"><span class="nav-icon">📱</span> WhatsApp</button>\n    <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram</button>'''
+          if old not in s: raise SystemExit('menu antigo não encontrado')
+          s=s.replace(old,new,1)
+          old_title="senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens'"
+          new_title="senhas:'Gestão de Senhas',whatsapp:'WhatsApp do escritório',telegram:'Telegram',mensagens:'Central de Mensagens'"
+          if old_title not in s: raise SystemExit('mapa de títulos antigo não encontrado')
+          s=s.replace(old_title,new_title,1)
+          old_render='senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens'
+          new_render='senhas:renderGestaoSenhas,whatsapp:renderWhatsappCanal,telegram:renderTelegram,mensagens:renderCentralMensagens'
+          if old_render not in s: raise SystemExit('mapa de render antigo não encontrado')
+          s=s.replace(old_render,new_render,1)
+          s=s.replace('Telegram Bot','Telegram')
+          if 'Telegram Bot' in s: raise SystemExit('string Telegram Bot ainda presente')
+          if "ir('whatsapp',this)" not in s or "whatsapp:renderWhatsappCanal" not in s: raise SystemExit('WhatsApp não foi ligado ao menu/render')
+          p.write_text(s,encoding='utf-8')
+      - name: Commit patch and remove temporary workflow
+        run: |
+          rm .github/workflows/patch-static-canais.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html .github/workflows/patch-static-canais.yml
+          git commit -m "LEX: corrige menu estático de canais"
+          git push origin HEAD:fix/static-canais-menu
