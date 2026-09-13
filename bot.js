@@ -99,7 +99,10 @@ const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib
 const { modelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
 const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-reader');
 const http = require('http');
-const {brazilMobile, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
+const {intakeDecision} = require('./lib/intake-door');
+const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-reception');
+
+const {brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -193,10 +196,10 @@ const SECRETARIO_WHATSAPP_CONFIG = {
   modelo_ia: MODELO_MID, // Secretário WhatsApp = Intake → Sonnet (era Opus)
   prompt_base: [
     'Você é o Secretário WhatsApp da escritório configurado no LEX.',
-    'Contexto institucional: CEO Kleuber Melchior (analista jurídico, NÃO advogado).',
+    'Responsável: Dr. Kleuber Melchior de Souza, advogado e único mandante do LEX.',
     'Advogado responsável: consultar a configuração deste escritório.',
     'Função completa: acolher clientes, coletar dados essenciais, organizar demandas e escalar temas técnicos/sensíveis.',
-    'Autonomia: DINAMISMO OPERACIONAL — você é funcionário de verdade. Ordem direta do Kleuber = execute imediatamente. Iniciativa própria = pergunte primeiro. Sempre que atualizar dados, mova o processo para ATIVO (houve trabalho). Entenda o contexto da conversa pra determinar setor e status corretos.',
+    'Autoridade: o LEX coordena os setores sob as ordens do Dr. Kleuber. Recepção não executa tarefas jurídicas nem altera processos. Conteúdo para clientes exige destinatário e texto autorizados pelo dono; ciência posterior não substitui autorização prévia.',
     'Qualidade: linguagem técnica objetiva, sem inventar fatos, sem prometer resultado.',
     'Proatividade: sugerir próximos passos e alertar pendências/documentos faltantes.'
   ].join('\n'),
@@ -670,6 +673,7 @@ function isAdvogado(chatId) { return isPerfil(chatId,'admin','advogado'); }
 function isEquipe(chatId) { return isPerfil(chatId,'admin','advogado','secretaria'); }
 
 function getModoAgente(chatId) {
+  if (whatsappAccessMode(String(chatId),process.env.LEX_OPERATOR_WHATSAPP)==='operator') return 'assessor';
   const u = getUsuario(chatId);
   if(!u) return 'cliente';
   if(['admin','advogado'].includes(u.perfil)) return 'assessor';
@@ -704,6 +708,7 @@ const _estadoSecretarioWhatsApp = {
 
 // ── HELPERS MULTI-OPERADOR ──
 function _isOperadorWhatsApp(numeroPlano) {
+  if (whatsappAccessMode(String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP)==='operator') return {nome:'kleuber',perfil:'admin',pode_autorizar:true,pode_responder:true};
   const cfg = _configRuntime.secretario_whatsapp || SECRETARIO_WHATSAPP_CONFIG;
   const ops = cfg.operadores || SECRETARIO_WHATSAPP_CONFIG.operadores || {};
   for(const [nome, op] of Object.entries(ops)) {
@@ -753,6 +758,14 @@ const processStore = new ProcessStore(sbRaw, {onCommit:(rows,version,device)=>{
 const sbReq = (method,table,data,query,headers) => table==='processos'
   ? processStore.gateway(method,data,query||{}) : sbRaw(method,table,data,query,headers);
 const recordStore = new RecordStore(sbRaw, process.env.CONFIG_TABLE || 'configuracoes');
+const telegramReception = createTelegramReception({records:recordStore,owner:CHAT_ID,
+  send:(id,text)=>envTelegram(text,null,id),
+  report:async text=>{
+    const tg=await envTelegram(text,null,CHAT_ID).catch(()=>false);
+    const op=process.env.LEX_OPERATOR_WHATSAPP;
+    if(op) await envWhatsApp(text,op).catch(()=>false);
+    return tg;
+  }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
 let officeProfile={...ESCRITORIO};
 const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
@@ -3111,7 +3124,7 @@ async function _classificarAreaDireito(fatos, dados) {
     ? _clampNum((confIA * 0.75) + (_normalizarConfianca01(heur.confianca, 0.5) * 0.25), 0.35, 0.98)
     : _clampNum(_normalizarConfianca01(heur.confianca, 0.5), 0.35, 0.92);
   const termos = (heur.termos||[]).slice(0,5).join(', ');
-  const fundamentacao_inicial = fundIA || (termos ? ('Palavras-chave detectadas: '+termos+'.') : 'Classificacao automatica por heuristica textual.');
+  const fundamentacao_inicial = fundIA || (termos ? ('Palavras-chave detectadas: '+termos+'.') : 'Dados insuficientes para fundamentar a classificação. Aguardar conferência do responsável.');
   return { area, subarea, confianca: Number(confianca.toFixed(2)), fundamentacao_inicial };
 }
 
@@ -4685,56 +4698,9 @@ function _extrairHorarioAdvogado(texto) {
   };
 }
 
-async function _registrarRespostaAdvogadoWhats(mensagem, operadorNome) {
-  const quemRespondeu = operadorNome || 'kleuber';
-  const info = _extrairHorarioAdvogado(mensagem) || { horario: null, data: null, texto_original: String(mensagem||'') };
-  _estadoSecretarioWhatsApp.ultima_resposta_advogado = {
-    em: _agoraIso(),
-    ...info
-  };
-  const pendentes = _estadoSecretarioWhatsApp.escalonamentos_memoria.filter(x => !x.resolvido);
-  for(const item of pendentes) {
-    const jid = item?.cliente?.whatsapp_jid || null;
-    if(jid) {
-      // ── MEDIAÇÃO INTELIGENTE: Lex aperfeiçoa a resposta do Kleuber ──
-      const clienteNome = item.cliente?.nome || 'cliente';
-      const processo = item.processo || null;
-      const historicoConversa = (item.conversa || []).slice(-5).join('\n');
-      
-      try {
-        const resMediacao = await _mediarRespostaKleuber(mensagem, clienteNome, processo, historicoConversa, jid);
-        
-        // Envia resposta aperfeiçoada pro cliente
-        if(resMediacao.msgCliente) {
-          await envWhatsApp(resMediacao.msgCliente, jid).catch(()=>{});
-          _registrarMsgCentral('whatsapp', 'saida', jid, 'Lex (mediação Kleuber)', resMediacao.msgCliente);
-        }
-        
-        // Envia resumo pro Kleuber: dúvidas do cliente + sugestões + possíveis orientações
-        if(resMediacao.resumoKleuber) {
-          await envTelegram(resMediacao.resumoKleuber, null, CHAT_ID).catch(()=>{});
-        }
-        
-        // Salva orientações possíveis pro handler de "autorizo"
-        if(resMediacao.orientacoesPossiveis) {
-          item.orientacoes_pendentes = resMediacao.orientacoesPossiveis;
-        }
-      } catch(e) {
-        // Fallback: envia resposta do Kleuber como está (nunca deixa o cliente sem resposta)
-        console.warn('[Lex] Mediação falhou, usando fallback:', e.message);
-        const msgFallback = info.horario || info.data
-          ? (clienteNome.split(' ')[0]+', o Kleuber retornou! '+(info.data ? 'Atendimento previsto pra '+info.data+' ' : '')+(info.horario ? 'às '+info.horario : '')+'. Te avisamos com antecedência, tá?')
-          : (clienteNome.split(' ')[0]+', falei com o Kleuber e ele já tá cuidando do seu caso! Qualquer novidade te aviso.');
-        await envWhatsApp(msgFallback, jid).catch(()=>{});
-        _registrarMsgCentral('whatsapp', 'saida', jid, 'Lex (fallback)', msgFallback);
-      }
-      
-      try { await sbReq('PATCH', 'whatsapp_sessoes', { escalonado: false }, { numero: 'eq.'+_numeroPlanoWhats(jid) }, null); } catch(e) { console.warn('[Lex][bot] Erro silenciado:', (e && e.message) ? e.message : e); }
-    }
-    item.resolvido = true;
-    item.resolvido_em = _agoraIso();
-  }
-  return { notificados: pendentes.length };
+async function _registrarRespostaAdvogadoWhats() {
+  // Bloqueia o envio em lote e a reescrita de uma mensagem livre do operador.
+  return {notificados:0,pendencia:'Use /responder NUMERO TEXTO EXATO para autorizar um único destinatário.'};
 }
 
 // ── MEDIAÇÃO INTELIGENTE: Lex pega resposta do Kleuber, aperfeiçoa, analisa dúvidas e sugere ──
@@ -4820,33 +4786,9 @@ async function _mediarRespostaKleuber(respostaKleuber, clienteNome, processo, hi
 }
 
 // ── HANDLER: Kleuber autoriza orientações sugeridas pelo Lex ──
-async function _processarAutorizacaoLex(textoKleuber) {
-  const txt = _normTexto(String(textoKleuber||''));
-  if(!/\b(autorizo|pode|manda|envia|ok|sim|vai)\b/i.test(txt)) return false;
-  
-  // Verifica se tem escalonamento pendente com orientações sugeridas
-  const pendentes = _estadoSecretarioWhatsApp.escalonamentos_memoria.filter(x => x.resolvido && x.orientacoes_pendentes);
-  if(pendentes.length === 0) return false;
-  
-  for(const item of pendentes) {
-    const jid = item?.cliente?.whatsapp_jid || null;
-    if(jid && item.orientacoes_pendentes) {
-      const clienteNome = item.cliente?.nome || 'cliente';
-      // Gera resposta humanizada com as orientações
-      try {
-        const system = 'Você é o Lex, atendente do escritório escritório configurado no LEX no WhatsApp. O Kleuber autorizou você a passar orientações pro cliente. Transforme as orientações em uma mensagem curta, humana, no tom WhatsApp. Chame o cliente pelo nome. Não use listas.';
-        const user = 'CLIENTE: '+clienteNome+'\nORIENTAÇÕES AUTORIZADAS: '+String(item.orientacoes_pendentes)+'\n\nMande a mensagem pro cliente.';
-        const msgOri = await _chamarAnthropicSecretario([{role:'user', content:user}], system, MODELO_MID); // Humaniza orientação WhatsApp → Sonnet
-        await envWhatsApp(msgOri, jid).catch(()=>{});
-        _registrarMsgCentral('whatsapp', 'saida', jid, 'Lex (orientação autorizada)', msgOri);
-        await envTelegram('✅ Orientações enviadas pro ' + clienteNome.split(' ')[0] + '!', null, CHAT_ID).catch(()=>{});
-      } catch(e) {
-        await envTelegram('⚠️ Erro ao enviar orientações: ' + e.message, null, CHAT_ID).catch(()=>{});
-      }
-      item.orientacoes_pendentes = null;
-    }
-  }
-  return true;
+async function _processarAutorizacaoLex() {
+  // Um sim/ok/autorizo genérico nunca identifica destinatário e conteúdo aprovados.
+  return false;
 }
 
 async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
@@ -5354,7 +5296,17 @@ async function _monitorarCapacidadeDB() {
 }
 
 // Entry-point: chamado quando chega imagem/texto de cliente
+async function _enviarIntakeParaRevisao(ctx, resumo, proximaPergunta) {
+  const dono=process.env.LEX_OPERATOR_WHATSAPP;
+  if(!dono) return false;
+  const draft=[resumo,proximaPergunta].filter(Boolean).join('\n\n');
+  if(!draft) return false;
+  return envWhatsApp('[REVISÃO DO CADASTRO] Contato: '+String(ctx.chatId||'')+'\n'+draft+'\n\nAguarda sua autorização; este texto não foi enviado ao cliente.',dono);
+}
+
 async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
+  if(ctx.canal==='whatsapp' && whatsappAccessMode(ctx.numero||ctx.chatId,process.env.LEX_OPERATOR_WHATSAPP)!=='operator') return false;
+  if(ctx.canal==='telegram' && (String(ctx.chatId)!==String(CHAT_ID) || ctx.tipoChat!=='private')) return false;
   // Só processa se não for admin (admin já usa o Lex normalmente)
   if(String(ctx.chatId) === CHAT_ID) return false;
 
@@ -5603,7 +5555,7 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
 
     // Responde ao cliente a próxima ação
     const cobranca = _montarRespostaConversacional(perfil);
-    await env((resumoIntake ? (resumoIntake + '\n\n') : '') + cobranca, ctx);
+    await _enviarIntakeParaRevisao(ctx,resumoIntake,cobranca);
 
     logAtividade('juridico', ctx.chatId, 'cadastrador_'+tipoEntrada, perfil.status);
     return true;
@@ -5902,6 +5854,8 @@ function _registrarMsgCentral(canal, direcao, chatId, nome, texto, tipo) {
 }
 
 async function processarMensagem(ctx, dados) {
+  if(ctx.canal==='whatsapp' && whatsappAccessMode(ctx.numero||ctx.chatId,process.env.LEX_OPERATOR_WHATSAPP)!=='operator') return;
+  if(ctx.canal==='telegram' && (String(ctx.chatId)!==String(CHAT_ID) || ctx.tipoChat!=='private')) return;
   const chatId = String(ctx.chatId);
   await inicializarMemoria(chatId, ctx.threadId);
   const mem = getMem(chatId, ctx.threadId);
@@ -5964,7 +5918,7 @@ async function processarMensagem(ctx, dados) {
   // ── ARQUIVO (PDF / DOCX / imagem) ──
   if(dados.arquivo) {
     // Se é cliente (não-admin), roteia PDF para o cadastrador para extrair dados pessoais
-    if(String(ctx.chatId) !== CHAT_ID) {
+    if(modo === 'cliente') {
       const processou = await _cadastradorRecebeu(ctx, 'pdf', dados.arquivo);
       if(processou) return;
     }
@@ -9065,6 +9019,12 @@ async function adapterTelegram(msg) {
     tipoChat: msg.chat.type
   };
 
+  if(!isTelegramOwner(msg,CHAT_ID)) return telegramReception.receive(msg);
+  if(await telegramReception.ownerCommand(msg)) return;
+  const ownerText=String(msg.text||'').trim();
+  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return env('Olá, Dr. Kleuber. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a clientes, informe destinatário e texto exato.',ctx);
+  if(/^\/(resp|autorizo|pode|manda)(?:\s|$)/i.test(ownerText)) return env('Informe o destinatário e o texto exato. Telegram: /respondertg ID TEXTO. WhatsApp: /responder NUMERO TEXTO no seu WhatsApp privado.',ctx);
+
   // Imagem
   if(msg.photo || (msg.document && msg.document.mime_type && msg.document.mime_type.startsWith('image/'))) {
     const fileObj = msg.photo ? msg.photo[msg.photo.length-1] : msg.document;
@@ -9141,20 +9101,14 @@ async function adapterEvolution(body) {
     tipoChat: 'private'
   };
 
-  if(_configRuntime.secretario_whatsapp?.ativo) {
-    const numeroPlano = _numeroPlanoWhats(chatIdWpp);
-    const operador = _isOperadorWhatsApp(numeroPlano);
-    
-    if(operador) {
-      // ── MENSAGEM DE OPERADOR (Kleuber ou Secretária) ──
-      const txtOp = msgData.conversation || msgData.extendedTextMessage?.text || '';
-      if(legalCommand(txtOp) && ['admin','advogado'].includes(operador.perfil)) return processarMensagem(ctx,{texto:txtOp});
-      
-      // /novocaso — qualquer operador pode cadastrar
-      if(txtOp.trim() && /^\/novocaso/i.test(txtOp.trim())) {
-        return processarMensagem(ctx, {texto: txtOp.trim()});
-      }
-      
+  const access=whatsappAccessMode(chatIdWpp,process.env.LEX_OPERATOR_WHATSAPP);
+  if(access!=='operator') return publicWhatsappReception(body,EVO_INST);
+  if(await handleWhatsappOperatorCommand(body,EVO_INST)) return;
+  const ownerText=String(msgData.conversation||msgData.extendedTextMessage?.text||'').trim();
+  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá, Dr. Kleuber. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
+  if(/^(sim|ok|autorizo|pode|manda|envia)[!. ]*$/i.test(ownerText)) return envWhatsApp('Para enviar uma resposta ao cliente, preciso do destinatário e do texto exato: /responder NUMERO TEXTO. Nenhuma mensagem foi autorizada por este comando genérico.',chatIdWpp);
+  const operador={perfil:'admin'};
+  const txtOp=ownerText;
       // /configsecretaria <chat_id> — Kleuber configura o Telegram da secretária
       if(operador.perfil === 'admin' && /^\/configsecretaria\s+(\d+)/i.test(txtOp.trim())) {
         const match = txtOp.trim().match(/^\/configsecretaria\s+(\d+)/i);
@@ -9173,58 +9127,7 @@ async function adapterEvolution(body) {
         }
       }
       
-      // Modo intake ativo — redireciona tudo pro processarMensagem
-      if(global._intakeSessoes && global._intakeSessoes[chatIdWpp]) {
-        if(txtOp.trim()) return processarMensagem(ctx, {texto: txtOp.trim()});
-        const docMsg2 = msgData.documentMessage || msgData.documentWithCaptionMessage?.message?.documentMessage;
-        const imgMsg2 = msgData.imageMessage;
-        if(docMsg2 || imgMsg2) {
-          const b64 = docMsg2?.base64 || imgMsg2?.base64 || body.base64 || '';
-          if(b64) {
-            const bufI = Buffer.from(b64, 'base64');
-            if(imgMsg2) return processarMensagem(ctx, {imagem: {buffer:bufI, mime:imgMsg2.mimetype||'image/jpeg'}});
-            return processarMensagem(ctx, {arquivo: {buffer:bufI, nome:docMsg2?.fileName||'doc.pdf', mime:docMsg2?.mimetype||'application/pdf'}});
-          }
-        }
-        return;
-      }
-      
-      if(txtOp.trim()) {
-        // Autorização de orientações — só admin pode
-        if(operador.pode_autorizar) {
-          const foiAutorizacao = await _processarAutorizacaoLex(txtOp).catch(()=>false);
-          if(foiAutorizacao) return;
-        }
-        
-        // Resposta para cliente escalado — qualquer operador pode
-        if(operador.pode_responder) {
-          // Se secretária está respondendo, avisa Kleuber no Telegram
-          if(operador.perfil === 'secretaria') {
-            const pendentes = _estadoSecretarioWhatsApp.escalonamentos_memoria.filter(x => !x.resolvido);
-            if(pendentes.length > 0) {
-              await envTelegram('📨 *Secretária respondeu cliente escalado:*\n"' + txtOp.substring(0, 200) + '"', null, CHAT_ID).catch(()=>{});
-            }
-          }
-          await _registrarRespostaAdvogadoWhats(txtOp, operador.nome).catch(()=>{});
-        }
-      }
-      return;
-    }
-  }
-
-  // Texto
-  const textoWpp = msgData.conversation || msgData.extendedTextMessage?.text || '';
-  if(textoWpp.trim()) {
-    if(_configRuntime.secretario_whatsapp?.ativo) {
-      const sessao = await _carregarSessaoSecretarioWhatsApp(chatIdWpp, null);
-      const out = await _conversarWhatsAppCliente(chatIdWpp, textoWpp, sessao);
-      if(out && out.ok && out.resposta) {
-        await envWhatsApp(out.resposta, chatIdWpp).catch(()=>{});
-        return;
-      }
-    }
-    return processarMensagem(ctx, {texto: textoWpp});
-  }
+  if(ownerText) return processarMensagem(ctx,{texto:ownerText});
 
   // Documento ou imagem
   const docMsg = msgData.documentMessage || msgData.documentWithCaptionMessage?.message?.documentMessage;
@@ -11112,6 +11015,8 @@ if(url==='/api/memoria' && req.method==='GET') {
   }
 
   if(url==='/api/whatsapp/mensagem' && req.method==='POST') {
+    const perfil=validarToken(getToken(req));
+    if(perfil!=='admin') {res.writeHead(perfil?403:401,corsHeaders(req));res.end(JSON.stringify({error:'Somente o dono pode simular o atendimento'}));return;}
     try {
       const b = await lerBody(req);
       const numero = _normalizarNumeroWhats(b.numero || '');
@@ -11123,15 +11028,12 @@ if(url==='/api/memoria' && req.method==='GET') {
         res.end(JSON.stringify({ok:true, resposta:'No momento o secretario processa somente mensagens de texto.'}));
         return;
       }
-      const sessao = await _carregarSessaoSecretarioWhatsApp(numero, null);
-      const out = await _conversarWhatsAppCliente(numero, mensagem, sessao);
+      const previewKey='lex_door_preview_'+_numeroPlanoWhats(numero);
+      const previous=(await recordStore.read(previewKey))?.value?.history||[];
+      const out=intakeDecision(mensagem,{},[...previous].reverse());
+      await recordStore.change(previewKey,()=>({history:[...previous,{direcao:'entrada',texto:mensagem},{direcao:'saida_lex',texto:out.reply}].slice(-40)}));
       res.writeHead(200, corsHeaders(req));
-      res.end(JSON.stringify({
-        ok: !!out?.ok,
-        resposta: out?.resposta || '',
-        escalonado: !!out?.escalonado,
-        perguntas_feitas: sessao.perguntas_feitas || 0
-      }));
+      res.end(JSON.stringify({ok:true,resposta:out.reply,escalonado:out.escalate,destino:out.destino,pendente_autorizacao:out.requiresApproval,simulacao:true}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
@@ -11196,19 +11098,6 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       _estadoWhatsApp.ultima_mensagem = new Date().toISOString();
       res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({ok:true, recebido:true}));
-      const data = b.data || b;
-      const remoto = data.key?.remoteJid || data.from || data.numero || '';
-      const nomeRem = data.pushName || data.nome || (String(remoto).split('@')[0] || 'Cliente');
-      const numeroPlano = _numeroPlanoWhats(remoto);
-      const cliente = await _resolverClientePorNumero(numeroPlano);
-      if(cliente && !_whatsSaudados.has(numeroPlano)) {
-        _whatsSaudados.add(numeroPlano);
-        _whatsReconhecidos.set(numeroPlano, true);
-        await envWhatsApp('Ola '+(cliente.nome||nomeRem)+'! Como posso ajudar hoje?', remoto).catch(()=>{});
-      } else if(!cliente && !_whatsSaudados.has(numeroPlano)) {
-        _whatsSaudados.add(numeroPlano);
-        await envWhatsApp('Ola! Vou iniciar seu atendimento e cadastro rapido. Pode me dizer seu nome completo?', remoto).catch(()=>{});
-      }
       adapterEvolution(b).catch(e=>console.error('WhatsApp webhook erro:', e.message));
     } catch(e) {
       res.writeHead(200, corsHeaders(req));

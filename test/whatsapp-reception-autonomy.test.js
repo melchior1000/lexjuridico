@@ -22,12 +22,12 @@ test('saudacao e caso novo dao ciencia ao operador sem pedir decisao',async()=>{
     const calls=[];const store=fakeStore();
     await publicWhatsappReception(body(text),'LEX-JURIDICO',{...cfg,request:fakeRequest(calls),store});
     assert.equal(store.state.upserts.length,1);
-    assert.equal(calls.length,3);
-    assert.equal(calls[0].number,'5561999171717');
-    assert.match(calls[0].text,/\[CI.NCIA\]/);
-    assert.equal(calls[1].number,'5561988888888');
-    assert.equal(calls[2].number,'5561999171717');
-    assert.match(calls[2].text,/\[LEX\] respondeu/i);
+    assert.equal(calls.length,2);
+    assert.equal(calls[1].number,'5561999171717');
+    assert.match(calls[1].text,/\[CI.NCIA\]/);
+    assert.equal(calls[0].number,'5561988888888');
+    assert.equal(calls[1].number,'5561999171717');
+    assert.match(calls[1].text,/\[LEX\] respondeu/i);
     assert.doesNotMatch(calls.map(x=>x.text).join('\n'),/heuristica|classificacao automatica/i);
   }
 });
@@ -35,13 +35,13 @@ test('saudacao e caso novo dao ciencia ao operador sem pedir decisao',async()=>{
 test('processo existente sobe como atencao e mostra a resposta do LEX',async()=>{
   const calls=[];const store=fakeStore();
   await publicWhatsappReception(body('Qual o andamento do meu processo?'),'LEX-JURIDICO',{...cfg,request:fakeRequest(calls),store});
-  assert.equal(calls.length,3);
-  assert.equal(calls[0].number,'5561999171717');
-  assert.match(calls[0].text,/\[ATENÇÃO\].*possível processo existente/i);
-  assert.equal(calls[1].number,'5561988888888');
-  assert.match(calls[1].text,/não abro processo automaticamente/i);
-  assert.equal(calls[2].number,'5561999171717');
-  assert.match(calls[2].text,/\[LEX\] respondeu/i);
+  assert.equal(calls.length,2);
+  assert.equal(calls[1].number,'5561999171717');
+  assert.match(calls[1].text,/\[ATENÇÃO\].*possível processo existente/i);
+  assert.equal(calls[0].number,'5561988888888');
+  assert.match(calls[0].text,/dependem da autorização do Dr. Kleuber/i);
+  assert.equal(calls[1].number,'5561999171717');
+  assert.match(calls[1].text,/\[LEX\] respondeu/i);
 });
 
 test('urgencia real alerta operador imediatamente e informa a resposta',async()=>{
@@ -50,20 +50,20 @@ test('urgencia real alerta operador imediatamente e informa a resposta',async()=
   assert.equal(calls.length,3);
   assert.equal(calls[0].number,'5561999171717');
   assert.match(calls[0].text,/\[URGENTE\]/);
-  assert.match(calls[1].text,/responsável foi avisado/i);
+  assert.match(calls[1].text,/Vou encaminhar.*prioridade/i);
   assert.match(calls[2].text,/\[LEX\] respondeu/i);
 });
 
-test('administrativo e resolvido pelo LEX mas o operador recebe ciencia',async()=>{
+test('administrativo permanece pendente ate decisao do dono',async()=>{
   const calls=[];const store=fakeStore();
   await publicWhatsappReception(body('Sou fornecedor e tenho uma fatura para enviar'),'LEX-JURIDICO',{...cfg,request:fakeRequest(calls),store});
-  assert.deepEqual(store.state.archives,['5561988888888']);
-  assert.equal(calls.length,3);
-  assert.equal(calls[0].number,'5561999171717');
-  assert.match(calls[0].text,/\[CI.NCIA\].*administrativo/i);
-  assert.equal(calls[1].number,'5561988888888');
-  assert.match(calls[1].text,/contato administrativo/i);
-  assert.match(calls[2].text,/\[LEX\] respondeu/i);
+  assert.deepEqual(store.state.archives,[]);
+  assert.equal(calls.length,2);
+  assert.equal(calls[1].number,'5561999171717');
+  assert.match(calls[1].text,/\[CI.NCIA\].*administrativo/i);
+  assert.equal(calls[0].number,'5561988888888');
+  assert.match(calls[0].text,/contato administrativo/i);
+  assert.match(calls[1].text,/\[LEX\] respondeu/i);
 });
 
 test('decisao de recepcao reserva escalonamento para temas de dono',()=>{

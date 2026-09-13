@@ -152,13 +152,13 @@ for(const route of ['/api/webhook-whatsapp','/api/whatsapp/webhook']) {
     assert.equal(read,false);
   });
 }
-test('webhook legado aceita o segredo configurado e delega uma mensagem autenticada',async()=>{
+test('webhook legado autentica e não libera remetente sem dono configurado para motor',async()=>{
   let calls=0;
   const app=setup({_configRuntime:{whatsapp:{}},WHATSAPP_WEBHOOK_SECRET:'segredo-de-teste',webhookAuthStatus,
     adapterEvolution:async()=>{calls++;}});
   const response=await app.request('/api/webhook-whatsapp',null,{event:'messages.upsert',data:{key:{id:'m1',fromMe:false,remoteJid:'5511999999999@s.whatsapp.net'},message:{conversation:'Olá'}}},'POST',{'x-webhook-secret':'segredo-de-teste'});
   assert.equal(response.status,200);
-  assert.equal(calls,1);
+  assert.equal(calls,0);
 });
 
 test('redação pelo canal produz DOCX válido e só confirma após aceitação do arquivo',async()=>{

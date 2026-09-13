@@ -7,7 +7,7 @@ test('somente o operador entra no modo privado, inclusive JID brasileiro legado'
   assert.equal(whatsappAccessMode('5561999171717@s.whatsapp.net',operator),'operator');
   assert.equal(whatsappAccessMode('556199171717@s.whatsapp.net',operator),'operator');
   assert.equal(whatsappAccessMode('5561988888888@s.whatsapp.net',operator),'public');
-  assert.equal(whatsappAccessMode('5511999999999@s.whatsapp.net',''),'legacy');
+  assert.equal(whatsappAccessMode('5511999999999@s.whatsapp.net',''),'public');
 });
 
 test('recepcao publica nunca fornece andamento ou dado processual',()=>{
@@ -29,11 +29,11 @@ test('toda mensagem publica gera ciencia e mostra a resposta do LEX ao operador'
   const body={data:{pushName:'Pessoa Teste',key:{id:'m1',fromMe:false,remoteJid:'5561988888888@s.whatsapp.net'},message:{conversation:'Ola, quem fala?'}}};
   const result=await publicWhatsappReception(body,'LEX-JURIDICO',{operator:'5561999171717',url:'https://evo.example.test',key:'fake',request,store});
   assert.equal(result,true);
-  assert.equal(calls.length,3);
-  assert.equal(calls[0].data.number,'5561999171717');
-  assert.match(calls[0].data.text,/\[CI.NCIA\]/);
-  assert.equal(calls[1].data.number,'5561988888888');
-  assert.equal(calls[2].data.number,'5561999171717');
-  assert.match(calls[2].data.text,/\[LEX\] respondeu/i);
+  assert.equal(calls.length,2);
+  assert.equal(calls[1].data.number,'5561999171717');
+  assert.match(calls[1].data.text,/\[CI.NCIA\]/);
+  assert.equal(calls[0].data.number,'5561988888888');
+  assert.equal(calls[1].data.number,'5561999171717');
+  assert.match(calls[1].data.text,/\[LEX\] respondeu/i);
   assert.doesNotMatch(calls.map(x=>x.data.text).join('\n'),/heur[ií]stica|classifica[cç][aã]o autom[aá]tica/i);
 });
