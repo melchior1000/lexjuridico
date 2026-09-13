@@ -27,16 +27,15 @@ test('recepcao publica identifica o canal para pessoa comum',()=>{
   assert.match(text,/nome|empresa/i);
 });
 
-test('recepcao publica espelha entrada e resposta para operador e responde remetente',async()=>{
+test('recepcao publica comum responde remetente sem espelho integral ao operador',async()=>{
   const calls=[];
   const request=async(url,opts)=>{calls.push({url,data:opts.data});return {key:{id:'ok-'+calls.length}};};
+  const store={upsert:async()=>({numero:'5561988888888',nome:'Pessoa Teste',classe:'geral',urgente:false,status:'aguardando_advogado'}),archive:async()=>true,list:async()=>[]};
   const body={data:{pushName:'Pessoa Teste',key:{id:'m1',fromMe:false,remoteJid:'5561988888888@s.whatsapp.net'},message:{conversation:'Olá, quem fala?'}}};
-  const result=await publicWhatsappReception(body,'LEX-JURIDICO',{operator:'5561999171717',url:'https://evo.example.test',key:'fake',request});
+  const result=await publicWhatsappReception(body,'LEX-JURIDICO',{operator:'5561999171717',url:'https://evo.example.test',key:'fake',request,store});
   assert.equal(result,true);
-  assert.equal(calls.length,3);
-  assert.equal(calls[0].data.number,'5561999171717');
-  assert.equal(calls[1].data.number,'5561988888888');
-  assert.equal(calls[2].data.number,'5561999171717');
-  assert.match(calls[0].data.text,/Pessoa Teste/);
-  assert.match(calls[2].data.text,/LEX/);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].data.number,'5561988888888');
+  assert.match(calls[0].data.text,/Lex Jur[ií]dico|nome|empresa/i);
+  assert.doesNotMatch(calls[0].data.text,/heur[ií]stica|classifica[cç][aã]o autom[aá]tica/i);
 });
