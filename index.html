@@ -789,7 +789,9 @@ table{max-width:100%;}
     <button class="nav-btn" onclick="abrirCentroDados()"><span class="nav-icon">💾</span> Centro de Dados</button>
     <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>
     <input type="file" id="import-file" accept=".json,.zip" style="display:none" onchange="importarBackup(this)">
-    <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram Bot</button>
+    <div class="nav-section">Canais</div>
+    <button class="nav-btn" id="lex-nav-whatsapp" onclick="ir('whatsapp',this)"><span class="nav-icon">📱</span> WhatsApp</button>
+    <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram</button>
     <button class="nav-btn" onclick="ir('mensagens',this)"><span class="nav-icon">💬</span> Central Mensagens</button>
     <button class="nav-btn" onclick="ir('agenda',this)"><span class="nav-icon">📇</span> Agenda / Contatos</button>
     <button class="nav-btn" onclick="ir('pericia',this)"><span class="nav-icon">🔬</span> Setor de Perícia</button>
@@ -2047,7 +2049,7 @@ var _TOUR_STEPS = [
     desc: 'Integracao com o PJe via DATAJUD. Busca andamentos automaticamente e alerta quando ha movimentacao nova. Precisa de certificado A3 (token USB) para consultas avancadas.' },
 
   { sel: '.nav-btn[onclick*="telegram"]',
-    title: '✈️ Telegram Bot',
+    title: '✈️ Telegram',
     desc: 'Configure o bot do Telegram para receber alertas de prazos, andamentos e urgencias direto no celular. Tambem pode enviar documentos e fotos para o Lex processar.' },
 
   // ── BARRA SUPERIOR ──
@@ -4126,9 +4128,9 @@ function ir(p,btn){
   pag=p; procAtivo=null; fecharSidebar(); esconderBackBar();
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  const t={trabalho:'Hoje / Trabalho',escritorio:'Meu escritório',painel:'Painel Geral',processos:'Processos',autuacao:'Autuação',processos_admin:'Processo Administrativo',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',telegram:'Telegram Bot',mensagens:'Central de Mensagens',agenda:'Agenda / Contatos',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe',pericia:'Setor de Perícia'};
+  const t={trabalho:'Hoje / Trabalho',escritorio:'Meu escritório',painel:'Painel Geral',processos:'Processos',autuacao:'Autuação',processos_admin:'Processo Administrativo',prazos:'Prazos',calendario:'Calendário',estatisticas:'Estatísticas',juris:'Jurisprudência',peticao:'Gerador de Peça',juizes:'Perfil de Juízes',senhas:'Gestão de Senhas',whatsapp:'WhatsApp do escritório',telegram:'Telegram',mensagens:'Central de Mensagens',agenda:'Agenda / Contatos',preparacao:'Em Preparação',agentes:'Agentes IA',pje:'Integração PJe',pericia:'Setor de Perícia'};
   document.getElementById('page-title').textContent=t[p]||p;
-  ({trabalho:renderTrabalho,escritorio:renderEscritorio,painel:renderPainel,processos:renderProcessos,autuacao:renderAutuacao,processos_admin:renderProcessosAdministrativos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,telegram:renderTelegram,mensagens:renderCentralMensagens,agenda:renderAgenda,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderFontesProcessos,pericia:renderPericia})[p]?.();
+  ({trabalho:renderTrabalho,escritorio:renderEscritorio,painel:renderPainel,processos:renderProcessos,autuacao:renderAutuacao,processos_admin:renderProcessosAdministrativos,prazos:renderPrazos,calendario:renderCalendario,estatisticas:renderEstatisticas,juris:renderJuris,peticao:renderPeticao,juizes:renderJuizes,senhas:renderGestaoSenhas,whatsapp:renderWhatsappCanal,telegram:renderTelegram,mensagens:renderCentralMensagens,agenda:renderAgenda,preparacao:renderPreparacao,agentes:renderAgentes,pje:renderFontesProcessos,pericia:renderPericia})[p]?.();
 }
 
 // ═══════════════ BUSCA ═══════════════
@@ -12896,7 +12898,7 @@ function renderTelegram(){
   const cfg=getTgConfig();
   document.getElementById('content').innerHTML=`
     <div style="max-width:600px">
-      <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;margin-bottom:20px">✈️ Telegram Bot</div>
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;margin-bottom:20px">✈️ Telegram</div>
       
       <div class="desc-card" style="margin-bottom:16px">
         <div class="desc-label">CONFIGURAÇÃO DO BOT</div>
