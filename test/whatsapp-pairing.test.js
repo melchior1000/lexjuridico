@@ -10,6 +10,25 @@ test('pareamento configura webhook autenticado e só devolve QR',async()=>{
   assert.deepEqual(calls[0].data.webhook.events,['MESSAGES_UPSERT']);
   assert.equal(result.qr,'data:image/png;base64,YQ==');assert.ok(!JSON.stringify(result).includes('secret-not-returned'));
 });
+test('pareamento relê connect quando o QR ainda não foi materializado',async()=>{
+  let connects=0;const calls=[];
+  const result=await pairing(config,async(url,opts)=>{
+    calls.push({url,...opts});
+    if(url.includes('/webhook/set/'))return {ok:true};
+    connects++;
+    return connects===2?{base64:'data:image/png;base64,YQ=='}:{count:1};
+  });
+  assert.equal(connects,2);assert.equal(result.estado,'aguardando_pareamento');assert.equal(result.qr,'data:image/png;base64,YQ==');
+  assert.equal(calls[1].timeoutMs,25000);assert.equal(calls[2].timeoutMs,10000);
+});
+test('pareamento não relê connect quando o primeiro retorno já traz QR',async()=>{
+  let connects=0;
+  const result=await pairing(config,async url=>{
+    if(url.includes('/webhook/set/'))return {ok:true};
+    connects++;return {base64:'data:image/png;base64,YQ=='};
+  });
+  assert.equal(connects,1);assert.equal(result.estado,'aguardando_pareamento');
+});
 test('pareamento não acessa rede sem segredo nem aceita URL de imagem remota',async()=>{
   await assert.rejects(pairing({...config,webhookSecret:''},()=>{throw Error('Rede não deve ser chamada');}),/WHATSAPP_WEBHOOK_SECRET/);
   const result=await pairing(config,async()=>({base64:'https://external.invalid/image'}));assert.equal(result.qr,null);
