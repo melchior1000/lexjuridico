@@ -3343,19 +3343,12 @@ async function _analisePrevidenciaria(perfil, fatos) {
 }
 
 function _montarResumoClassificacaoCliente(classificacao, analisePrev) {
-  const areaNome = EXIGENCIAS_POR_CASO[classificacao?.area]?.nome || classificacao?.area || 'Nao identificada';
-  let msg = 'Classificacao automatica: ' + areaNome;
-  if(classificacao?.subarea) msg += ' (' + classificacao.subarea + ')';
-  if(classificacao?.fundamentacao_inicial) msg += '\nBase inicial: ' + String(classificacao.fundamentacao_inicial).substring(0,180);
-  if(analisePrev) {
-    msg += '\nBeneficio previdenciario provavel: ' + (analisePrev.beneficio_provavel || 'a confirmar');
-    if((analisePrev.docs_necessarios||[]).length) {
-      msg += '\nDocumentos faltantes: ' + analisePrev.docs_necessarios.slice(0,4).join('; ');
-    }
+  let msg = 'Entendi o contexto inicial e vou organizar seu atendimento com base no que você contou.';
+  if(analisePrev && Array.isArray(analisePrev.docs_necessarios) && analisePrev.docs_necessarios.length) {
+    msg += '\nPara seguir, vou precisar de: ' + analisePrev.docs_necessarios.slice(0,4).join(', ') + '.';
   }
   return msg;
 }
-
 async function _processarClassificacaoIntakePerfil(perfil, fatos, dados, origem) {
   const texto = String(fatos||'').trim();
   const ehDocPrev = _detectarDocumentoPrevidenciario(dados?.tipo_documento || dados?.tipo, dados?.nome || '', dados);
@@ -5514,7 +5507,9 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
         const n = _normCasoTxt(conteudo);
         if(/^(sim|sim autorizo|autorizo|aceito|concordo)/.test(n)) {
           perfil.lgpd_consentimento = true;
-          await env('Perfeito, consentimento LGPD registrado. Descreva a situacao do cliente.', ctx);
+          await _salvarPerfilCliente(perfil);
+          await env('Perfeito. Agora me conte brevemente o que aconteceu.', ctx);
+          return true;
         } else {
           await env('Antes de coletar dados, preciso do seu consentimento LGPD. Responda: "sim, autorizo".', ctx);
           await _salvarPerfilCliente(perfil);
