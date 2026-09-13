@@ -1,0 +1,32 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {TaskEngine}=require('../lib/task-engine');
+
+function memoryStore(){
+  const map=new Map();
+  return {
+    async change(key,fn){const next=fn(map.get(key));if(next!==undefined)map.set(key,next);return map.get(key);},
+    async read(key){return map.has(key)?{value:map.get(key)}:null;},
+    async list(prefix){return [...map].filter(([k])=>k.startsWith(prefix)).map(([,v])=>v);}
+  };
+}
+
+function processo(){return {id:1,nome:'Perícia bancária',numero:'0000001-00.2026.8.13.0001',descricao:'Revisar valores do extrato.',documentos:[{id:'D1',nome:'extrato.pdf',tipo_documento:'extrato_bancario',confianca_extracao:'alta',texto:'03/08/2026 PIX R$ 500,00. Saldo R$ 1.200,00. Fonte confirmada página 1.'}],andamentos:[]};}
+
+test('motor bloqueia perícia legível quando laudo não tem memorial institucional',async()=>{
+  let calls=0;
+  const ai=async()=>{
+    calls++;
+    if(calls===1) return JSON.stringify({cabivel:true,motivos:'Há documento legível e fonte confirmada.',faltantes:[]});
+    return 'I. RESUMO EXECUTIVO\nAnálise baseada em D1.\nII. OBJETO E QUESITOS\nRevisar o extrato.\nIII. DOCUMENTOS ANALISADOS\nD1 — extrato página 1.\nIV. METODOLOGIA\nLeitura documental.\nV. ANÁLISE TÉCNICA\nValor observado em D1.\nVI. MEMORIAL DE CÁLCULO\nCálculo realizado.\nVII. RESPOSTAS AOS QUESITOS\nQuesito 1: resposta.\nVIII. CONCLUSÃO\nConclusão limitada a D1.\nIX. ANEXOS\nD1.';
+  };
+  const engine=new TaskEngine({store:memoryStore(),processes:async()=>[processo()],ai});
+  const task=await engine.submit({tipo:'pericia',processo_id:1,instrucao:'Produza o laudo.',request_id:'padrao-bloqueio'});
+  const result=await engine.run(task.id);
+  assert.equal(calls,2);
+  assert.equal(result.status,'aguardando_dados');
+  assert.equal(result.controle_padrao_pericial.ok,false);
+  assert.equal(result.controle_padrao_pericial.problems.some(x=>x.startsWith('memorial_')),true);
+  assert.match(result.pendencia,/Laudo bloqueado/i);
+});
