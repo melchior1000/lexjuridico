@@ -36,7 +36,7 @@ test('visão sem chave falha fechada',async()=>{
 test('extrato com valor mas sem origem verificável não é aceito',async()=>{
   const response={output:[{content:[{text:JSON.stringify({tipo_documento:'extrato_bancario',confianca:'alta',texto_legivel:'03/09 saldo R$ 1.234,56',evidencias:[{pagina:null,data:'',linha:'',campo:'saldo',valor:'R$ 1.234,56'}],observacoes:''})}]}]};
   const r=await readWithVision(Buffer.from('foto'),{mimeType:'image/jpeg',filename:'extrato.jpg',apiKey:'x',request:async()=>({ok:true,json:response})});
-  assert.equal(r.ok,false);assert.equal(r.reason,'evidencia_insuficiente');
+  assert.equal(r.ok,false);assert.equal(r.reason,'evidencia_financeira_insuficiente');
 });
 
 test('extrato com origem e confiança alta pode prosseguir',async()=>{
