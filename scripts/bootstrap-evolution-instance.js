@@ -22,6 +22,15 @@ async function request(path, options = {}) {
   }
 }
 
+function safeBody(body) {
+  try {
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    return String(text || '').replace(/(apikey|token|key|authorization)["']?\s*[:=]\s*["']?[^,}"'\s]+/gi, '$1=[oculto]').slice(0, 1200);
+  } catch {
+    return '[resposta não serializável]';
+  }
+}
+
 (async () => {
   if (!evolutionUrl || !apiKey) {
     console.log(`[LEX Evolution] configuração ausente; url=${!!evolutionUrl} chave=${!!apiKey}; bootstrap ignorado`);
@@ -30,11 +39,11 @@ async function request(path, options = {}) {
   try {
     const fetchInstances = await request('/instance/fetchInstances');
     if (!fetchInstances.ok) {
-      console.log(`[LEX Evolution] listar instâncias: HTTP ${fetchInstances.status}; criação cancelada`);
+      console.log(`[LEX Evolution] listar instâncias: HTTP ${fetchInstances.status}; resposta=${safeBody(fetchInstances.body)}; criação cancelada`);
       return;
     }
     if (!Array.isArray(fetchInstances.body)) {
-      console.log('[LEX Evolution] lista de instâncias inválida; criação cancelada');
+      console.log(`[LEX Evolution] lista de instâncias inválida; resposta=${safeBody(fetchInstances.body)}; criação cancelada`);
       return;
     }
     const list = fetchInstances.body;
@@ -58,6 +67,7 @@ async function request(path, options = {}) {
 
     console.log(`[LEX Evolution] criar ${instanceName}: HTTP ${created.status}`);
     if (!created.ok) {
+      console.log(`[LEX Evolution] criação recusada; resposta=${safeBody(created.body)}`);
       return;
     }
     console.log(`[LEX Evolution] instância ${instanceName} criada`);
