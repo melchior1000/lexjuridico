@@ -3267,8 +3267,10 @@ function renderGestaoSenhas(){
         <div style="font-size:12px">Status: <span id="wa-status"><span class="status-dot" style="background:#9da6cc"></span>desconectado</span></div>
         <button class="btn-outline" style="padding:7px 12px;font-size:12px" onclick="testarWhatsappConexao()">Testar Conexao</button>
         <button class="btn-primary" style="padding:7px 12px;font-size:12px" onclick="salvarWhatsappConfig()">Salvar</button>
+        <button class="btn-outline" style="padding:7px 12px;font-size:12px" onclick="parearWhatsapp()">Vincular WhatsApp</button>
       </div>
       <div style="margin-top:8px;font-size:11px;color:var(--text3)">Última mensagem: <span id="wa-ultima-msg">—</span></div>
+      <div id="wa-pareamento" style="margin-top:12px"></div>
     </div>
 
     <!-- PJE AVANÇADO -->
@@ -3658,6 +3660,26 @@ async function testarWhatsappConexao(){
     const resultado = await atualizarWhatsStatusUI();
     if(resultado) toast(whatsappStatusTexto(resultado.estado), resultado.conectado ? 'ok' : 'erro');
   }finally{ testarWhatsappConexao.emCurso = false; }
+}
+
+async function parearWhatsapp(){
+  const box=document.getElementById('wa-pareamento');
+  if(!box||parearWhatsapp.emCurso)return;
+  parearWhatsapp.emCurso=true;box.textContent='Preparando pareamento…';
+  try{
+    const response=await fetchComTimeout(SERVIDOR+'/api/whatsapp/parear',{
+      method:'POST',headers:{'Authorization':'Bearer '+getAuthToken()}},60000);
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Falha ao preparar pareamento.');
+    box.textContent='';
+    if(!data.qr){box.textContent='O QR ainda não está disponível. Teste a conexão; se continuar aguardando pareamento, clique novamente em Vincular WhatsApp.';return;}
+    if(!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(data.qr))throw new Error('QR inválido.');
+    const info=document.createElement('p');info.textContent='No WhatsApp do número do escritório: Configurações → Aparelhos conectados → Conectar aparelho. Escaneie este QR e depois clique em Testar Conexão.';
+    const img=document.createElement('img');img.src=data.qr;img.alt='QR para vincular o WhatsApp do escritório';img.style.width='260px';img.style.maxWidth='100%';
+    box.appendChild(info);box.appendChild(img);
+    setTimeout(()=>{if(img.parentNode===box){box.textContent='QR expirado. Clique em Vincular WhatsApp para gerar outro.';}},120000);
+  }catch(e){box.textContent=e.message||'Falha no pareamento.';}
+  finally{parearWhatsapp.emCurso=false;}
 }
 
 async function salvarPjeAvancado(){

@@ -11057,6 +11057,21 @@ if(url==='/api/memoria' && req.method==='GET') {
     return;
   }
 
+  if(url==='/api/whatsapp/parear' && req.method==='POST') {
+    const perfil=validarToken(getToken(req));
+    if(perfil!=='admin') {res.writeHead(perfil?403:401,corsHeaders(req));res.end(JSON.stringify({error:'Acesso de administrador necessário'}));return;}
+    try {
+      const out=await require('./lib/whatsapp-pairing').pairing({url:EVO_URL,key:EVO_KEY,instance:EVO_INST,
+        webhookSecret:WHATSAPP_WEBHOOK_SECRET||_configRuntime.whatsapp.webhook_secret,
+        publicUrl:process.env.RENDER_EXTERNAL_URL});
+      res.writeHead(200,{...corsHeaders(req),'Cache-Control':'no-store'});res.end(JSON.stringify(out));
+    } catch(e) {
+      res.writeHead(502,{...corsHeaders(req),'Cache-Control':'no-store'});
+      res.end(JSON.stringify({error:e.status?'Evolution respondeu HTTP '+e.status:'Não foi possível preparar o pareamento. Confira a configuração do webhook e a disponibilidade da Evolution.'}));
+    }
+    return;
+  }
+
   if(url==='/api/whatsapp/status' && req.method==='GET') {
     try {
       const cfgW = await _carregarConfigPersistida('whatsapp', WHATSAPP_CONFIG);
@@ -12719,7 +12734,7 @@ setTimeout(async ()=>{
     if(_configRuntime.whatsapp.ativo && (LEX_WHATSAPP_NUMBER || _configRuntime.whatsapp.numero)) {
       await require('./scripts/bootstrap-evolution-instance');
       await _inicializarConexaoWhatsApp();
-      console.log('[LEX Evolution] verificação inicial: '+_estadoWhatsApp.estado+'; conectado='+!!_estadoWhatsApp.conectado);
+      console.log('[LEX Evolution] verificação inicial: '+_estadoWhatsApp.estado+'; conectado='+!!_estadoWhatsApp.conectado+'; webhook_configurado='+!!(WHATSAPP_WEBHOOK_SECRET||_configRuntime.whatsapp.webhook_secret));
     }
   } catch(e) { console.warn('[config] carga inicial falhou:', e.message); }
 }, 2000);
