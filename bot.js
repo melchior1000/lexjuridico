@@ -12716,7 +12716,11 @@ setTimeout(async ()=>{
     _configRuntime.whatsapp = await _carregarConfigPersistida('whatsapp', WHATSAPP_CONFIG);
     _configRuntime.secretario_whatsapp = await _carregarConfigPersistida('secretario_whatsapp', SECRETARIO_WHATSAPP_CONFIG);
     _configRuntime.pje = await _carregarConfigPersistida('pje', PJE_CONFIG);
-    if(_configRuntime.whatsapp.ativo && _configRuntime.whatsapp.numero) await _inicializarConexaoWhatsApp();
+    if(_configRuntime.whatsapp.ativo && (LEX_WHATSAPP_NUMBER || _configRuntime.whatsapp.numero)) {
+      await require('./scripts/bootstrap-evolution-instance');
+      await _inicializarConexaoWhatsApp();
+      console.log('[LEX Evolution] verificação inicial: '+_estadoWhatsApp.estado+'; conectado='+!!_estadoWhatsApp.conectado);
+    }
   } catch(e) { console.warn('[config] carga inicial falhou:', e.message); }
 }, 2000);
 

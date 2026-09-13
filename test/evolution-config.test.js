@@ -15,6 +15,7 @@ test('aliases e nomes oficiais resolvem a mesma configuracao', () => {
 async function bootstrap(status, body) {
   const calls = [], logs = [];
   const context = {
+    module: {exports:{}},
     require: () => ({evolutionConfig: () => ({url:'https://example.invalid', key:'fake', instance:'office'})}),
     AbortController, setTimeout, clearTimeout,
     console: {log: (...args) => logs.push(args.join(' '))},
@@ -46,4 +47,20 @@ test('lista vazia confirmada permite criar a instancia configurada', async () =>
   const {calls} = await bootstrap(200, []);
   assert.equal(calls.length, 2);
   assert.equal(JSON.parse(calls[1].options.body).instanceName, 'office');
+});
+
+test('inicialização direta do bot aguarda bootstrap antes de verificar sessão',async()=>{
+  const source=fs.readFileSync(require.resolve('../bot'),'utf8');
+  const end=source.indexOf("}, 2000);",source.indexOf("setTimeout(async ()=>{\n  try {\n    _configRuntime.whatsapp"))+9;
+  const start=source.lastIndexOf('setTimeout(async ()=>{',end);
+  const order=[];let run;
+  const context={setTimeout:fn=>{run=fn;},console:{log(){},warn(){}},
+    WHATSAPP_CONFIG:{ativo:true,numero:'5511999999999'},SECRETARIO_WHATSAPP_CONFIG:{},PJE_CONFIG:{},LEX_WHATSAPP_NUMBER:'5511999999999',
+    _configRuntime:{},_estadoWhatsApp:{estado:'aguardando_pareamento',conectado:false},
+    _carregarConfigPersistida:async(k,defaults)=>defaults,
+    require:()=>Promise.resolve().then(()=>order.push('bootstrap')),
+    _inicializarConexaoWhatsApp:async()=>order.push('status')};
+  vm.runInNewContext(source.slice(start,end),context);await run();
+  assert.deepEqual(order,['bootstrap','status']);
+  order.length=0;context.WHATSAPP_CONFIG.ativo=false;await run();assert.equal(order.length,0);
 });
