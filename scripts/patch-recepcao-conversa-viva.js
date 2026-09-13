@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const path='lib/integration-status.js';
 let s=fs.readFileSync(path,'utf8');
 const oldRegex="if (/meu processo|meu caso|andamento|numero do processo|n[uú]mero do processo|sentenca|recurso|peticao|audiencia|prazo do processo/.test(n)) return {kind:'existing_case',escalate:true,archive:false,reply:'Neste canal eu não abro processo automaticamente por segurança. Me passe seu nome e o número do caso; o responsável retorna com a informação correta.'};";
-const newRegex="if (/\\bprocesso\\b|meu caso|andamento|numero do processo|n[uú]mero do processo|sentenca|recurso|peticao|audiencia|prazo do processo/.test(n)) return {kind:'existing_case',escalate:true,archive:false,reply:'Entendi. Por segurança, eu não abro dados do processo automaticamente neste canal. Me informe seu nome e, se tiver em mãos, o número do processo. Eu registro e o responsável retorna com a informação correta.'};";
+const newRegex="if (/\\bprocesso\\b|meu caso|andamento|numero do processo|n[uú]mero do processo|sentenca|recurso|peticao|audiencia|prazo do processo/.test(n)) return {kind:'existing_case',escalate:true,archive:false,reply:'Entendi. Por segurança, eu não abro processo automaticamente neste canal. Me informe seu nome e, se tiver em mãos, o número do processo. Eu registro e o responsável retorna com a informação correta.'};";
 if(!s.includes(oldRegex)) throw new Error('Trecho de processo não encontrado; abortando sem alterar');
 s=s.replace(oldRegex,newRegex);
 const oldDecision="decision=publicWhatsappDecision(text,decisionData);";
