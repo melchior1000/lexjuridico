@@ -12,13 +12,13 @@ test('somente o operador entra no modo privado, inclusive JID brasileiro legado'
 
 test('recepcao publica nunca fornece andamento ou dado processual',()=>{
   const text=publicWhatsappReply('Oi, quero saber como esta meu processo 1234');
-  assert.match(text,/seguranca|responsavel/i);
-  assert.doesNotMatch(text,/fase|sentenca|peticao|prazo de/i);
+  assert.match(text,/seguran[cç]a|respons[aá]vel/i);
+  assert.doesNotMatch(text,/fase|senten[cç]a|peti[cç][aã]o|prazo de/i);
 });
 
 test('recepcao publica identifica o canal para pessoa comum',()=>{
   const text=publicWhatsappReply('De quem e esse numero?');
-  assert.match(text,/Lex Juridico/i);
+  assert.match(text,/Lex Jur[ií]dico/i);
   assert.match(text,/nome|empresa/i);
 });
 
@@ -35,5 +35,5 @@ test('toda mensagem publica gera ciencia e mostra a resposta do LEX ao operador'
   assert.equal(calls[1].data.number,'5561988888888');
   assert.equal(calls[2].data.number,'5561999171717');
   assert.match(calls[2].data.text,/\[LEX\] respondeu/i);
-  assert.doesNotMatch(calls.map(x=>x.data.text).join('\n'),/heuristica|classificacao automatica/i);
+  assert.doesNotMatch(calls.map(x=>x.data.text).join('\n'),/heur[ií]stica|classifica[cç][aã]o autom[aá]tica/i);
 });
