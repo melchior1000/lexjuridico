@@ -55,7 +55,7 @@ test('inicialização direta do bot aguarda bootstrap antes de verificar sessão
   const start=source.lastIndexOf('setTimeout(async ()=>{',end);
   const order=[];let run;
   const context={setTimeout:fn=>{run=fn;},console:{log(){},warn(){}},
-    WHATSAPP_CONFIG:{ativo:true,numero:'5511999999999'},SECRETARIO_WHATSAPP_CONFIG:{},PJE_CONFIG:{},LEX_WHATSAPP_NUMBER:'5511999999999',
+    WHATSAPP_WEBHOOK_SECRET:'',WHATSAPP_CONFIG:{ativo:true,numero:'5511999999999'},SECRETARIO_WHATSAPP_CONFIG:{},PJE_CONFIG:{},LEX_WHATSAPP_NUMBER:'5511999999999',
     _configRuntime:{},_estadoWhatsApp:{estado:'aguardando_pareamento',conectado:false},
     _carregarConfigPersistida:async(k,defaults)=>defaults,
     require:()=>Promise.resolve().then(()=>order.push('bootstrap')),
