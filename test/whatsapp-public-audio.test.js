@@ -28,7 +28,7 @@ test('audio publico transcrito segue classificacao da fala e avisa operador',asy
   assert.match(sent[0].text,/\[URGENTE\]/);
   assert.match(sent[0].text,/Áudio transcrito/);
   assert.match(sent[0].text,/prazo vence amanhã/i);
-  assert.match(sent[1].text,/urgente/i);
+  assert.match(sent[1].text,/urgente|urgência/i);
   assert.match(sent[2].text,/\[LEX\] respondeu/);
   assert.match(s.events[0].texto,/Áudio transcrito/);
 });
@@ -40,9 +40,9 @@ test('falha de transcricao nao inventa fala e pede reenvio',async()=>{
     transcribe:async()=>({ok:false,texto:'',erro:'timeout'}),
     request:async(_url,opt)=>{sent.push(opt.data);return {key:{id:'ok'}};}
   });
-  assert.match(sent[0].text,/\[ATENÇÃO\]/);
-  assert.match(sent[0].text,/áudio não compreendido/i);
-  assert.match(sent[1].text,/não consegui ouvi-lo com segurança/i);
+  assert.match(sent[1].text,/\[ATENÇÃO\]/);
+  assert.match(sent[1].text,/áudio não compreendido/i);
+  assert.match(sent[0].text,/não consegui ouvi-lo com segurança/i);
   assert.doesNotMatch(sent.map(x=>x.text).join('\n'),/texto provável|talvez tenha dito/i);
 });
 

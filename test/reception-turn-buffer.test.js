@@ -27,3 +27,16 @@ test('duas mensagens rápidas geram um único dispatch',async()=>{
   assert.equal(sent.length,1);
   assert.equal(sent[0].data.message.conversation,'Oi | Quem é você?');
 });
+
+test('turnos do mesmo contato aguardam o histórico anterior, incluindo mídia',async()=>{
+  const sent=[];let release;
+  const held=new Promise(r=>{release=r;});
+  const buffer=createReceptionTurnBuffer({dispatch:async b=>{sent.push(b);if(sent.length===1) await held;return true;},setTimer:()=>1,clearTimer:()=>{}});
+  await buffer.enqueue(body('1','Oi'),'LEX-JURIDICO');
+  const first=buffer.flush('LEX-JURIDICO|5561988888888@s.whatsapp.net');
+  await new Promise(r=>setImmediate(r));
+  const media=body('2','');media.data.message={documentMessage:{fileName:'teste.pdf'}};
+  const second=buffer.enqueue(media,'LEX-JURIDICO');
+  await new Promise(r=>setImmediate(r));assert.equal(sent.length,1);
+  release();await Promise.all([first,second]);assert.equal(sent.length,2);
+});
