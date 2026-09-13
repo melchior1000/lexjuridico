@@ -3619,12 +3619,14 @@ async function salvarWhatsappConfig(){
 }
 
 function whatsappStatusTexto(estado){
+  if(/^servidor_http_[1-5]\d{2}$/.test(estado)) return 'Servidor LEX respondeu HTTP '+estado.slice(-3);
   return ({conectado:'conectado', desativado:'desativado', desconectado:'desconectado',
     aguardando_pareamento:'aguardando pareamento no WhatsApp', nao_configurado:'configuração incompleta no servidor',
     instancia_nao_confirmada:'instância não confirmada', numero_nao_confirmado:'número não confirmado',
     numero_divergente:'WhatsApp conectado com outro número', resposta_invalida:'resposta inválida do provedor',
     falha_autenticacao:'chave recusada pela Evolution', instancia_ausente:'instância não encontrada na Evolution',
-    falha_na_verificacao:'não foi possível verificar a conexão', sessao_expirada:'entre novamente no LEX',
+    tempo_esgotado:'servidor LEX excedeu o tempo de resposta', falha_comunicacao:'não foi possível alcançar o servidor LEX; verifique rede e disponibilidade', resposta_lex_invalida:'servidor LEX retornou uma resposta inválida',
+    falha_na_verificacao:'não foi possível verificar a conexão com a Evolution', sessao_expirada:'entre novamente no LEX',
     sem_permissao:'sem permissão para consultar', nao_verificado:'conexão não verificada'})[estado] || 'conexão não verificada';
 }
 
@@ -3636,15 +3638,16 @@ async function atualizarWhatsStatusUI(){
   try{
     const r = await fetchComTimeout(SERVIDOR + '/api/whatsapp/status', { headers:{'Authorization':'Bearer '+(getAuthToken() || '')} }, 35000);
     if(!r.ok){
-      resultado.estado = r.status===401 ? 'sessao_expirada' : r.status===403 ? 'sem_permissao' : 'falha_na_verificacao';
+      resultado.estado = r.status===401 ? 'sessao_expirada' : r.status===403 ? 'sem_permissao' : 'servidor_http_'+r.status;
     }else{
-      const d = await r.json();
-      if(typeof d.conectado !== 'boolean') throw new Error('Resposta inválida');
+      let d;
+      try { d = await r.json(); } catch { throw {name:'RespostaLexInvalida'}; }
+      if(!d || typeof d.conectado !== 'boolean') throw {name:'RespostaLexInvalida'};
       resultado = {...d, estado:d.conectado ? 'conectado' : (d.estado || (d.ativo ? 'desconectado' : 'desativado'))};
       saveWhatsappCfg({ativo:d.ativo, numero:d.numero||getWhatsappCfg().numero,
         status:d.conectado?'conectado':'desconectado', estado:resultado.estado, ultima_mensagem:d.ultima_mensagem||null});
     }
-  }catch(_){ resultado = {conectado:false, estado:'falha_na_verificacao'}; }
+  }catch(e){ resultado = {conectado:false, estado:e?.name==='AbortError' ? 'tempo_esgotado' : e?.name==='RespostaLexInvalida' ? 'resposta_lex_invalida' : 'falha_comunicacao'}; }
   const cor = resultado.conectado ? '#2ec97e' : '#9da6cc';
   st.innerHTML = '<span class="status-dot" style="background:'+cor+'"></span>' + whatsappStatusTexto(resultado.estado);
   ul.textContent = resultado.ultima_mensagem ? new Date(resultado.ultima_mensagem).toLocaleString('pt-BR') : '—';
