@@ -97,6 +97,7 @@ const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-qua
 const {applyPjeMovement} = require('./lib/pje-sync');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
 const { modelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
+const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-reader');
 const http = require('http');
 const {brazilMobile, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
@@ -5373,8 +5374,21 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
       return true;
     }
     if(tipoEntrada === 'imagem') {
-      const dados = await _extrairDadosImagem(conteudo.buffer, conteudo.mime);
+      const leitura = await readDocument(conteudo.buffer, { mimeType: conteudo.mime || 'image/jpeg', filename: conteudo.nome || 'imagem.jpg', apiKey: OPENAI_API_KEY });
+      if(mustBlockReading(leitura, {critical:true})) {
+        perfil.status_documental = 'aguardando_documento_nitido';
+        perfil.documento_pendente_nitidez = { nome: conteudo.nome || 'imagem', motivo: leitura?.reason || 'leitura_nao_confirmada', recebido_em: new Date().toISOString() };
+        await _salvarPerfilCliente(perfil);
+        await env(unreadMessage(), ctx);
+        if(SECRETARIO_WHATSAPP_CONFIG.numero_advogado) await envWhatsApp('[ATENÇÃO] Documento bloqueado — '+(conteudo.nome||'imagem')+' não foi lido com confiança alta. Nenhum dado foi incorporado, classificado ou calculado. Solicitei novo arquivo nítido.', SECRETARIO_WHATSAPP_CONFIG.numero_advogado);
+        _registrarHistoricoConversa(perfil, 'sistema', '[documento-nao-lido] '+(leitura?.reason||'sem motivo'));
+        return true;
+      }
+      const dados = { tipo_documento: leitura.type || 'outro', confianca: leitura.confidence, extraido: leitura.extraido || {}, observacoes: leitura.observations || '', evidencias: leitura.evidences || [] };
+      perfil.status_documental = 'documento_lido';
+      perfil.documento_pendente_nitidez = null;
       _mesclarDadosExtraidos(perfil, dados.extraido, dados.tipo_documento);
+      if(SECRETARIO_WHATSAPP_CONFIG.numero_advogado) await envWhatsApp('[CIÊNCIA] Documento lido com confiança alta — '+(conteudo.nome||dados.tipo_documento||'imagem')+'. Dados só serão usados dentro das evidências confirmadas.', SECRETARIO_WHATSAPP_CONFIG.numero_advogado);
       const fatosImagem = [perfil.caso_descricao||'', dados?.extraido?.outros_dados||'', String(dados?.observacoes||'')].join(' ').trim();
       try {
         const procClass = await _processarClassificacaoIntakePerfil(
@@ -5403,9 +5417,22 @@ async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
       _registrarHistoricoConversa(perfil, 'cliente', '[imagem:'+tipoLegivel+']');
     } else if(tipoEntrada === 'pdf') {
       // ═══ PDF no cadastro de cliente — extrai TODOS os dados do documento ═══
-      await env('📄 Recebi seu PDF. Analisando o documento...', ctx);
+      await env('📄 Recebi seu PDF. Vou conferir a leitura antes de analisar.', ctx);
       try {
-        const analise = await _analisarDocEmChunks(conteudo.buffer, true, conteudo.nome || 'documento.pdf', null, { canal: ctx.canal });
+        const leitura = await readDocument(conteudo.buffer, { mimeType: conteudo.mime || 'application/pdf', filename: conteudo.nome || 'documento.pdf', apiKey: OPENAI_API_KEY });
+        if(mustBlockReading(leitura, {critical:true})) {
+          perfil.status_documental = 'aguardando_documento_nitido';
+          perfil.documento_pendente_nitidez = { nome: conteudo.nome || 'documento.pdf', motivo: leitura?.reason || 'leitura_nao_confirmada', recebido_em: new Date().toISOString() };
+          await _salvarPerfilCliente(perfil);
+          await env(unreadMessage(), ctx);
+          if(SECRETARIO_WHATSAPP_CONFIG.numero_advogado) await envWhatsApp('[ATENÇÃO] PDF bloqueado — '+(conteudo.nome||'documento.pdf')+' não atingiu leitura confiável. Nenhum cálculo ou análise jurídica foi iniciado.', SECRETARIO_WHATSAPP_CONFIG.numero_advogado);
+          _registrarHistoricoConversa(perfil, 'sistema', '[pdf-nao-lido] '+(leitura?.reason||'sem motivo'));
+          return true;
+        }
+        const textoSeguro = String(leitura.text || '').trim();
+        if(!textoSeguro) throw new Error('Leitura confirmada sem texto utilizável');
+        const analise = await analisarDocTexto(textoSeguro, conteudo.nome || 'documento.pdf', { paginas: leitura.pages || null, paginasLidas: leitura.pages || null, origem_leitura: leitura.method });
+        if(SECRETARIO_WHATSAPP_CONFIG.numero_advogado) await envWhatsApp('[CIÊNCIA] PDF lido com confiança alta — '+(conteudo.nome||'documento.pdf')+' via '+(leitura.method||'leitura segura')+'. Análise iniciou somente após a leitura.', SECRETARIO_WHATSAPP_CONFIG.numero_advogado);
         if(analise) {
           // Mescla dados do autor (que pode ser o cliente) no perfil
           const autorDados = analise.autor || {};
