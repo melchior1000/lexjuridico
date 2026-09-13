@@ -11,7 +11,7 @@ function setup(extra = {}) {
   let callback;
   const context = vm.createContext({
     console: {log() {}, warn() {}, error() {}},
-    requireSuccess, rowsFromResult,
+    requireSuccess, rowsFromResult, incomingWhatsappMessage:require("../lib/integration-status").incomingWhatsappMessage, EVO_INST:"LEX-JURIDICO",
     Buffer, URL, CRYPTO: crypto, AUTH_SECRET: 'isolated-test-secret', AUTH_IDLE_MS: 1800000,
     PERMS: {admin: {}, secretaria: {}}, SENHAS_WEB: {admin: '', secretaria: ''},
     global: {_tokensRevogados: new Set(), _sessaoAtividade: new Map()},

@@ -7,6 +7,7 @@ async function request(path, options = {}) {
     const res = await fetch(`${evolutionUrl}${path}`, {
       ...options,
       signal: controller.signal,
+      redirect: 'error',
       headers: {
         ...(options.headers || {}),
         apikey: apiKey,
@@ -22,13 +23,13 @@ async function request(path, options = {}) {
   }
 }
 
+// Apenas categorias conhecidas: o corpo pode conter segredos em qualquer campo.
 function safeBody(body) {
-  try {
-    const text = typeof body === 'string' ? body : JSON.stringify(body);
-    return String(text || '').replace(/(apikey|token|key|authorization)["']?\s*[:=]\s*["']?[^,}"'\s]+/gi, '$1=[oculto]').slice(0, 1200);
-  } catch {
-    return '[resposta não serializável]';
-  }
+  let text;
+  try { text = typeof body === 'string' ? body : JSON.stringify(body); }
+  catch { return 'resposta_nao_serializavel'; }
+  if (/Cannot read properties of undefined.*reading ['"]state['"]/.test(text || '')) return 'auth_state_indisponivel';
+  return 'detalhes_omitidos';
 }
 
 (async () => {
@@ -49,7 +50,7 @@ function safeBody(body) {
     const list = fetchInstances.body;
     const exists = list.some((item) => {
       const name = item?.name || item?.instance?.instanceName || item?.instanceName;
-      return String(name || '').toLowerCase() === instanceName.toLowerCase();
+      return String(name || '') === instanceName;
     });
     if (exists) {
       console.log(`[LEX Evolution] instância ${instanceName} já existe`);
@@ -72,7 +73,7 @@ function safeBody(body) {
     }
     console.log(`[LEX Evolution] instância ${instanceName} criada`);
   } catch (error) {
-    const reason = error && error.name === 'AbortError' ? 'timeout de 25s' : (error?.message || String(error));
+    const reason = error && error.name === 'AbortError' ? 'timeout de 25s' : 'falha de rede ou resposta inválida';
     console.log(`[LEX Evolution] bootstrap falhou sem derrubar o LEX: ${reason}`);
   }
 })();

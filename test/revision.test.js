@@ -156,7 +156,7 @@ test('webhook legado aceita o segredo configurado e delega uma mensagem autentic
   let calls=0;
   const app=setup({_configRuntime:{whatsapp:{}},WHATSAPP_WEBHOOK_SECRET:'segredo-de-teste',webhookAuthStatus,
     adapterEvolution:async()=>{calls++;}});
-  const response=await app.request('/api/webhook-whatsapp',null,{event:'messages.upsert'},'POST',{'x-webhook-secret':'segredo-de-teste'});
+  const response=await app.request('/api/webhook-whatsapp',null,{event:'messages.upsert',data:{key:{id:'m1',fromMe:false,remoteJid:'5511999999999@s.whatsapp.net'},message:{conversation:'Olá'}}},'POST',{'x-webhook-secret':'segredo-de-teste'});
   assert.equal(response.status,200);
   assert.equal(calls,1);
 });

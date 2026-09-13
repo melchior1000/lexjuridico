@@ -98,7 +98,7 @@ const {applyPjeMovement} = require('./lib/pje-sync');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
 const { modelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
 const http = require('http');
-const {brazilMobile, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus} = require('./lib/integration-status');
+const {brazilMobile, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -1596,7 +1596,6 @@ function getProcPrep() {
 // ANÁLISE E GERAÇÃO DE DOCUMENTOS
 // ════════════════════════════════════════════════════════════════════════════
 async function analisarDoc(buffer, isPdf, nome) {
-  const base64=buffer.toString('base64');
   // PROMPT REFORCADO - extrai CABECALHO de processos judiciais E administrativos
   // Consumido por _pAnal/_pIntakeAgenteAnalisou no frontend para preencher o form.
   const prompt=`Voce e o EXTRATOR JURIDICO ELITE do escritorio escritório configurado no LEX. Leia com ATENCAO TOTAL AO CABECALHO (todas as paginas, foco na 1a pagina) e extraia DADOS ESTRUTURADOS.
@@ -1673,11 +1672,9 @@ REGRAS DE OURO:
 - Responda SOMENTE o JSON.`;
 
   const nomeSafe = String(nome||'documento');
-  const isDocx = (!isPdf) && nomeSafe.toLowerCase().endsWith('.docx');
-  const txtArq = isDocx ? _extrairTextoDocxBasico(buffer) : buffer.toString('utf8');
-  const content=isPdf
-    ? [{type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},{type:'text',text:prompt}]
-    : [{type:'text',text:'[Arquivo: '+nomeSafe+']\n\n'+String(txtArq||'').substring(0,50000)+'\n\n'+prompt}];
+  const content = require('./lib/document-content').documentContent({
+    name: nomeSafe, buffer, isPdf, prompt, extractDocx: _extrairTextoDocxBasico
+  });
 
   // [SETOR_PREPARACAO] Extrator de cabecalho + analise primaria usa Opus 4 (MODELO_TOP):
   // qualidade maxima em OCR de peticoes/contestacoes/notificacoes e extracao
@@ -4883,11 +4880,11 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
   // ── AUTO-ADICIONAR NA AGENDA quando cliente se identifica no WhatsApp ──
   try {
     const telCliente = _normalizarNumeroWhats(numero);
-    if(telCliente && dados_informados?.nome_completo) {
+    if(telCliente && sessao.dados_informados?.nome_completo) {
       await sbReq('POST', 'contatos', {
-        nome: dados_informados.nome_completo,
+        nome: sessao.dados_informados.nome_completo,
         telefone: telCliente,
-        cpf: dados_informados.cpf || '',
+        cpf: sessao.dados_informados.cpf || '',
         processo_id: sessao.processo?.id || null,
         processo_nome: sessao.processo?.nome || '',
         obs: 'Auto-cadastrado via WhatsApp em ' + _agoraBrasilia(),
@@ -4899,8 +4896,8 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
   // ── SE NÃO TEM PROCESSO CADASTRADO: levanta dados e cobra Kleuber ──
   if(!sessao.processo && !sessao._cobrou_cadastro) {
     sessao._cobrou_cadastro = true;
-    const nomeCliente = sessao.cliente?.nome || dados_informados?.nome_completo || 'cliente';
-    const cpfCliente = sessao.cliente?.cpf || dados_informados?.cpf || 'não informado';
+    const nomeCliente = sessao.cliente?.nome || sessao.dados_informados?.nome_completo || 'cliente';
+    const cpfCliente = sessao.cliente?.cpf || sessao.dados_informados?.cpf || 'não informado';
     const telCliente = _normalizarNumeroWhats(numero);
     // Avisa equipe (Kleuber + Secretária) no Telegram para cadastrar
     const alertaCadastro = '📋 *CADASTRO PENDENTE*\n\n'
@@ -6322,7 +6319,7 @@ REGRAS:
 6. LEIA o documento inteiro antes de classificar — não chute a área por uma palavra isolada
 7. Se Kleuber disser "processo administrativo" ou "recurso administrativo", o tipo_processo É administrativo`;
 
-      const iaResp = await chamarClaudeTexto(contextoCompleto, systemIntake, 1500);
+      const iaResp = await ia([{role:'user',content:contextoCompleto}], systemIntake, 1500, MODELO_TOP);
       let dados = null;
       try {
         const jsonMatch = iaResp.match(/\{[\s\S]*\}/);
@@ -10211,7 +10208,7 @@ const server = http.createServer(async (req, res) => {
     }catch(e){res.writeHead(e.status||422,CORS);res.end(JSON.stringify({error:e.message}));}
     return;
   }
-  if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho') {
+  if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
     await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,
       engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};},log:msg=>console.warn('[Tarefa]',msg)});
@@ -10969,6 +10966,9 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/webhook-whatsapp' && req.method==='POST') {
     try {
       const b = await lerBody(req);
+      if(!incomingWhatsappMessage(b,EVO_INST)) {
+        res.writeHead(200,corsHeaders(req));res.end(JSON.stringify({ok:true,ignorado:true}));return;
+      }
       // Resposta 200 imediata (Evolution não retentar), processa async
       res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({ok:true, recebido:true}));
       adapterEvolution(b).catch(e=>console.error('WhatsApp adapter erro:', e.message));
@@ -11049,7 +11049,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       res.end(JSON.stringify({
         ok:true,
         ativo: _configRuntime.whatsapp.ativo,
-        numero: _configRuntime.whatsapp.numero,
+        numero: _numeroPlanoWhats(_configRuntime.whatsapp.numero),
         conectado: _estadoWhatsApp.conectado,
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
       }));
@@ -11065,7 +11065,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ativo: !!_configRuntime.whatsapp.ativo,
-        numero: _configRuntime.whatsapp.numero,
+        numero: _numeroPlanoWhats(_configRuntime.whatsapp.numero),
         conectado: !!_estadoWhatsApp.conectado,
         estado: _estadoWhatsApp.estado || 'nao_verificado',
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
@@ -11154,6 +11154,9 @@ if(url==='/api/memoria' && req.method==='GET') {
   if(url==='/api/whatsapp/webhook' && req.method==='POST') {
     try {
       const b = await lerBody(req);
+      if(!incomingWhatsappMessage(b,EVO_INST)) {
+        res.writeHead(200,corsHeaders(req));res.end(JSON.stringify({ok:true,ignorado:true}));return;
+      }
       _estadoWhatsApp.ultima_mensagem = new Date().toISOString();
       res.writeHead(200, corsHeaders(req)); res.end(JSON.stringify({ok:true, recebido:true}));
       const data = b.data || b;
@@ -13767,43 +13770,36 @@ ESTRUTURA DA ANALISE:
 
 REGRAS: Seja tecnico, preciso, cirurgico. Nao invente jurisprudencia. Identifique contradicoes. Aponte vulnerabilidades a reforma. Sugira sacadas estrategicas nao obvias.`;
 
-    let analiseCompleta='';
     const isPdf=dados.nome?.toLowerCase().endsWith('.pdf')||dados.mimetype==='application/pdf';
-    const pagEst=Math.max(1,Math.round(buffer.length/(1024*1024)*7));
-    
-    if(pagEst<=PDF_MAX_PGS_DIRETO){
-      const texto=await extrairTextoPDF(buffer,isPdf);
-      analiseCompleta=await ia([{role:'user',content:`ANALISE ESTRATEGICA\n\nTipo: ${tipoDoc}\nProcesso: ${proc.numero||proc.titulo}\nPartes: ${proc.partes||proc.cliente}\n\nTEXTO DO DOCUMENTO:\n${texto.substring(0,150000)}`}],sysPrompt,4096);
-    }else{
-      const chunks=await splitPDFEmChunks(buffer,{pgsPorChunk:PDF_PGS_POR_CHUNK,maxDireto:PDF_MAX_PGS_DIRETO});
-      const analisesParciais=[];
+    const chunks=isPdf?await _dividirPDFEmChunks(buffer,{pgsPorChunk:PDF_PGS_POR_CHUNK,maxDireto:PDF_MAX_PGS_DIRETO}):[{buffer}];
+    const pagEst=isPdf?chunks.reduce((n,c)=>n+(Number(c.paginas)||0),0):1;
+    const analisesParciais=[];
+    try {
       for(let i=0;i<chunks.length;i++){
-        const textoChunk=await extrairTextoPDF(chunks[i],isPdf);
-        const analiseChunk=await ia([{role:'user',content:`ANALISE ESTRATEGICA - PARTE ${i+1}/${chunks.length}\n\nTipo: ${tipoDoc}\nProcesso: ${proc.numero||proc.titulo}\n\nTEXTO DESTA PARTE:\n${textoChunk.substring(0,80000)}`}],sysPrompt+'\n\nESTA E APENAS UMA PARTE DO DOCUMENTO. Foque em vulnerabilidades especificas desta secao.',3000);
-        analisesParciais.push(analiseChunk);
+        const prompt='ANÁLISE ESTRATÉGICA — parte '+(i+1)+'/'+chunks.length+'\nTipo: '+tipoDoc+
+          '\nProcesso: '+(proc.numero||proc.titulo)+'\nPartes: '+(proc.partes||proc.cliente)+
+          '\nAnalise apenas o material fornecido e indique lacunas e fontes por página.';
+        const content=require('./lib/document-content').documentContent({name:dados.nome||'documento',
+          buffer:_bufferDoChunk(chunks[i]),isPdf,prompt,extractDocx:_extrairTextoDocxBasico});
+        const parcial=await ia([{role:'user',content}],sysPrompt,4096,MODELO_TOP);
+        if(!String(parcial||'').trim()) throw new Error('A IA retornou análise vazia.');
+        analisesParciais.push(parcial);
+        _liberarChunk(chunks[i]);
         if(i<chunks.length-1)await new Promise(r=>setTimeout(r,PAUSA_MIN_ENTRE_CHUNKS_MS));
       }
-      analiseCompleta=await ia([{role:'user',content:`SINTESE DAS ANALISES PARCIAIS:\n\n${analisesParciais.join('\n\n---\n\n')}\n\nCrie uma analise estrategica unificada, consolidando as vulnerabilidades encontradas em todas as partes.`}],sysPrompt,4096);
-    }
-    
-    if(!proc.analises_estrategicas)proc.analises_estrategicas=[];
-    proc.analises_estrategicas.push({
-      id:Date.now(),
-      data:new Date().toISOString(),
-      tipo_documento:tipoDoc,
-      analise:analiseCompleta,
-      paginas_estimadas:pagEst,
-      analisado_por:perfil
-    });
-    
-    if(!Array.isArray(proc.andamentos))proc.andamentos=[];
-    proc.andamentos.unshift({
-      id:Date.now(),
-      data:new Date().toISOString().slice(0,10),
-      descricao:`Analise estrategica concluida: ${tipoDoc} (~${pagEst} pg)`,
-      tipo:'analise_estrategica'
-    });
-    
+    } finally { chunks.forEach(_liberarChunk); }
+    const analiseCompleta=analisesParciais.length===1?analisesParciais[0]:await ia([{role:'user',
+      content:'Consolide estas análises parciais sem inventar fatos ou perder as referências de página:\n\n'+analisesParciais.join('\n\n---\n\n')}],sysPrompt,4096,MODELO_TOP);
+    if(!String(analiseCompleta||'').trim()) throw new Error('A IA retornou síntese vazia.');
+    // Salva sobre o estado atual, preservando alterações feitas durante a análise.
+    await processStore.update(processoId,current=>({
+      analises_estrategicas:[...(Array.isArray(current.analises_estrategicas)?current.analises_estrategicas:[]),{
+        id:Date.now(),data:new Date().toISOString(),tipo_documento:tipoDoc,analise:analiseCompleta,paginas_estimadas:pagEst,analisado_por:perfil}],
+      andamentos:[{id:Date.now(),data:new Date().toISOString().slice(0,10),
+        descricao:'Analise estrategica concluida: '+tipoDoc+' ('+pagEst+' pg)',tipo:'analise_estrategica'},
+        ...(Array.isArray(current.andamentos)?current.andamentos:[])]
+    }),perfil);
+
     _auditarAcao(perfil,'analise_estrategica_concluida',{processo_id:processoId,tipo_doc:tipoDoc,paginas:pagEst});
     _sseNotificar('analise_estrategica_concluida',{
       ok:true,
