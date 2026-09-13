@@ -49,7 +49,7 @@ test('arquivar no painel atualiza a mesma fila',async()=>{
 });
 
 test('interface possui Recepcao, quatro colunas e nao envia resposta direta',()=>{
-  const js=fs.readFileSync(path.join(__dirname,'../office-ui.js'),'utf8');
+  const js=fs.readFileSync(path.join(__dirname,'../office-ui-base.js'),'utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../office-ui.js'),'utf8');
   assert.match(js,/renderRecepcaoLex/);
   for(const label of ['Urgentes','Aguardando você','Administrativos','Arquivados']) assert.match(js,new RegExp(label));
   assert.match(js,/\/api\/escritorio\/recepcao\/arquivar/);
