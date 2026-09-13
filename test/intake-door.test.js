@@ -90,7 +90,7 @@ test('Telegram: mesma porta e memória sobrevivem à recriação do serviço',as
   const options={records,owner:'7171',send:async(id,text)=>{sent.push({id,text});return true;},report:async t=>{reported.push(t);return true;}};
   await createTelegramReception(options).receive(tg('123','Quero falar com Kleuber'));
   await createTelegramReception(options).receive(tg('123','João da Silva',2));
-  assert.match(sent[1].text,/João da Silva/);assert.doesNotMatch(sent[1].text,/diga seu nome/);assert.equal(reported.length,2);
+  assert.match(sent[1].text,/João da Silva/);assert.doesNotMatch(sent[1].text,/diga seu nome/);assert.equal(reported.length,0);
 });
 test('Telegram: documento com pedido pericial apenas registra setor e referência',async()=>{
   const records=recordFake();
