@@ -1369,10 +1369,16 @@ const PJE_ADV_KEY = 'lex_pje_adv_cfg_v1';
 function getWhatsappCfg(){
   try{
     const d = JSON.parse(localStorage.getItem(WA_CFG_KEY)||'{}');
-    return {ativo:false,numero:'',api_url:'',status:'desconectado',ultima_mensagem:null,...d};
+    return {ativo:false,api_url:'',status:'desconectado',ultima_mensagem:null,...d,numero:numeroWhatsappCampo(d.numero)};
   }catch(e){ return {ativo:false,numero:'',api_url:'',status:'desconectado',ultima_mensagem:null}; }
 }
-function saveWhatsappCfg(d){ localStorage.setItem(WA_CFG_KEY, JSON.stringify({...getWhatsappCfg(),...d})); }
+function numeroWhatsappCampo(value){
+  return String(value||'').trim().replace(/:\d+(?=@s\.whatsapp\.net$)/,'').replace(/@s\.whatsapp\.net$/,'');
+}
+function saveWhatsappCfg(d){
+  const cfg={...getWhatsappCfg(),...d};cfg.numero=numeroWhatsappCampo(cfg.numero);
+  localStorage.setItem(WA_CFG_KEY, JSON.stringify(cfg));
+}
 function mascararFoneBR(v){
   const n=String(v||'').replace(/\D/g,'').slice(0,13);
   let d=n.startsWith('55')?n.slice(2):n;
@@ -12727,7 +12733,7 @@ async function renderCentralMensagens(){
     <!-- PAINEL DIREITO: Chat -->
     <div style="flex:1;min-width:250px;background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 140px)">
       <div id="_centralHeader" style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        ${_centralContatoAtivo ? '<span style="font-size:16px">' + (_centralContatoAtivo.canal==='telegram'?'✈️':'📱') + '</span> ' + (_centralContatoAtivo.nome||_centralContatoAtivo.chatId) + ' <span style="font-size:10px;color:var(--text3);font-weight:400">(' + _centralContatoAtivo.canal + ' · ' + _centralContatoAtivo.chatId + ')</span>' : '← Selecione ou inicie uma conversa'}
+        ${_centralContatoAtivo ? '<span style="font-size:16px">' + (_centralContatoAtivo.canal==='telegram'?'✈️':'📱') + '</span> ' + _escHtml(_centralContatoAtivo.nome||_centralContatoAtivo.chatId) + ' <span style="font-size:10px;color:var(--text3);font-weight:400">(' + _centralContatoAtivo.canal + ' · ' + _centralContatoAtivo.chatId + ')</span>' : '← Selecione ou inicie uma conversa'}
       </div>
       <div id="_centralChat" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;min-height:200px">
         ${_centralContatoAtivo ? '<div style="text-align:center;color:var(--text3);font-size:12px">Carregando...</div>' : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:13px;text-align:center;padding:20px">Selecione uma conversa à esquerda<br>ou inicie uma nova digitando o número</div>'}
@@ -12762,7 +12768,7 @@ function _centralAjustarPlaceholder(){
 
 async function _centralCarregarContatos(){
   try {
-    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens/contatos',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens/contatos',{headers:{'Authorization':'Bearer '+getAuthToken()}});
     const d = await r.json();
     const box = document.getElementById('_centralContatos');
     if(!box) return;
@@ -12773,9 +12779,9 @@ async function _centralCarregarContatos(){
       const ativo = _centralContatoAtivo && _centralContatoAtivo.chatId === c.chatId && _centralContatoAtivo.canal === c.canal;
       const icone = c.canal === 'telegram' ? '✈️' : '📱';
       const naoLidas = c.naoLidas > 0 ? '<span style="background:var(--red);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:700">' + c.naoLidas + '</span>' : '';
-      return '<div onclick="_centralAbrirChat(' + JSON.stringify(JSON.stringify(c)).slice(1,-1) + ')" style="padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:10px;' + (ativo ? 'background:color-mix(in srgb, var(--accent) 7%, transparent);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent)' : 'border:1px solid transparent') + ';margin-bottom:4px;transition:all .15s" onmouseover="this.style.background=\'var(--border)\'" onmouseout="this.style.background=\'' + (ativo ? 'color-mix(in srgb, var(--accent) 7%, transparent)' : 'transparent') + '\'">'
+      return '<div data-contato="' + _escHtml(JSON.stringify(c)) + '" onclick="_centralAbrirChat(this.dataset.contato)" style="padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:10px;' + (ativo ? 'background:color-mix(in srgb, var(--accent) 7%, transparent);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent)' : 'border:1px solid transparent') + ';margin-bottom:4px;transition:all .15s" onmouseover="this.style.background=\'var(--border)\'" onmouseout="this.style.background=\'' + (ativo ? 'color-mix(in srgb, var(--accent) 7%, transparent)' : 'transparent') + '\'">'
         + '<span style="font-size:16px">' + icone + '</span>'
-        + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (c.nome||c.chatId) + '</div>'
+        + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _escHtml(c.nome||c.chatId) + '</div>'
         + '<div style="font-size:11px;color:var(--text3)">' + c.totalMsgs + ' msgs · ' + new Date(c.ultimaMsg).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}) + '</div></div>'
         + naoLidas + '</div>';
     }).join('');
@@ -12791,7 +12797,7 @@ async function _centralCarregarMsgs(){
   if(!_centralContatoAtivo) return;
   try {
     const canal = _centralContatoAtivo.canal;
-    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens?canal='+canal+'&limite=100',{headers:{'Authorization':'Bearer '+token}});
+    const r = await fetchComTimeout(SERVIDOR+'/api/mensagens?canal='+canal+'&limite=100',{headers:{'Authorization':'Bearer '+getAuthToken()}});
     const d = await r.json();
     const chatBox = document.getElementById('_centralChat');
     if(!chatBox || !d.ok) return;
@@ -12806,7 +12812,7 @@ async function _centralCarregarMsgs(){
       const hora = new Date(m.em).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
       return '<div style="display:flex;justify-content:' + alinha + '">'
         + '<div style="max-width:70%;padding:10px 14px;border-radius:12px;background:' + cor + ';' + (ehSaida ? 'color:white' : 'color:var(--text);border:1px solid var(--border)') + '">'
-        + '<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:0.7">' + (m.nome||'?') + '</div>'
+        + '<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:0.7">' + _escHtml(m.nome||'?') + '</div>'
         + '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word">' + _escHtml(m.texto||'') + '</div>'
         + '<div style="font-size:9px;opacity:0.5;text-align:right;margin-top:4px">' + hora + '</div>'
         + '</div></div>';
@@ -12815,7 +12821,7 @@ async function _centralCarregarMsgs(){
   } catch(e) { console.warn('Central msgs erro:', e); }
 }
 
-function _escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Usa o escapador comum, incluindo aspas em atributos HTML.
 
 async function _centralEnviar(){
   if(!_centralContatoAtivo) return;
@@ -12828,7 +12834,7 @@ async function _centralEnviar(){
   try {
     const r = await fetchComTimeout(SERVIDOR+'/api/mensagens/enviar',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthToken()},
       body:JSON.stringify({ canal:_centralContatoAtivo.canal, destino:_centralContatoAtivo.chatId, texto })
     });
     const d = await r.json();
@@ -12845,9 +12851,9 @@ async function _centralEnviar(){
       }
       toast('✓ Enviado!','ok');
     } else {
-      toast('Erro: '+(d.error||'falha'),'erro');
+      input.value=texto;toast('Erro: '+(d.error||'falha'),'erro');
     }
-  } catch(e) { toast('Erro de conexão','erro'); }
+  } catch(e) { input.value=texto;toast('Erro de conexão','erro'); }
   input.disabled = false;
   input.focus();
 }
