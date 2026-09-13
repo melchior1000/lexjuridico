@@ -1,0 +1,29 @@
+name: Patch recepcao conversa viva
+on:
+  push:
+    branches: [fix/recepcao-conversa-viva]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/recepcao-conversa-viva
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/patch-recepcao-conversa-viva.js
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - name: Commit source and remove temporary patch machinery
+        run: |
+          rm scripts/patch-recepcao-conversa-viva.js .github/workflows/patch-recepcao-conversa-viva.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib/integration-status.js test/reception-conversation.test.js scripts/patch-recepcao-conversa-viva.js .github/workflows/patch-recepcao-conversa-viva.yml
+          git commit -m "fix: tornar recepcao progressiva e reconhecer pedido de processo"
+          git push origin HEAD:fix/recepcao-conversa-viva
