@@ -35,3 +35,24 @@ test('only confirmed connection renders success',async()=>{
   await context.testarWhatsappConexao();
   assert.equal(messages[0][1],'ok');
 });
+
+for (const status of [404, 429, 500, 502, 503]) {
+  test(`status HTTP ${status} aparece sem expor corpo do servidor`, async()=>{
+    const {context,elements}=ui(async()=>({ok:false,status,json:async()=>({error:'secret'})}));
+    await context.testarWhatsappConexao();
+    assert.match(elements['wa-status'].innerHTML,new RegExp('HTTP '+status));
+    assert.doesNotMatch(elements['wa-status'].innerHTML,/secret/);
+  });
+}
+test('timeout tem diagnostico distinto de falha de rede',async()=>{
+  const {context,elements}=ui(async()=>{throw {name:'AbortError'};});
+  await context.testarWhatsappConexao();
+  assert.match(elements['wa-status'].innerHTML,/excedeu o tempo/);
+});
+test('JSON invalido e resposta sem conectado sao identificados',async()=>{
+  for(const json of [async()=>{throw new SyntaxError();},async()=>null,async()=>({})]){
+    const {context,elements}=ui(async()=>({ok:true,json}));
+    await context.testarWhatsappConexao();
+    assert.match(elements['wa-status'].innerHTML,/resposta inválida/);
+  }
+});
