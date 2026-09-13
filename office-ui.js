@@ -44,7 +44,6 @@ async function renderTrabalho() {
   const surface=document.getElementById('work-home');
   try {
     const data=await lexApi('/api/trabalho');if(!surface.isConnected) return;
-    // Contagem usa os mesmos registros, incluindo preparação legada ainda no aparelho.
     document.getElementById('work-connection').textContent='Servidor confirmado · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('work-tasks').innerHTML=data.tarefas.length?data.tarefas.map(lexTaskCard).join(''):'<div class="work-empty"><strong>Nenhuma tarefa pendente.</strong><p>Selecione um processo e dê a primeira ordem ao LEX.</p></div>';
     if(!data.ia_configurada) document.getElementById('work-feedback').textContent='Configure a IA no servidor. As ordens ficam salvas enquanto isso.';
@@ -111,3 +110,76 @@ function renderFontesProcessos() {
 async function lexConnectorCode(){try{const d=await lexApi('/api/conector/parear',{method:'POST',body:'{}'});document.getElementById('connector-code').value=d.token;document.getElementById('connector-notice').textContent='Código gerado. O código anterior foi invalidado.';}catch(e){document.getElementById('connector-notice').textContent=e.message;}}
 async function lexDownloadConnector(){try{const r=await fetchComTimeout(SERVIDOR+'/api/conector/download',{headers:{Authorization:'Bearer '+getAuthToken()}},30000);if(!r.ok)throw new Error('Conector não disponível nesta versão do servidor.');const u=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=u;a.download='LEX_conector_navegador.zip';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}catch(e){toast(e.message,'erro');}}
 async function lexQueryPublic(){const el=document.getElementById('datajud-notice');el.textContent='Consultando…';try{const d=await lexApi('/api/pje/sincronizar',{method:'POST',body:'{}'});el.textContent='Consulta concluída. '+(d.processos||[]).length+' processos consultados. Confira as datas dos movimentos.';}catch(e){el.textContent=e.message;}}
+
+function lexReceptionTime(value){
+  if(!value) return 'sem horário';
+  const d=new Date(value);if(Number.isNaN(d.getTime())) return 'sem horário';
+  return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function lexReceptionCard(item,archived=false){
+  const number=lexEscape(String(item.numero||''));
+  const badge=item.urgente?'URGENTE':lexEscape(String(item.classe||'geral').toUpperCase());
+  return `<article class="lex-reception-card ${item.urgente?'is-urgent':''}">
+    <div class="lex-reception-head"><strong>${lexEscape(item.nome||'Contato')}</strong><span>${badge}</span></div>
+    <div class="lex-reception-number">${number}</div>
+    <p>${lexEscape(item.ultima_mensagem||'Sem texto')}</p>
+    <div class="lex-reception-meta"><span>${lexReceptionTime(item.atualizado_em)}</span><span>${Number(item.contador)||1} msg</span></div>
+    ${archived?'':`<button class="btn-outline" onclick="lexArchiveReception('${number}')">Arquivar</button>`}
+  </article>`;
+}
+function lexReceptionColumn(title,items,archived=false){
+  return `<section class="lex-reception-column"><div class="lex-reception-column-title"><h2>${title}</h2><strong>${items.length}</strong></div>
+    <div class="lex-reception-list">${items.length?items.map(x=>lexReceptionCard(x,archived)).join(''):'<div class="lex-reception-empty">Nenhum contato.</div>'}</div></section>`;
+}
+async function renderRecepcaoLex(){
+  const host=document.getElementById('content');if(!host)return;
+  host.innerHTML='<section class="work-home"><div class="work-title"><div><div class="work-eyebrow">WhatsApp do escritório</div><h1>Recepção</h1><p>Contatos externos aguardando sua análise. Esta tela não abre processos nem libera dados jurídicos.</p></div><button class="btn-outline" onclick="renderRecepcaoLex()">Atualizar</button></div><div id="lex-reception-status" class="work-notice">Consultando a recepção persistente…</div><div id="lex-reception-grid" class="lex-reception-grid"></div></section>';
+  const grid=document.getElementById('lex-reception-grid'),status=document.getElementById('lex-reception-status');
+  try{
+    const [urgent,waiting,admin,archived]=await Promise.all([
+      lexApi('/api/escritorio/recepcao?status=urgente'),
+      lexApi('/api/escritorio/recepcao?status=aguardando_advogado'),
+      lexApi('/api/escritorio/recepcao?status=administrativo'),
+      lexApi('/api/escritorio/recepcao?status=arquivado')
+    ]);
+    if(!grid.isConnected)return;
+    grid.innerHTML=lexReceptionColumn('Urgentes',urgent.contatos||[])+lexReceptionColumn('Aguardando você',waiting.contatos||[])+lexReceptionColumn('Administrativos',admin.contatos||[])+lexReceptionColumn('Arquivados',archived.contatos||[],true);
+    status.textContent='Fonte: Supabase · atualização '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'. Para responder pelo WhatsApp do escritório, use /responder NUMERO mensagem no seu 7171.';
+  }catch(e){if(status.isConnected)status.textContent=e.message;}
+}
+async function lexArchiveReception(numero){
+  if(!confirm('Arquivar este contato da recepção?')) return;
+  try{await lexApi('/api/escritorio/recepcao/arquivar',{method:'POST',body:JSON.stringify({numero})});await renderRecepcaoLex();}
+  catch(e){toast(e.message,'erro');}
+}
+function lexOpenReception(btn){
+  if(typeof pag!=='undefined')pag='recepcao';
+  if(typeof procAtivo!=='undefined')procAtivo=null;
+  if(typeof fecharSidebar==='function')fecharSidebar();
+  if(typeof esconderBackBar==='function')esconderBackBar();
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  const title=document.getElementById('page-title');if(title)title.textContent='Recepção';
+  renderRecepcaoLex();
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  if(!document.getElementById('lex-nav-recepcao')){
+    const nav=document.querySelector('#sidebar nav');
+    if(nav){
+      const btn=document.createElement('button');btn.id='lex-nav-recepcao';btn.className='nav-btn';btn.innerHTML='<span class="nav-icon">📥</span> Recepção';btn.onclick=()=>lexOpenReception(btn);
+      const central=[...nav.querySelectorAll('.nav-btn')].find(b=>/Central Mensagens/i.test(b.textContent||''));
+      if(central)central.after(btn);else nav.appendChild(btn);
+    }
+  }
+  if(!document.getElementById('lex-reception-style')){
+    const style=document.createElement('style');style.id='lex-reception-style';style.textContent=`
+      .lex-reception-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
+      .lex-reception-column{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;min-width:0}
+      .lex-reception-column-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.lex-reception-column-title h2{font-size:13px;margin:0}.lex-reception-column-title strong{background:var(--surface2);border:1px solid var(--border2);border-radius:999px;padding:3px 8px;font-size:11px}
+      .lex-reception-list{display:grid;gap:10px}.lex-reception-card{background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:12px}.lex-reception-card.is-urgent{border-color:var(--red)}
+      .lex-reception-head{display:flex;justify-content:space-between;gap:8px;align-items:start}.lex-reception-head strong{font-size:13px;overflow-wrap:anywhere}.lex-reception-head span{font-size:9px;letter-spacing:.7px;color:var(--text3)}
+      .lex-reception-number{font-size:11px;color:var(--accent);margin-top:4px}.lex-reception-card p{font-size:12px;color:var(--text2);line-height:1.45;margin:10px 0;overflow-wrap:anywhere}.lex-reception-meta{display:flex;justify-content:space-between;gap:8px;color:var(--text3);font-size:10px;margin-bottom:10px}.lex-reception-empty{padding:18px 8px;text-align:center;color:var(--text3);font-size:12px}
+      @media(max-width:1100px){.lex-reception-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.lex-reception-grid{grid-template-columns:1fr}}
+    `;document.head.appendChild(style);
+  }
+});
