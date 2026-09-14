@@ -124,3 +124,4 @@ document.write('<script src="office-flow-ui.js"><\/script>');
 document.write('<script src="lib/office-command.js"><\/script>');
 document.write('<script src="office-command-ui.js"><\/script>');
 document.write('<script src="reception-handoff-ui.js"><\/script>');
+document.write('<script src="office-attachment-ui.js"><\/script>');
