@@ -4,13 +4,55 @@ on:
     branches: [fix/reverse-audit-critical-1]
 jobs:
   audit:
+    if: ${{ !contains(github.event.head_commit.message, '[reverse-audit-patched]') }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/reverse-audit-critical-1
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Corrigir persistência e identidade do operador
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('bot.js')
+          s=p.read_text()
+          old="""async function _salvarPerfilCliente(perfil) {
+  perfil.atualizado_em = new Date().toISOString();
+  try {
+    await sbUpsert('clientes_pendentes', perfil, 'chat_id');
+    return true;
+  } catch(e) { console.warn('salvarPerfilCliente erro:', e.message); return false; }
+}"""
+          new="""async function _salvarPerfilCliente(perfil) {
+  perfil.atualizado_em = new Date().toISOString();
+  try {
+    const result = await sbUpsert('clientes_pendentes', perfil, 'chat_id');
+    if(!result || result.ok !== true) throw new Error('Banco não confirmou o cadastro ('+Number(result?.status||0)+').');
+    return true;
+  } catch(e) { console.warn('salvarPerfilCliente erro:', e.message); return false; }
+}"""
+          if old not in s:
+              raise SystemExit('trecho _salvarPerfilCliente não encontrado')
+          s=s.replace(old,new,1)
+          s=s.replace("return {nome:'kleuber',perfil:'admin',pode_autorizar:true,pode_responder:true};","return {nome:process.env.LEX_OPERATOR_NAME||'Administrador',perfil:'admin',pode_autorizar:true,pode_responder:true};",1)
+          s=s.replace("return { nome: 'kleuber', perfil: 'admin', pode_autorizar: true, pode_responder: true };","return { nome: process.env.LEX_OPERATOR_NAME||'Administrador', perfil: 'admin', pode_autorizar: true, pode_responder: true };",1)
+          p.write_text(s)
+          PY
       - run: npm ci --ignore-scripts
       - run: npm run audit:reverse
       - run: npm run check
       - run: npm test
+      - name: Gravar correções
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot.js
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: fecha persistência do cadastro na reversa [reverse-audit-patched]"
+            git push origin HEAD:fix/reverse-audit-critical-1
+          fi
