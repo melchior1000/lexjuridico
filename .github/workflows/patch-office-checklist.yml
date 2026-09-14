@@ -1,12 +1,13 @@
 name: Patch office checklist flow
 on:
   push:
-    branches: [fix/office-checklist-actions]
+    branches:
+      - fix/office-checklist-actions
 permissions:
   contents: write
 jobs:
   patch:
-    if: "!contains(github.event.head_commit.message, '[skip-office-patch]')"
+    if: ${{ !contains(github.event.head_commit.message, '[skip-office-patch]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +18,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Corrigir casca e verificação
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -113,6 +115,7 @@ test('check de sintaxe descobre JavaScript recursivamente em vez de lista fixa',
       - name: Rodar testes
         run: npm test
       - name: Gravar correção
+        shell: bash
         run: |
           git config user.name "melchior1000"
           git config user.email "melchior1000@users.noreply.github.com"
