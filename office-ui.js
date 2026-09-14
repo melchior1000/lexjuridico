@@ -113,3 +113,5 @@ document.write('<script src="office-ui-base.js"><\/script>');
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',patchChannels); else patchChannels();
 })();
+document.write('<link rel="stylesheet" href="office-ui-v2.css">');
+document.write('<script src="office-ui-v2.js"><\/script>');
