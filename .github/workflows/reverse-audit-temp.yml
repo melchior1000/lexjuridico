@@ -1,0 +1,16 @@
+name: Reverse audit temp
+on:
+  push:
+    branches: [fix/reverse-audit-critical-1]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --ignore-scripts
+      - run: npm run audit:reverse
+      - run: npm run check
+      - run: npm test
