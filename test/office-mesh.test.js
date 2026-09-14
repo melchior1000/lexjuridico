@@ -48,15 +48,26 @@ test('mesmo intent_id é idempotente e não duplica evento nem outbox',async()=>
   assert.equal(p.office_outbox.length,1);
 });
 
-test('retry da mesma tarefa não gera segunda movimentação',async()=>{
+test('retry da mesma geração da tarefa não gera segunda movimentação',async()=>{
   const db=store([{id:'p3',nome:'Caso',office_stage:'processos',numero:'0000003-00.2026.8.13.0001'}]);
-  const task={id:'t77',tipo:'pericia',processo_id:'p3',agente:'Pericial'};
+  const task={id:'t77',tipo:'pericia',processo_id:'p3',agente:'Pericial',tentativas:0};
   await Pipeline.syncTaskStart(db,task,'admin');
   await Pipeline.syncTaskStart(db,task,'admin');
   const p=db.snapshot()[0];
   assert.equal(p.office_stage,'pericia');
-  assert.equal(p.office_events.filter(e=>e.intent_id==='task:t77:start:pericia').length,1);
-  assert.equal(p.office_outbox.filter(e=>e.intent_id==='task:t77:start:pericia').length,1);
+  assert.equal(p.office_events.filter(e=>e.intent_id==='task:t77:start:pericia:attempt:0').length,1);
+  assert.equal(p.office_outbox.filter(e=>e.intent_id==='task:t77:start:pericia:attempt:0').length,1);
+});
+
+test('correção humana cria nova geração e pode voltar legitimamente à Revisão',async()=>{
+  const db=store([{id:'p5',nome:'Laudo',office_stage:'pericia',numero:'0000005-00.2026.8.13.0001'}]);
+  await Pipeline.syncTaskResult(db,{id:'t88',tipo:'pericia',processo_id:'p5',agente:'Pericial',status:'aguardando_revisao',tentativas:1},'admin');
+  await Pipeline.moveProcess(db,'p5','pericia',{actor:'admin',agent:'LEX Revisão',reason:'Correção solicitada',intentId:'correction:t88:1'});
+  await Pipeline.syncTaskResult(db,{id:'t88',tipo:'pericia',processo_id:'p5',agente:'Pericial',status:'aguardando_revisao',tentativas:2},'admin');
+  const p=db.snapshot()[0];
+  assert.equal(p.office_stage,'revisao');
+  assert.equal(p.office_events.filter(e=>e.intent_id==='task:t88:result:revisao:attempt:1').length,1);
+  assert.equal(p.office_events.filter(e=>e.intent_id==='task:t88:result:revisao:attempt:2').length,1);
 });
 
 test('outbox pendente é lida e confirmação de processamento também é idempotente',async()=>{
