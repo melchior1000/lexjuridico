@@ -6,7 +6,7 @@ function check(label, input, filename) {
   const r=spawnSync(process.execPath,['--check',...(filename ? [filename] : [])],{input,encoding:'utf8'});
   if(r.status!==0){failures++; console.error(label+'\n'+r.stderr);}
 }
-for(const name of ['bot.js','lex_agente_vivo.js','office-ui.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','login-theme.js','conector-navegador/popup.js',...['lib','scripts','test'].flatMap(dir=>fs.readdirSync(dir).filter(f=>f.endsWith('.js')).map(f=>path.join(dir,f)))]) check(name,null,name);
+for(const name of ['bot.js','lex_agente_vivo.js','lex_agente_vivo_core.js','office-ui.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','login-theme.js','conector-navegador/popup.js',...['lib','scripts','test'].flatMap(dir=>fs.readdirSync(dir).filter(f=>f.endsWith('.js')).map(f=>path.join(dir,f)))]) check(name,null,name);
 for(const name of ['index.html','lex-whatsapp.html']) {
   const html=fs.readFileSync(name,'utf8'); let n=0;
   for(const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
