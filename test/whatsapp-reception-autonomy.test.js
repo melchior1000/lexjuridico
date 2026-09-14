@@ -2,6 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {publicWhatsappDecision,publicWhatsappReception}=require('../lib/integration-status');
+const {RESPONSIBLE_NAME}=require('../lib/intake-door');
 
 const cfg={operator:'5561999171717',url:'https://evo.example.test',key:'fake'};
 function body(text,extraMessage={}){
@@ -39,7 +40,7 @@ test('processo existente sobe como atencao e mostra a resposta do LEX',async()=>
   assert.equal(calls[1].number,'5561999171717');
   assert.match(calls[1].text,/\[ATENÇÃO\].*possível processo existente/i);
   assert.equal(calls[0].number,'5561988888888');
-  assert.match(calls[0].text,/dependem da autorização do Dr. Kleuber/i);
+  assert.match(calls[0].text,new RegExp('dependem da autorização de '+RESPONSIBLE_NAME.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));
   assert.equal(calls[1].number,'5561999171717');
   assert.match(calls[1].text,/\[LEX\] respondeu/i);
 });
