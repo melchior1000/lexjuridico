@@ -8,6 +8,11 @@ function check(label, input, filename) {
   if(r.status!==0){failures++; console.error(label+'\n'+r.stderr);}
 }
 const SKIP=new Set(['.git','node_modules','.vercel','coverage','dist','artifacts']);
+const CRITICAL=[
+  'bot.js','lex_agente_vivo.js','lex_agente_vivo_core.js',
+  'office-ui.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','office-flow-ui.js',
+  'login-theme.js','conector-navegador/popup.js'
+];
 function walk(dir='.'){
   const out=[];
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
@@ -19,6 +24,9 @@ function walk(dir='.'){
   return out;
 }
 const jsFiles=walk().sort();
+for(const name of CRITICAL){
+  if(!jsFiles.includes(name)){failures++;console.error('Arquivo JavaScript crítico ausente: '+name);}
+}
 for(const name of jsFiles) check(name,null,name);
 for(const name of ['index.html','lex-whatsapp.html']) {
   const html=fs.readFileSync(name,'utf8'); let n=0;
@@ -28,4 +36,4 @@ for(const name of ['index.html','lex-whatsapp.html']) {
   }
 }
 if(failures) process.exitCode=1;
-else console.log('Sintaxe validada em '+checked+' unidades: todo JavaScript rastreado, casca comercial, fluxo do escritório, tema do login e scripts inline.');
+else console.log('Sintaxe validada em '+checked+' unidades: todo JavaScript rastreado, arquivos críticos presentes, casca comercial, fluxo do escritório, tema do login e scripts inline.');
