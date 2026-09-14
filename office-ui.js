@@ -115,5 +115,7 @@ document.write('<script src="office-ui-base.js"><\/script>');
 })();
 document.write('<link rel="stylesheet" href="office-ui-v2.css">');
 document.write('<link rel="stylesheet" href="office-ui-device.css">');
+document.write('<link rel="stylesheet" href="login-theme.css">');
 document.write('<script src="office-ui-device.js"><\/script>');
 document.write('<script src="office-ui-v2.js"><\/script>');
+document.write('<script src="login-theme.js"><\/script>');
