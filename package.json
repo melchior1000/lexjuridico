@@ -8,7 +8,7 @@
     "dev": "node --watch bot.js",
     "check": "node scripts/check-syntax.js && npm run lint",
     "status:integracoes": "node scripts/check-integrations.js",
-    "lint": "eslint lib/office-pipeline.js lib/office-command.js lib/datajud.js office-ui-v2.js office-flow-ui.js office-command-ui.js reception-handoff-ui.js login-theme.js"
+    "lint": "eslint lib/office-pipeline.js lib/office-command.js lib/datajud.js office-ui-v2.js office-flow-ui.js office-command-ui.js reception-handoff-ui.js login-theme.js office-attachment-ui.js"
   },
   "dependencies": {
     "jszip": "^3.10.1",
