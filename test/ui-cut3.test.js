@@ -10,10 +10,10 @@ test('interface comercial possui voz, tarefas, rotas seguras e tema sincronizado
   assert.match(js,/SpeechRecognition|webkitSpeechRecognition/);
   assert.match(js,/lexTarefas/);
   assert.match(js,/\/api\/trabalho/);
-  assert.match(js,/goLex\('agenda'\)/);
-  assert.match(js,/goLex\('autuacao'\)/);
-  assert.match(js,/goLex\('estatisticas'\)/);
-  assert.match(js,/goLex\('escritorio'\)/);
+  assert.match(js,/goLex\(\\?'agenda\\?'\)/);
+  assert.match(js,/goLex\(\\?'autuacao\\?'\)/);
+  assert.match(js,/goLex\(\\?'estatisticas\\?'\)/);
+  assert.match(js,/goLex\(\\?'escritorio\\?'\)/);
   assert.match(js,/lex_commercial_theme/);
   assert.match(js,/lex_tema/);
   assert.match(js,/window\.varreduraInicial/);
