@@ -15,6 +15,10 @@ function append(text,response,selected){
 async function execute(command,text){
   const processo_id=command.processo_id;
   if(command.requires_process&&!processo_id)throw Object.assign(new Error('Selecione um processo antes de dar esta ordem ao LEX.'),{officeHandled:true});
+  if(command.action==='datajud'){
+    const r=await lexApi('/api/escritorio/datajud',{method:'POST',body:JSON.stringify({processo_id})});
+    return{message:'Datajud consultado: '+Number(r.novos||0)+' movimento(s) novo(s), '+Number(r.duplicados||0)+' já conhecido(s). Tribunal '+String(r.alias||'confirmado').toUpperCase()+'.',refresh:'office'};
+  }
   if(command.action==='confirm_registration'){
     const r=await lexApi('/api/escritorio/mover',{method:'POST',body:JSON.stringify({processo_id,destino:'iniciais',motivo:'Cadastro declarado pronto pelo responsável; validação do checklist exigida pelo servidor'})});
     return{message:'Cadastro validado. Dei baixa no Cadastro e entrada em '+(r.setor||'Iniciais')+'.',refresh:'office'};
