@@ -51,5 +51,5 @@ test('mesa do dono responde pelo mesmo LID recebido',async()=>{
   const handled=await handleWhatsappOperatorCommand(body,'LEX',{...cfg,store,request});
   assert.equal(handled,true);
   assert.equal(sent[0].number,'887766554433@lid');
-  assert.match(sent[0].text,/Mesa do escritório/);
+  assert.match(sent[0].text,/Recepção:/);
 });
