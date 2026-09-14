@@ -11,6 +11,7 @@ function countFor(label,c){if(!c)return null;if(label==='Peças / Perícia')retu
 function patchGrid(c){if(!c)return;document.querySelectorAll('.lex-office-grid button').forEach(btn=>{const strong=btn.querySelector('strong');const n=btn.querySelector('span b');if(!strong||!n)return;const value=countFor(strong.textContent.trim(),c);if(value!==null)n.textContent=String(value)})}
 function processes(){try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}}
 function processOptions(filter){return processes().filter(p=>!filter||filter(p)).slice(0,300).map(p=>'<option value="'+esc(p.id)+'">'+esc((p.numero||'sem número')+' · '+(p.nome||p.partes||'Processo'))+'</option>').join('')}
+function officeStage(p){return String(p?.office_stage||p?.fluxo_setor||'').toLowerCase()}
 function injectMover(){
   const grid=document.querySelector('.lex-office-grid');if(!grid||document.getElementById('lex-office-mover'))return;
   const panel=document.createElement('div');panel.id='lex-office-mover';panel.className='lex-panel';
@@ -20,7 +21,13 @@ function injectMover(){
 function injectChecklist(after){
   if(document.getElementById('lex-cadastro-check'))return;
   const panel=document.createElement('div');panel.id='lex-cadastro-check';panel.className='lex-panel';
-  panel.innerHTML='<h2>Conferência do Cadastro</h2><p class="lex-move-help">Marque cada item. Sem pendência, o LEX dá baixa no Cadastro e entrada automática em Iniciais.</p><div class="lex-move-form"><select id="lex-check-process"><option value="">Caso no Cadastro</option>'+processOptions(p=>String(p.office_stage||p.fluxo_setor||'').toLowerCase()==='cadastro')+'</select><select id="lex-check-id"><option value="ok">Identidade: OK</option><option value="falta">Identidade: falta</option><option value="nao_se_aplica">Identidade: N/A</option></select><select id="lex-check-end"><option value="ok">Endereço: OK</option><option value="falta">Endereço: falta</option><option value="nao_se_aplica">Endereço: N/A</option></select><select id="lex-check-proc"><option value="ok">Procuração: OK</option><option value="falta">Procuração: falta</option><option value="nao_se_aplica">Procuração: N/A</option></select><select id="lex-check-contract"><option value="nao_se_aplica">Contrato: N/A</option><option value="ok">Contrato: OK</option><option value="falta">Contrato: falta</option></select><button onclick="lexConfirmCadastro()">Conferir cadastro</button></div><div id="lex-check-status" class="lex-empty"></div>';
+  panel.innerHTML='<h2>Conferência do Cadastro</h2><p class="lex-move-help">Marque cada item. Sem pendência, o LEX dá baixa no Cadastro e entrada automática em Iniciais.</p><div class="lex-move-form"><select id="lex-check-process"><option value="">Caso no Cadastro</option>'+processOptions(p=>officeStage(p)==='cadastro')+'</select><select id="lex-check-id"><option value="ok">Identidade: OK</option><option value="falta">Identidade: falta</option><option value="nao_se_aplica">Identidade: N/A</option></select><select id="lex-check-end"><option value="ok">Endereço: OK</option><option value="falta">Endereço: falta</option><option value="nao_se_aplica">Endereço: N/A</option></select><select id="lex-check-proc"><option value="ok">Procuração: OK</option><option value="falta">Procuração: falta</option><option value="nao_se_aplica">Procuração: N/A</option></select><select id="lex-check-contract"><option value="nao_se_aplica">Contrato: N/A</option><option value="ok">Contrato: OK</option><option value="falta">Contrato: falta</option></select><button onclick="lexConfirmCadastro()">Conferir cadastro</button></div><div id="lex-check-status" class="lex-empty"></div>';
+  after.after(panel);injectDistribution(panel);
+}
+function injectDistribution(after){
+  if(document.getElementById('lex-distribution'))return;
+  const panel=document.createElement('div');panel.id='lex-distribution';panel.className='lex-panel';
+  panel.innerHTML='<h2>Confirmar distribuição</h2><p class="lex-move-help">Use somente depois do protocolo real. O LEX registra o número, dá baixa em Iniciais e entrada em Processos.</p><div class="lex-move-form"><select id="lex-distribution-process"><option value="">Caso em Iniciais</option>'+processOptions(p=>officeStage(p)==='iniciais')+'</select><select id="lex-distribution-kind"><option value="judicial">Judicial</option><option value="administrativo">Administrativo</option><option value="entregue">Entrega concluída</option></select><input id="lex-distribution-number" placeholder="Número CNJ ou protocolo confirmado"><button onclick="lexConfirmDistribution()">Confirmar</button></div><div id="lex-distribution-status" class="lex-empty"></div>';
   after.after(panel);
 }
 window.lexConfirmCadastro=async function(){
@@ -31,11 +38,16 @@ window.lexConfirmCadastro=async function(){
   try{const r=await lexApi('/api/escritorio/cadastro/conferir',{method:'POST',body:JSON.stringify({processo_id,checklist})});if(out)out.textContent=r.conferido?'Cadastro conferido e encaminhado para '+(r.setor||'Iniciais')+'.':'Cadastro bloqueado: '+([...(r.pendentes||[]),r.documentos_faltantes].filter(Boolean).join(', ')||'há pendências');if(r.conferido)setTimeout(()=>window.lexEscritorio?.(),350);}
   catch(e){if(out)out.textContent=e?.message||'Não foi possível conferir o cadastro.'}
 };
+window.lexConfirmDistribution=async function(){
+  const processo_id=document.getElementById('lex-distribution-process')?.value,setor=document.getElementById('lex-distribution-kind')?.value,numero=document.getElementById('lex-distribution-number')?.value?.trim(),out=document.getElementById('lex-distribution-status');
+  if(!processo_id){if(out)out.textContent='Selecione um caso em Iniciais.';return}
+  if(setor!=='entregue'&&!numero){if(out)out.textContent='Informe o número/protocolo que já foi confirmado no tribunal ou órgão.';return}
+  if(out)out.textContent='Registrando distribuição…';
+  try{const r=await lexApi('/api/escritorio/distribuir',{method:'POST',body:JSON.stringify({processo_id,setor,numero})});if(out)out.textContent=setor==='entregue'?'Entrega concluída e caso baixado.':'Distribuição registrada. Caso entrou em '+(r.setor||'Processos')+' com '+(r.numero||numero)+'.';patchGrid(r.setores);setTimeout(()=>window.lexEscritorio?.(),400);}
+  catch(e){if(out)out.textContent=e?.message||'Não foi possível confirmar a distribuição.'}
+};
 window.lexMoveProcess=async function(){
-  const processo_id=document.getElementById('lex-move-process')?.value;
-  const destino=document.getElementById('lex-move-target')?.value;
-  const motivo=document.getElementById('lex-move-reason')?.value?.trim();
-  const out=document.getElementById('lex-move-status');
+  const processo_id=document.getElementById('lex-move-process')?.value,destino=document.getElementById('lex-move-target')?.value,motivo=document.getElementById('lex-move-reason')?.value?.trim(),out=document.getElementById('lex-move-status');
   if(!processo_id||!destino||!motivo){if(out)out.textContent='Selecione o processo, o destino e informe o motivo.';return}
   if(out)out.textContent='Movimentando…';
   try{const r=await lexApi('/api/escritorio/mover',{method:'POST',body:JSON.stringify({processo_id,destino,motivo})});if(out)out.textContent='Movido para '+(r.setor||destino)+'. Baixa e entrada registradas.';patchGrid(r.setores);setTimeout(()=>window.lexEscritorio?.(),350);}
