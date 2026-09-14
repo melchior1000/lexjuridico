@@ -1,0 +1,178 @@
+name: Patch LEX office commands
+on:
+  push:
+    branches:
+      - feat/lex-office-commands
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip-office-command]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/lex-office-commands
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Conectar comando ao backend e à conversa
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p=Path('lib/office-routes.js')
+          s=p.read_text()
+          needle="const Pipeline=require('./office-pipeline');\n"
+          if "require('./office-command')" not in s:
+              s=s.replace(needle,needle+"const {parseOfficeCommand,commandResponse}=require('./office-command');\n",1)
+
+          marker="  if(path==='/api/escritorio/cadastro/conferir') {"
+          block=r'''  if(path==='/api/escritorio/comando') {
+    if(req.method!=='POST') {json(405,{error:'Método não permitido'});return true;}
+    try{
+      const b=await deps.body(req);const command=parseOfficeCommand(b?.mensagem,b||{});
+      if(!command){json(200,{ok:true,reconhecido:false});return true;}
+      if(command.requires_process&&!command.processo_id){json(422,{ok:false,reconhecido:true,error:'Selecione um processo antes de dar esta ordem ao LEX.'});return true;}
+      const state=await deps.processStore.read();
+      const current=state.processes.find(p=>String(p.id)===String(command.processo_id));
+      if(command.requires_process&&!current){json(404,{ok:false,reconhecido:true,error:'O processo selecionado não existe mais. Atualize a carteira.'});return true;}
+
+      if(command.action==='confirm_registration'){
+        if(!['admin','advogado','secretaria'].includes(profile)){json(403,{error:'Perfil sem permissão para conferir cadastro'});return true;}
+        const check=Pipeline.checklistStatus(current);
+        if(!check.conferido){
+          json(200,{ok:true,reconhecido:true,acao:command.action,precisa_entrada:true,pendentes:check.pendentes,documentos_faltantes:check.faltando||null,resposta:'O Cadastro ainda não pode ser liberado. Confira o checklist e resolva: '+([...(check.pendentes||[]),check.faltando].filter(Boolean).join(', ')||'documentos pendentes')+'.'});return true;
+        }
+        let processo=current;
+        if(Pipeline.stageOf(current)==='cadastro') processo=await Pipeline.moveProcess(deps.processStore,current.id,'iniciais',{actor:profile,agent:'LEX Cadastro',reason:'Cadastro já conferido; ordem recebida pelo LEX para avançar'});
+        json(200,{ok:true,reconhecido:true,acao:command.action,processo,setor:Pipeline.stageOf(processo),resposta:commandResponse(command,{conferido:true,setor:Pipeline.stageOf(processo)})});return true;
+      }
+
+      if(command.action==='distribute'){
+        if(!['admin','advogado','secretaria'].includes(profile)){json(403,{error:'Perfil sem permissão para confirmar distribuição'});return true;}
+        if(!command.numero){json(200,{ok:true,reconhecido:true,acao:command.action,precisa_entrada:true,resposta:'Informe o número CNJ ou protocolo confirmado para eu registrar a distribuição.'});return true;}
+        if(Pipeline.stageOf(current)!=='iniciais') throw new Error('A distribuição só pode ser confirmada quando o caso estiver em Iniciais.');
+        if(typeof deps.processStore.distribute!=='function') throw new Error('Persistência de distribuição indisponível.');
+        const distribuido=await deps.processStore.distribute(current,{setor:command.setor||'judicial',numero:command.numero},profile);
+        const processo=await Pipeline.moveProcess(deps.processStore,current.id,'processos',{actor:profile,agent:'LEX Distribuição',reason:'Distribuição confirmada por ordem no LEX; protocolo '+String(distribuido.numero||command.numero)});
+        json(200,{ok:true,reconhecido:true,acao:command.action,processo,setor:Pipeline.stageOf(processo),numero:processo.numero||command.numero,resposta:commandResponse(command,{setor:Pipeline.stageOf(processo),numero:processo.numero||command.numero})});return true;
+      }
+
+      if(!['admin','advogado'].includes(profile)){json(403,{error:'Esta ordem jurídica exige o perfil responsável.'});return true;}
+      if(command.action==='move'){
+        const processo=await Pipeline.moveProcess(deps.processStore,current.id,command.target,{actor:profile,agent:'LEX Coordenador',reason:command.reason});
+        json(200,{ok:true,reconhecido:true,acao:command.action,processo,setor:Pipeline.stageOf(processo),resposta:commandResponse(command,{setor:Pipeline.stageOf(processo)})});return true;
+      }
+      if(command.action==='task'){
+        const input={processo_id:current.id,tipo:command.tipo,instrucao:command.instrucao,request_id:'lex-chat-'+crypto.randomUUID()};
+        await assertTaskGate(deps,input);
+        const task=await deps.engine.submit(input,profile);
+        json(202,{ok:true,reconhecido:true,acao:command.action,tarefa:task,resposta:commandResponse(command,{task})});
+        runTaskThroughOffice(deps,task,profile).catch(e=>deps.log?.('[office-command] '+e.message));return true;
+      }
+      json(200,{ok:true,reconhecido:false});return true;
+    }catch(e){json(e.status||422,{ok:false,reconhecido:true,error:e.message});return true;}
+  }
+'''
+          if "/api/escritorio/comando" not in s:
+              if marker not in s: raise SystemExit('marcador de office-routes não encontrado')
+              s=s.replace(marker,block+marker,1)
+          p.write_text(s)
+
+          p=Path('office-flow-ui.js')
+          s=p.read_text()
+          hook="function boot(){wrap('lexHome');wrap('lexEscritorio',{mover:true});wrap('lexChat',{actions:true});wrap('lexTarefas',{review:true})}"
+          addon=r'''
+function appendOfficeCommandChat(text,response,selected){
+  const box=document.getElementById('lex-conversation');if(!box)return;
+  box.insertAdjacentHTML('beforeend','<div class="lex-msg me">'+esc(text)+'</div><div class="lex-msg bot">'+esc(response)+'</div>');
+  box.scrollTop=box.scrollHeight;
+  try{
+    const key='lex_chat_history_'+(selected?'process_'+String(selected):'general');
+    const old=JSON.parse(sessionStorage.getItem(key)||'[]');
+    const next=(Array.isArray(old)?old:[]).concat([{role:'user',content:text},{role:'assistant',content:response}]).slice(-20);
+    sessionStorage.setItem(key,JSON.stringify(next));
+  }catch{}
+}
+function wrapChatOfficeCommands(){
+  const old=window.lexSendChat;if(typeof old!=='function'||old.__officeCommands)return;
+  const fn=async function(e){
+    e?.preventDefault();
+    const input=document.getElementById('lex-chat-input'),text=input?.value?.trim();
+    if(!text)return;
+    const selected=String(document.getElementById('lex-chat-process')?.value||'');
+    try{
+      const result=await lexApi('/api/escritorio/comando',{method:'POST',body:JSON.stringify({mensagem:text,processo_id:selected||null})});
+      if(result?.reconhecido){
+        input.value='';
+        appendOfficeCommandChat(text,result.resposta||result.error||'Ordem recebida pelo escritório.',selected);
+        if(result.acao==='task')setTimeout(()=>window.lexTarefas?.(),500);
+        return;
+      }
+    }catch(err){
+      if(err?.status===401||err?.status===403||err?.status===404||err?.status===422){
+        input.value='';appendOfficeCommandChat(text,err.message||'Não foi possível executar esta ordem.',selected);return;
+      }
+    }
+    return old.call(this,e);
+  };
+  fn.__officeCommands=true;window.lexSendChat=fn;
+}
+'''
+          if 'function wrapChatOfficeCommands()' not in s:
+              s=s.replace(hook,addon+"\nfunction boot(){wrap('lexHome');wrap('lexEscritorio',{mover:true});wrap('lexChat',{actions:true});wrap('lexTarefas',{review:true});wrapChatOfficeCommands()}",1)
+          p.write_text(s)
+
+          Path('test/office-command.test.js').write_text(r'''\
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {parseOfficeCommand,extractNumber}=require('../lib/office-command');
+
+test('LEX reconhece ordens operacionais sem depender da IA',()=>{
+  assert.deepEqual(parseOfficeCommand('Volta pro cadastro, falta procuração',{processo_id:7}),assert.objectContaining?{}:{});
+});
+
+test('parser identifica devolução, produção e distribuição',()=>{
+  const back=parseOfficeCommand('Volta pro cadastro, falta procuração',{processo_id:7});
+  assert.equal(back.action,'move');assert.equal(back.target,'cadastro');assert.match(back.reason,/procura/i);
+  const draft=parseOfficeCommand('Pode redigir a petição inicial agora',{processo_id:7});
+  assert.equal(draft.action,'task');assert.equal(draft.tipo,'peticao');
+  const pericia=parseOfficeCommand('Faça a perícia deste caso',{processo_id:7});
+  assert.equal(pericia.action,'task');assert.equal(pericia.tipo,'pericia');
+  const dist=parseOfficeCommand('Distribuído protocolo 0000001-00.2026.8.13.0001',{processo_id:7});
+  assert.equal(dist.action,'distribute');assert.equal(extractNumber(dist.numero||'')||dist.numero,'0000001-00.2026.8.13.0001');
+});
+
+test('cadastro pronto vira conferência e comando desconhecido cai para IA',()=>{
+  assert.equal(parseOfficeCommand('Cadastro pronto, documentos conferidos',{processo_id:2}).action,'confirm_registration');
+  assert.equal(parseOfficeCommand('Explique o princípio da causalidade',{processo_id:2}),null);
+});
+
+test('casca tenta comando do escritório antes de cair no Gestor IA',()=>{
+  const ui=fs.readFileSync('office-flow-ui.js','utf8');
+  assert.match(ui,/\/api\/escritorio\/comando/);
+  assert.match(ui,/return old\.call\(this,e\)/);
+  assert.match(ui,/wrapChatOfficeCommands\(\)/);
+});
+'''.replace("  assert.deepEqual(parseOfficeCommand('Volta pro cadastro, falta procuração',{processo_id:7}),assert.objectContaining?{}:{});\n",''))
+          PY
+      - name: Instalar
+        run: npm ci --ignore-scripts
+      - name: Validar
+        run: npm run check
+      - name: Testar
+        run: npm test
+      - name: Gravar
+        shell: bash
+        run: |
+          git config user.name "melchior1000"
+          git config user.email "melchior1000@users.noreply.github.com"
+          git rm .github/workflows/patch-lex-office-command.yml
+          git add lib/office-routes.js office-flow-ui.js test/office-command.test.js
+          git commit -m "feat: LEX executa ordens do fluxo do escritório [skip-office-command]"
+          git push origin feat/lex-office-commands
