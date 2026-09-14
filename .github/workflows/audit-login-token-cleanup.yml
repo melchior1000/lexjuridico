@@ -1,0 +1,25 @@
+name: Auditar login para saneamento de tema
+
+on:
+  push:
+    branches:
+      - fix/login-token-cleanup
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mostrar trecho do login e cores inline
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          needles=['id="login-screen"', "background:#0d0d1a", "background:#07070f", "color:#e8eaf6", "id=\"btn-login\""]
+          for n in needles:
+              print('\n===',n,'===')
+              pos=s.find(n)
+              print('pos',pos)
+              if pos>=0:
+                  print(s[max(0,pos-1400):pos+3200])
+          PY
