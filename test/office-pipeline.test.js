@@ -28,6 +28,15 @@ test('Cadastro não libera Iniciais enquanto houver documento pendente',()=>{
   assert.throws(()=>Pipeline.handoff(p,'iniciais',{reason:'tentar'}),/Cadastro incompleto/);
 });
 
+test('checklist de cadastro bloqueia item inválido e libera quando tudo foi conferido',()=>{
+  const bad={id:2,office_stage:'cadastro',checklist_cadastro:{rg:'ok',procuracao:'pendente',comprovante:true}};
+  assert.deepEqual(Pipeline.checklistPendencies(bad),['procuracao']);
+  assert.throws(()=>Pipeline.handoff(bad,'iniciais',{reason:'conferir'}),/procuracao/);
+  const good={...bad,checklist_cadastro:{rg:'ok',procuracao:'validada',comprovante:true}};
+  assert.equal(Pipeline.checklistPendencies(good).length,0);
+  assert.equal(Pipeline.stageOf(Pipeline.handoff(good,'iniciais',{reason:'cadastro completo'})),'iniciais');
+});
+
 test('produção jurídica faz baixa do Cadastro, passa por Iniciais e entra em Peças',async()=>{
   const db=store([{id:7,nome:'Cliente',office_stage:'cadastro',docsFaltantes:'',descricao:'fatos do caso'}]);
   const moved=await Pipeline.syncTaskStart(db,{id:'t1',tipo:'peticao',processo_id:7,agente:'Redação'},'admin');
@@ -35,6 +44,15 @@ test('produção jurídica faz baixa do Cadastro, passa por Iniciais e entra em 
   assert.equal(moved.office_events.length,2);
   assert.equal(moved.office_events[1].de,'cadastro');assert.equal(moved.office_events[1].para,'iniciais');
   assert.equal(moved.office_events[0].de,'iniciais');assert.equal(moved.office_events[0].para,'pecas');
+});
+
+test('análise não arrasta processo para Peças e revisão entra em Revisão',async()=>{
+  const db=store([{id:70,nome:'Cliente',office_stage:'processos',descricao:'fatos'}]);
+  const analysed=await Pipeline.syncTaskStart(db,{id:'ta',tipo:'analise',processo_id:70,agente:'Jurídico judicial'},'admin');
+  assert.equal(Pipeline.stageOf(analysed),'processos');
+  assert.equal(Pipeline.stageOf(db.snapshot()[0]),'processos');
+  await Pipeline.syncTaskStart(db,{id:'tr',tipo:'revisao',processo_id:70,agente:'Revisão'},'admin');
+  assert.equal(Pipeline.stageOf(db.snapshot()[0]),'revisao');
 });
 
 test('perícia entra na sala Perícia e entrega pronta entra em Revisão',async()=>{
@@ -66,4 +84,19 @@ test('rota mover exige motivo e devolve contagem oficial das salas',async()=>{
   const deps={headers:{'Content-Type':'application/json'},authenticate:()=> 'admin',body:async()=>({processo_id:12,destino:'prazos',motivo:'prazo lançado'}),processStore:db,records:{read:async()=>({value:{}})},engine:{list:async()=>[]},aiAvailable:()=>false,log:()=>{}};
   const out=response();await officeRoutes({url:'/api/escritorio/mover',method:'POST'},out.res,deps);
   assert.equal(out.get().status,200);assert.equal(out.get().body.setor,'prazos');assert.equal(out.get().body.setores.processos,0);assert.equal(out.get().body.setores.prazos,1);
+});
+
+test('rota de setores expõe contagem e pendências do processo',async()=>{
+  const db=store([{id:13,nome:'Cliente',office_stage:'cadastro',checklist_cadastro:{rg:'ok',procuracao:'falta'}}]);
+  const deps={headers:{'Content-Type':'application/json'},authenticate:()=> 'admin',processStore:db,records:{read:async()=>({value:{}})},engine:{list:async()=>[]},aiAvailable:()=>false};
+  const out=response();await officeRoutes({url:'/api/escritorio/setores',method:'GET'},out.res,deps);
+  assert.equal(out.get().status,200);assert.equal(out.get().body.setores.cadastro,1);assert.deepEqual(out.get().body.casos[0].pendencias,['procuracao']);
+});
+
+test('preflight recusa criar tarefa jurídica com cadastro incompleto antes do submit',async()=>{
+  const db=store([{id:14,nome:'Cliente',office_stage:'cadastro',checklist_cadastro:{rg:'ok',procuracao:'pendente'}}]);
+  let submits=0;
+  const deps={headers:{'Content-Type':'application/json'},authenticate:()=> 'admin',body:async()=>({tipo:'peticao',processo_id:14,instrucao:'Faça a inicial'}),processStore:db,records:{read:async()=>({value:{}})},engine:{submit:async()=>{submits++;return{id:'x'}},list:async()=>[]},aiAvailable:()=>false,log:()=>{}};
+  const out=response();await officeRoutes({url:'/api/tarefas',method:'POST'},out.res,deps);
+  assert.equal(out.get().status,422);assert.match(out.get().body.error,/Cadastro incompleto/);assert.equal(submits,0);
 });
