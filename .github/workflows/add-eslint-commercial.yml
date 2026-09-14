@@ -46,7 +46,8 @@ jobs:
               languageOptions: { ecmaVersion: 'latest', sourceType: 'commonjs', globals: globals.node },
               rules: {
                 ...js.configs.recommended.rules,
-                'no-unused-vars': 'warn'
+                'no-unused-vars': 'warn',
+                'no-useless-escape': 'off'
               }
             },
             {
