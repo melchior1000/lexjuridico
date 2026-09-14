@@ -3,7 +3,7 @@ document.write('<script src="office-ui-base.js"><\/script>');
   function esc(v){
     const s=String(v??'');
     if(typeof window.lexEscape==='function') return window.lexEscape(s);
-    return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   }
   function setPageTitle(text){
     const el=document.querySelector('.page-title');
@@ -117,6 +117,7 @@ document.write('<link rel="stylesheet" href="office-ui-v2.css">');
 document.write('<link rel="stylesheet" href="office-ui-device.css">');
 document.write('<link rel="stylesheet" href="login-theme.css">');
 document.write('<link rel="stylesheet" href="office-flow-ui.css">');
+document.write('<link rel="stylesheet" href="office-dossier-ui.css">');
 document.write('<script src="office-ui-device.js"><\/script>');
 document.write('<script src="office-ui-v2.js"><\/script>');
 document.write('<script src="login-theme.js"><\/script>');
@@ -125,3 +126,4 @@ document.write('<script src="lib/office-command.js"><\/script>');
 document.write('<script src="office-command-ui.js"><\/script>');
 document.write('<script src="reception-handoff-ui.js"><\/script>');
 document.write('<script src="office-attachment-ui.js"><\/script>');
+document.write('<script src="office-dossier-ui.js"><\/script>');
