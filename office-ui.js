@@ -65,7 +65,7 @@ document.write('<script src="office-ui-base.js"><\/script>');
       <section class="work-home lex-canal">
         <div class="work-title">
           <div><div class="work-eyebrow">Canal complementar</div><h1>Telegram do escritório</h1>
-          <p>Outra porta de atendimento do LEX. O funcionamento do escritório continua o mesmo: cada pessoa em seu fio e o advogado decide o que é sensível.</p></div>
+          <p>Outra porta de atendimento do LEX. O funcionamento do escritório continua o mesmo: cada pessoa em seu fio e o responsável decide o que é sensível.</p></div>
           <button class="btn-outline" onclick="window.lexOpenWhatsapp()">Ver WhatsApp</button>
         </div>
         <section class="work-command">
@@ -114,4 +114,6 @@ document.write('<script src="office-ui-base.js"><\/script>');
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',patchChannels); else patchChannels();
 })();
 document.write('<link rel="stylesheet" href="office-ui-v2.css">');
+document.write('<link rel="stylesheet" href="office-ui-device.css">');
+document.write('<script src="office-ui-device.js"><\/script>');
 document.write('<script src="office-ui-v2.js"><\/script>');
