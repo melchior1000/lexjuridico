@@ -94,6 +94,7 @@ document.write('<script src="office-ui-base.js"><\/script>');
       </section>`;
   }
   function patchChannels(){
+    document.body.classList.add('lex-commercial');
     window.renderWhatsappCanal=renderWhatsappCanal;
     window.lexOpenWhatsapp=()=>openWhatsapp(document.getElementById('lex-nav-whatsapp'));
     window.renderTelegram=renderTelegramCommercial;
@@ -114,6 +115,7 @@ document.write('<script src="office-ui-base.js"><\/script>');
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',patchChannels); else patchChannels();
 })();
 document.write('<link rel="stylesheet" href="office-ui-v2.css">');
+document.write('<link rel="stylesheet" href="lex-bank-ui.css">');
 document.write('<link rel="stylesheet" href="office-ui-device.css">');
 document.write('<link rel="stylesheet" href="login-theme.css">');
 document.write('<link rel="stylesheet" href="office-flow-ui.css">');
