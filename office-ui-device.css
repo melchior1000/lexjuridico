@@ -1,0 +1,34 @@
+html,body{max-width:100%;overflow-x:hidden}
+html[data-lex-device="phone"] .lex-v2{width:100%;padding-inline:0}
+html[data-lex-device="phone"] .lex-v2-hero,
+html[data-lex-device="phone"] .lex-v2-grid{grid-template-columns:1fr}
+html[data-lex-device="phone"] .lex-v2-intro{padding:14px;gap:10px}
+html[data-lex-device="phone"] .lex-v2-quick{grid-template-columns:repeat(2,minmax(0,1fr))}
+html[data-lex-device="phone"] .lex-v2-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+html[data-lex-device="phone"] .lex-v2-sectors{grid-template-columns:repeat(2,minmax(0,1fr))}
+html[data-lex-device="phone"] .lex-v2-order-grid{grid-template-columns:1fr}
+html[data-lex-device="phone"] .lex-v2-order-grid>div:nth-child(3),
+html[data-lex-device="phone"] .lex-v2-order-grid>.btn-primary{grid-column:auto}
+html[data-lex-device="phone"] .lex-v2-mobile-dock{display:grid;padding-bottom:calc(7px + env(safe-area-inset-bottom))}
+html[data-lex-device="phone"][data-lex-orientation="landscape"] .lex-v2-sectors{grid-template-columns:repeat(4,minmax(0,1fr))}
+html[data-lex-device="phone"][data-lex-orientation="landscape"] .lex-v2-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+html[data-lex-device="tablet"] .lex-v2-hero,
+html[data-lex-device="tablet"] .lex-v2-grid{grid-template-columns:1fr}
+html[data-lex-device="tablet"] .lex-v2-quick{grid-template-columns:repeat(4,minmax(0,1fr))}
+html[data-lex-device="tablet"] .lex-v2-sectors{grid-template-columns:repeat(2,minmax(0,1fr))}
+html[data-lex-device="tablet"] .lex-v2-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+html[data-lex-device="tablet"][data-lex-orientation="landscape"] .lex-v2-sectors{grid-template-columns:repeat(4,minmax(0,1fr))}
+html[data-lex-device="tablet"][data-lex-orientation="landscape"] .lex-v2-grid{grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr)}
+
+html[data-lex-device="notebook"] .lex-v2{width:min(100%,1360px)}
+html[data-lex-device="notebook"] .lex-v2-sectors{grid-template-columns:repeat(4,minmax(0,1fr))}
+html[data-lex-device="desktop"] .lex-v2{width:min(100%,1480px)}
+html[data-lex-device="desktop"] .lex-v2-sectors{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+html[data-lex-input="touch"] button,
+html[data-lex-input="hybrid"] button,
+html[data-lex-input="touch"] .nav-btn,
+html[data-lex-input="hybrid"] .nav-btn{min-height:44px}
+
+@media(max-width:390px){html[data-lex-device="phone"] .lex-v2-sectors{grid-template-columns:1fr}}
