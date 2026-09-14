@@ -21,16 +21,18 @@ async function sendFile(file){
     append('Recebendo '+file.name+'…',processo_id);
     const base64=await toBase64(file);
     const result=await lexApi('/api/entrada-processual',{method:'POST',body:JSON.stringify({processo_id,nome:file.name,mimeType:file.type||'application/octet-stream',tamanho:file.size,base64,origem:'lex_chat'})});
-    const msg=result.mensagem||result?.resultado?.status||'Documento recebido para conferência.';
-    append(msg,processo_id);
+    const status=result?.resultado?.status||result?.status||'';
+    const labels={novo_andamento:'Documento recebido e identificado como novo andamento.',provavel_duplicado:'Documento recebido, mas já parece existir neste processo.',provavel_antigo:'Documento recebido; a data parece anterior ao último andamento e precisa conferência.',precisa_conferencia:'Documento recebido e aguardando conferência.'};
+    append(result.mensagem||labels[status]||'Documento recebido para conferência.',processo_id);
   }catch(error){append(error?.message||'Não foi possível receber o documento.',processo_id)}finally{if(button)button.disabled=false}
 }
+function composerFor(input){return input?.closest('form')||input?.parentElement||null}
 function install(){
-  const input=document.getElementById('lex-chat-input'),form=input?.closest('form');
-  if(!input||!form||document.getElementById('lex-attach-button'))return false;
+  const input=document.getElementById('lex-chat-input'),composer=composerFor(input);
+  if(!input||!composer||document.getElementById('lex-attach-button'))return false;
   const file=document.createElement('input');file.type='file';file.id='lex-chat-file';file.hidden=true;file.accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt';file.addEventListener('change',async()=>{const picked=file.files?.[0];file.value='';await sendFile(picked)});
   const btn=document.createElement('button');btn.type='button';btn.id='lex-attach-button';btn.className='lex-attach-button';btn.setAttribute('aria-label','Anexar documento ao processo');btn.title='Anexar documento';btn.textContent='＋';btn.addEventListener('click',()=>{if(!selectedProcess()){append('Selecione o processo antes de anexar um documento.','');return}file.click()});
-  form.insertBefore(btn,input);form.appendChild(file);return true;
+  composer.insertBefore(btn,input);composer.appendChild(file);return true;
 }
 function boot(){install();const observer=new MutationObserver(()=>install());observer.observe(document.body,{childList:true,subtree:true})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
