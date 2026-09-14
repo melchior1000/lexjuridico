@@ -121,3 +121,5 @@ document.write('<script src="office-ui-device.js"><\/script>');
 document.write('<script src="office-ui-v2.js"><\/script>');
 document.write('<script src="login-theme.js"><\/script>');
 document.write('<script src="office-flow-ui.js"><\/script>');
+document.write('<script src="lib/office-command.js"><\/script>');
+document.write('<script src="office-command-ui.js"><\/script>');
