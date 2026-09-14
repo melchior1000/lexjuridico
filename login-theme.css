@@ -39,7 +39,7 @@
 
   .login-card {
     background:var(--login-card);
-    border-color:var(--login-line);
+    border:1px solid var(--login-line);
     box-shadow:var(--login-shadow);
   }
 
@@ -60,7 +60,7 @@
 
   .login-input {
     background:var(--login-input);
-    border-color:var(--login-line);
+    border:1px solid var(--login-line);
     color:var(--login-text);
     box-shadow:none;
   }
