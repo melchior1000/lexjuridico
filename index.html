@@ -700,17 +700,6 @@ table{max-width:100%;}
   .chat-foot .chat-send-btn{margin-left:auto}.chat-close{min-width:44px;min-height:44px}
 }
 
-/* LOGIN CLARO COMERCIAL — CUT 4 */
-body.dia #login-screen{background:#f4f7fb!important;color:#0b1d33!important;}
-body.dia #login-screen>div>div:nth-child(2){background:#fff!important;border-color:#d9e4ef!important;box-shadow:0 18px 45px rgba(15,35,60,.10)!important;}
-body.dia #login-screen [style*="color:#e8eaf6"],body.dia #login-screen [style*="color: #e8eaf6"]{color:#0b1d33!important;}
-body.dia #login-screen [style*="color:#555878"],body.dia #login-screen [style*="color: #555878"]{color:#69798d!important;}
-body.dia #login-screen [style*="color:#4f6ef7"],body.dia #login-screen [style*="color: #4f6ef7"]{color:#176fda!important;}
-body.dia #login-screen input,body.dia #login-screen select{background:#f7fbff!important;border-color:#cbd8e6!important;color:#0b1d33!important;box-shadow:none!important;}
-body.dia #login-screen input::placeholder{color:#8797aa!important;}
-body.dia #login-screen #btn-login{background:linear-gradient(135deg,#177ff0,#2861d8)!important;color:#fff!important;box-shadow:0 8px 20px rgba(23,127,240,.22)!important;}
-body.dia #login-screen #olho-btn{color:#52657a!important;}
-
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -732,47 +721,35 @@ body.dia #login-screen #olho-btn{color:#52657a!important;}
 <div id="toast"></div>
 
 <!-- TELA DE LOGIN -->
-<div id="login-screen" style="position:fixed;inset:0;background:#07070f;z-index:1000;display:flex;align-items:center;justify-content:center;">
-  <div style="width:100%;max-width:380px;padding:24px;">
-    <div style="text-align:center;margin-bottom:32px;">
-      <div style="font-size:10px;letter-spacing:4px;color:#555878;margin-bottom:8px;">SISTEMA JURÍDICO</div>
-      <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#e8eaf6;">Lex</div>
-      <div style="font-size:12px;color:#4f6ef7;margin-top:4px;font-weight:300;">Gestão Processual Integrada</div>
+<div id="login-screen" class="login-shell" style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;">
+  <div class="login-wrap" style="width:100%;max-width:380px;padding:24px;">
+    <div class="login-brand" style="text-align:center;margin-bottom:32px;">
+      <div class="login-kicker" style="font-size:10px;letter-spacing:4px;margin-bottom:8px;">SISTEMA JURÍDICO</div>
+      <div class="login-title" style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;">Lex</div>
+      <div class="login-subtitle" style="font-size:12px;margin-top:4px;font-weight:300;">Gestão Processual Integrada</div>
     </div>
-    <div style="background:#0d0d1a;border:1px solid #1c1c30;border-radius:14px;padding:28px;">
-      <div style="font-size:10px;color:#555878;letter-spacing:2px;margin-bottom:16px;">ACESSO AO SISTEMA</div>
+    <div class="login-card" style="border-radius:14px;padding:28px;">
+      <div class="login-kicker" style="font-size:10px;letter-spacing:2px;margin-bottom:16px;">ACESSO AO SISTEMA</div>
       <div style="margin-bottom:14px;display:none;" id="login-url-wrap">
-        <label style="font-size:10px;color:#555878;letter-spacing:2px;display:block;margin-bottom:6px;">SERVIDOR</label>
-        <input type="url" id="login-bot-url" placeholder="https://lex-juridico.onrender.com"
-          style="width:100%;background:#07070f;border:1px solid #26263d;border-radius:8px;padding:11px 13px;color:#e8eaf6;font-family:Arial,Helvetica,sans-serif;font-size:13px;outline:none;"
-          onkeydown="if(event.key==='Enter')fazerLogin()">
+        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">SERVIDOR</label>
+        <input class="login-input" type="url" id="login-bot-url" placeholder="https://lex-juridico.onrender.com" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:13px;outline:none;" onkeydown="if(event.key==='Enter')fazerLogin()">
       </div>
       <div style="margin-bottom:14px;">
-        <label style="font-size:10px;color:#555878;letter-spacing:2px;display:block;margin-bottom:6px;">PERFIL</label>
-        <select id="login-perfil" style="width:100%;background:#07070f;border:1px solid #26263d;border-radius:8px;padding:11px 13px;color:#e8eaf6;font-family:Arial,Helvetica,sans-serif;font-size:13px;">
-          <option value="admin">Administrador</option>
-          <option value="secretaria">Secretária</option>
-        </select>
+        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">PERFIL</label>
+        <select class="login-input" id="login-perfil" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:13px;"><option value="admin">Administrador</option><option value="secretaria">Secretária</option></select>
       </div>
       <div style="margin-bottom:20px;">
-        <label style="font-size:10px;color:#555878;letter-spacing:2px;display:block;margin-bottom:6px;">SENHA</label>
+        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">SENHA</label>
         <div style="position:relative;display:flex;align-items:center;">
-          <input type="password" id="login-senha" placeholder="Digite sua senha"
-            style="width:100%;background:#07070f;border:1px solid #26263d;border-radius:8px;padding:11px 44px 11px 13px;color:#e8eaf6;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:1px;outline:none;"
-            onkeydown="if(event.key==='Enter')fazerLogin()">
-          <button type="button"
-            style="position:absolute;right:10px;background:none;border:none;cursor:pointer;font-size:13px;padding:4px;user-select:none;"
-            id="olho-btn"
-            onclick="var i=document.getElementById('login-senha');var b=document.getElementById('olho-btn');if(i.type=='password'){i.type='text';b.textContent='🙈';}else{i.type='password';b.textContent='👁';}">👁</button>
+          <input class="login-input" type="password" id="login-senha" placeholder="Digite sua senha" style="width:100%;border-radius:8px;padding:11px 44px 11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:1px;outline:none;" onkeydown="if(event.key==='Enter')fazerLogin()">
+          <button class="login-eye" type="button" style="position:absolute;right:10px;background:none;border:none;cursor:pointer;font-size:13px;padding:4px;user-select:none;" id="olho-btn" onclick="var i=document.getElementById('login-senha');var b=document.getElementById('olho-btn');if(i.type=='password'){i.type='text';b.textContent='🙈';}else{i.type='password';b.textContent='👁';}">👁</button>
         </div>
       </div>
-      <button id="btn-login" onclick="fazerLogin()" style="width:100%;background:#4f6ef7;border:none;border-radius:8px;padding:13px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.5px;">Entrar</button>
-      <div id="login-erro" style="display:none;margin-top:12px;text-align:center;font-size:12px;color:#e84545;"></div>
-      <div style="margin-top:16px;text-align:center;">
-        <button onclick="resetSenhasPadrao()" style="background:none;border:none;color:#555878;font-size:11px;cursor:pointer;font-family:Arial,Helvetica,sans-serif;">Esqueceu a senha? Clique aqui</button>
-      </div>
+      <button class="login-submit" id="btn-login" onclick="fazerLogin()" style="width:100%;border:none;border-radius:8px;padding:13px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.5px;">Entrar</button>
+      <div id="login-erro" style="display:none;margin-top:12px;text-align:center;font-size:12px;"></div>
+      <div style="margin-top:16px;text-align:center;"><button class="login-reset" onclick="resetSenhasPadrao()" style="background:none;border:none;font-size:11px;cursor:pointer;font-family:Arial,Helvetica,sans-serif;">Esqueceu a senha? Clique aqui</button></div>
     </div>
-    <div style="text-align:center;margin-top:16px;font-size:10px;color:#555878;">LEX · Escritório virtual</div>
+    <div class="login-footer" style="text-align:center;margin-top:16px;font-size:10px;">LEX · Escritório virtual</div>
   </div>
 </div>
 
