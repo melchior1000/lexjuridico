@@ -708,14 +708,14 @@ const _estadoSecretarioWhatsApp = {
 
 // ── HELPERS MULTI-OPERADOR ──
 function _isOperadorWhatsApp(numeroPlano) {
-  if (whatsappAccessMode(String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP)==='operator') return {nome:'kleuber',perfil:'admin',pode_autorizar:true,pode_responder:true};
+  if (whatsappAccessMode(String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP)==='operator') return {nome:process.env.LEX_OPERATOR_NAME||'Administrador',perfil:'admin',pode_autorizar:true,pode_responder:true};
   const cfg = _configRuntime.secretario_whatsapp || SECRETARIO_WHATSAPP_CONFIG;
   const ops = cfg.operadores || SECRETARIO_WHATSAPP_CONFIG.operadores || {};
   for(const [nome, op] of Object.entries(ops)) {
     if(op.whatsapp && _numeroPlanoWhats(op.whatsapp) === numeroPlano) return { nome, ...op };
   }
   // Fallback: numero_advogado legado
-  if(numeroPlano && cfg.numero_advogado && numeroPlano === String(cfg.numero_advogado)) return { nome: 'kleuber', perfil: 'admin', pode_autorizar: true, pode_responder: true };
+  if(numeroPlano && cfg.numero_advogado && numeroPlano === String(cfg.numero_advogado)) return { nome: process.env.LEX_OPERATOR_NAME||'Administrador', perfil: 'admin', pode_autorizar: true, pode_responder: true };
   return null;
 }
 
@@ -4144,7 +4144,8 @@ async function _carregarPerfilCliente(chatId, canal, nomeUsuario) {
 async function _salvarPerfilCliente(perfil) {
   perfil.atualizado_em = new Date().toISOString();
   try {
-    await sbUpsert('clientes_pendentes', perfil, 'chat_id');
+    const result = await sbUpsert('clientes_pendentes', perfil, 'chat_id');
+    if(!result || result.ok !== true) throw new Error('Banco não confirmou o cadastro ('+Number(result?.status||0)+').');
     return true;
   } catch(e) { console.warn('salvarPerfilCliente erro:', e.message); return false; }
 }
