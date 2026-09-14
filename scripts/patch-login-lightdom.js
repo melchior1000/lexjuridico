@@ -1,0 +1,60 @@
+'use strict';
+const fs=require('node:fs');
+const path=require('node:path');
+const p=path.join(__dirname,'..','index.html');
+let s=fs.readFileSync(p,'utf8');
+
+const cut4=/\n\/\* LOGIN CLARO COMERCIAL — CUT 4 \*\/\n[\s\S]*?\n(?=<\/style>)/;
+if(!cut4.test(s)) throw new Error('bloco CUT 4 não encontrado');
+s=s.replace(cut4,'\n');
+
+const start=s.indexOf('<!-- TELA DE LOGIN -->');
+const end=s.indexOf('<div id="sidebar">',start);
+if(start<0||end<0) throw new Error('marcadores do login não encontrados');
+
+const login=`<!-- TELA DE LOGIN -->
+<div id="login-screen" class="login-shell" style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;">
+  <div class="login-wrap" style="width:100%;max-width:380px;padding:24px;">
+    <div class="login-brand" style="text-align:center;margin-bottom:32px;">
+      <div class="login-kicker" style="font-size:10px;letter-spacing:4px;margin-bottom:8px;">SISTEMA JURÍDICO</div>
+      <div class="login-title" style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;">Lex</div>
+      <div class="login-subtitle" style="font-size:12px;margin-top:4px;font-weight:300;">Gestão Processual Integrada</div>
+    </div>
+    <div class="login-card" style="border-radius:14px;padding:28px;">
+      <div class="login-kicker" style="font-size:10px;letter-spacing:2px;margin-bottom:16px;">ACESSO AO SISTEMA</div>
+      <div style="margin-bottom:14px;display:none;" id="login-url-wrap">
+        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">SERVIDOR</label>
+        <input class="login-input" type="url" id="login-bot-url" placeholder="https://lex-juridico.onrender.com" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:13px;outline:none;" onkeydown="if(event.key==='Enter')fazerLogin()">
+      </div>
+      <div style="margin-bottom:14px;">
+        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">PERFIL</label>
+        <select class="login-input" id="login-perfil" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:13px;"><option value="admin">Administrador</option><option value="secretaria">Secretária</option></select>
+      </div>
+      <div style="margin-bottom:20px;">
+        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">SENHA</label>
+        <div style="position:relative;display:flex;align-items:center;">
+          <input class="login-input" type="password" id="login-senha" placeholder="Digite sua senha" style="width:100%;border-radius:8px;padding:11px 44px 11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:1px;outline:none;" onkeydown="if(event.key==='Enter')fazerLogin()">
+          <button class="login-eye" type="button" style="position:absolute;right:10px;background:none;border:none;cursor:pointer;font-size:13px;padding:4px;user-select:none;" id="olho-btn" onclick="var i=document.getElementById('login-senha');var b=document.getElementById('olho-btn');if(i.type=='password'){i.type='text';b.textContent='🙈';}else{i.type='password';b.textContent='👁';}">👁</button>
+        </div>
+      </div>
+      <button class="login-submit" id="btn-login" onclick="fazerLogin()" style="width:100%;border:none;border-radius:8px;padding:13px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.5px;">Entrar</button>
+      <div id="login-erro" style="display:none;margin-top:12px;text-align:center;font-size:12px;"></div>
+      <div style="margin-top:16px;text-align:center;"><button class="login-reset" onclick="resetSenhasPadrao()" style="background:none;border:none;font-size:11px;cursor:pointer;font-family:Arial,Helvetica,sans-serif;">Esqueceu a senha? Clique aqui</button></div>
+    </div>
+    <div class="login-footer" style="text-align:center;margin-top:16px;font-size:10px;">LEX · Escritório virtual</div>
+  </div>
+</div>
+
+`;
+
+s=s.slice(0,start)+login+s.slice(end);
+const block=s.slice(s.indexOf('<!-- TELA DE LOGIN -->'),s.indexOf('<div id="sidebar">'));
+for(const token of ['background:#07070f','background:#0d0d1a','color:#e8eaf6','color:#555878']){
+  if(block.includes(token)) throw new Error('resíduo temático: '+token);
+}
+if(s.includes('LOGIN CLARO COMERCIAL — CUT 4')) throw new Error('CUT 4 ainda presente');
+for(const cls of ['login-shell','login-card','login-input','login-submit','login-label','login-footer']){
+  if(!block.includes(cls)) throw new Error('classe ausente: '+cls);
+}
+fs.writeFileSync(p,s);
+console.log('Login light DOM saneado.');
