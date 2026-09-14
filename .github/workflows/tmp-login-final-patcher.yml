@@ -24,3 +24,4 @@ jobs:
           git add index.html
           git commit -m "refactor: limpa login light DOM"
           git push origin HEAD:fix/login-lightdom-final
+# rerun after contract update
