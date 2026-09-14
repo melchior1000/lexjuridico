@@ -1,25 +1,70 @@
-name: Auditar login para saneamento de tema
+name: Aplicar saneamento de tokens do login
 
 on:
   push:
     branches:
       - fix/login-token-cleanup
 
+permissions:
+  contents: write
+
 jobs:
-  audit:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip-login-tokens]') && github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Mostrar trecho do login e cores inline
+        with:
+          ref: fix/login-token-cleanup
+      - name: Migrar login para tokens e classes
+        shell: python
         run: |
-          python - <<'PY'
           from pathlib import Path
-          s=Path('index.html').read_text(encoding='utf-8')
-          needles=['id="login-screen"', "background:#0d0d1a", "background:#07070f", "color:#e8eaf6", "id=\"btn-login\""]
-          for n in needles:
-              print('\n===',n,'===')
-              pos=s.find(n)
-              print('pos',pos)
-              if pos>=0:
-                  print(s[max(0,pos-1400):pos+3200])
-          PY
+          import re
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          bridge=re.compile(r'\n/\* LOGIN CLARO COMERCIAL — CUT 4 \*/\nbody\.dia #login-screen\{.*?body\.dia #login-screen #olho-btn\{color:#52657a!important;\}\n',re.S)
+          s,n=bridge.subn('\n',s,count=1)
+          if n!=1:
+              raise SystemExit('ponte CUT 4 não encontrada exatamente uma vez')
+
+          token_anchor='  --glow:#5b7bff20;--shadow-lg:0 20px 60px rgba(0,0,0,.4);--shadow-md:0 8px 30px rgba(0,0,0,.25);--shadow-sm:0 2px 8px rgba(0,0,0,.15);\n'
+          token_dark=token_anchor+'  --login-bg:#07070f;--login-card:#0d0d1a;--login-input:#07070f;--login-text:#e8eaf6;--login-muted:#555878;--login-accent:#4f6ef7;--login-line:#26263d;\n'
+          if '--login-bg:' not in s:
+              if token_anchor not in s: raise SystemExit('âncora de tokens raiz não encontrada')
+              s=s.replace(token_anchor,token_dark,1)
+
+          day_anchor='  --glow:#4060e810;--shadow-lg:0 20px 60px rgba(0,0,0,.08);--shadow-md:0 8px 30px rgba(0,0,0,.06);--shadow-sm:0 2px 8px rgba(0,0,0,.04);\n'
+          day_tokens=day_anchor+'  --login-bg:#f4f7fb;--login-card:#ffffff;--login-input:#f7fbff;--login-text:#0b1d33;--login-muted:#69798d;--login-accent:#176fda;--login-line:#cbd8e6;\n'
+          if day_anchor not in s: raise SystemExit('âncora de tokens dia não encontrada')
+          s=s.replace(day_anchor,day_tokens,1)
+
+          css='''\n/* LOGIN — tokens compartilhados com o tema comercial */\n#login-screen{background:var(--login-bg)!important;color:var(--login-text);}\nbody.lex-day #login-screen{--login-bg:#f4f7fb;--login-card:#ffffff;--login-input:#f7fbff;--login-text:#0b1d33;--login-muted:#69798d;--login-accent:#176fda;--login-line:#cbd8e6;}\n.login-brand-kicker,.login-label,.login-footnote,.login-forgot{color:var(--login-muted);}\n.login-brand-title{color:var(--login-text);}\n.login-brand-sub{color:var(--login-accent);}\n.login-card{background:var(--login-card);border:1px solid var(--login-line);border-radius:14px;padding:28px;}\n.login-input{width:100%;background:var(--login-input);border:1px solid var(--login-line);border-radius:8px;color:var(--login-text);font-family:Arial,Helvetica,sans-serif;}\n.login-input::placeholder{color:var(--login-muted);}\n#btn-login.login-submit{width:100%;background:var(--login-accent);border:none;border-radius:8px;padding:13px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.5px;}\n#olho-btn{color:var(--login-muted);}\n'''
+          if '/* LOGIN — tokens compartilhados com o tema comercial */' not in s:
+              pos=s.find('</style>')
+              if pos<0: raise SystemExit('fim do style não encontrado')
+              s=s[:pos]+css+'\n'+s[pos:]
+
+          start=s.find('<!-- TELA DE LOGIN -->')
+          end=s.find('<div id="sidebar">',start)
+          if start<0 or end<0: raise SystemExit('bloco de login não encontrado')
+          new='''<!-- TELA DE LOGIN -->\n<div id="login-screen" style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;">\n  <div style="width:100%;max-width:380px;padding:24px;">\n    <div style="text-align:center;margin-bottom:32px;">\n      <div class="login-brand-kicker" style="font-size:10px;letter-spacing:4px;margin-bottom:8px;">SISTEMA JURÍDICO</div>\n      <div class="login-brand-title" style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;">Lex</div>\n      <div class="login-brand-sub" style="font-size:12px;margin-top:4px;font-weight:300;">Gestão Processual Integrada</div>\n    </div>\n    <div class="login-card">\n      <div class="login-label" style="font-size:10px;letter-spacing:2px;margin-bottom:16px;">ACESSO AO SISTEMA</div>\n      <div style="margin-bottom:14px;display:none;" id="login-url-wrap">\n        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">SERVIDOR</label>\n        <input class="login-input" type="url" id="login-bot-url" placeholder="https://lex-juridico.onrender.com"\n          style="padding:11px 13px;font-size:13px;outline:none;"\n          onkeydown="if(event.key==='Enter')fazerLogin()">\n      </div>\n      <div style="margin-bottom:14px;">\n        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">PERFIL</label>\n        <select class="login-input" id="login-perfil" style="padding:11px 13px;font-size:13px;">\n          <option value="admin">Administrador</option>\n          <option value="secretaria">Secretária</option>\n        </select>\n      </div>\n      <div style="margin-bottom:20px;">\n        <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">SENHA</label>\n        <div style="position:relative;display:flex;align-items:center;">\n          <input class="login-input" type="password" id="login-senha" placeholder="Digite sua senha"\n            style="padding:11px 44px 11px 13px;font-size:14px;letter-spacing:1px;outline:none;"\n            onkeydown="if(event.key==='Enter')fazerLogin()">\n          <button type="button"\n            style="position:absolute;right:10px;background:none;border:none;cursor:pointer;font-size:13px;padding:4px;user-select:none;"\n            id="olho-btn"\n            onclick="var i=document.getElementById('login-senha');var b=document.getElementById('olho-btn');if(i.type=='password'){i.type='text';b.textContent='🙈';}else{i.type='password';b.textContent='👁';}">👁</button>\n        </div>\n      </div>\n      <button class="login-submit" id="btn-login" onclick="fazerLogin()">Entrar</button>\n      <div id="login-erro" style="display:none;margin-top:12px;text-align:center;font-size:12px;color:var(--red);"></div>\n      <div style="margin-top:16px;text-align:center;">\n        <button class="login-forgot" onclick="resetSenhasPadrao()" style="background:none;border:none;font-size:11px;cursor:pointer;font-family:Arial,Helvetica,sans-serif;">Esqueceu a senha? Clique aqui</button>\n      </div>\n    </div>\n    <div class="login-footnote" style="text-align:center;margin-top:16px;font-size:10px;">LEX · Escritório virtual</div>\n  </div>\n</div>\n\n'''
+          s=s[:start]+new+s[end:]
+          p.write_text(s,encoding='utf-8')
+
+          test=Path('test/login-theme-tokens.test.js')
+          test.write_text("""'use strict';\nconst test=require('node:test');\nconst assert=require('node:assert/strict');\nconst fs=require('node:fs');\nconst path=require('node:path');\n\nconst html=()=>fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');\n\ntest('login usa tokens de tema em vez de cores estruturais inline',()=>{\n  const s=html();\n  for(const token of ['--login-bg','--login-card','--login-input','--login-text','--login-muted','--login-accent','--login-line']) assert.match(s,new RegExp(token));\n  assert.match(s,/class=\"login-card\"/);\n  assert.match(s,/class=\"login-input\"/);\n  const block=s.slice(s.indexOf('<!-- TELA DE LOGIN -->'),s.indexOf('<div id=\"sidebar\">'));\n  assert.doesNotMatch(block,/background:#0d0d1a|background:#07070f|color:#e8eaf6|color:#555878|color:#4f6ef7|border:1px solid #26263d/);\n});\n\ntest('ponte CUT 4 foi removida após saneamento do login',()=>{\n  const s=html();\n  assert.doesNotMatch(s,/LOGIN CLARO COMERCIAL — CUT 4/);\n  assert.doesNotMatch(s,/\[style\*=\"color:#e8eaf6\"\]/);\n  assert.doesNotMatch(s,/setTimeout\(\s*varreduraInicial\s*,\s*2000\s*\)/);\n});\n""",encoding='utf-8')
+      - name: Validar saneamento
+        run: |
+          npm ci
+          npm run check
+          npm test
+      - name: Gravar saneamento na branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html test/login-theme-tokens.test.js
+          git diff --cached --quiet && exit 0
+          git commit -m "refactor: saneia tema do login com tokens [skip-login-tokens]"
+          git push origin HEAD:fix/login-token-cleanup
