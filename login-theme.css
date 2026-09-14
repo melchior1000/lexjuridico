@@ -1,0 +1,85 @@
+@layer reset, tokens, components, utilities;
+
+@layer tokens {
+  :root {
+    --login-bg:#07070f;
+    --login-card:#0d0d1a;
+    --login-input:#07070f;
+    --login-text:#e8eaf6;
+    --login-muted:#555878;
+    --login-line:#26263d;
+    --login-accent:#4f6ef7;
+    --login-accent-strong:#2861d8;
+    --login-placeholder:#777b98;
+    --login-shadow:0 18px 45px rgba(0,0,0,.28);
+    --login-danger:#e84545;
+  }
+
+  body.dia,
+  body.lex-day {
+    --login-bg:#f4f7fb;
+    --login-card:#ffffff;
+    --login-input:#f7fbff;
+    --login-text:#0b1d33;
+    --login-muted:#69798d;
+    --login-line:#cbd8e6;
+    --login-accent:#177ff0;
+    --login-accent-strong:#2861d8;
+    --login-placeholder:#8797aa;
+    --login-shadow:0 18px 45px rgba(15,35,60,.10);
+    --login-danger:#d93f4f;
+  }
+}
+
+@layer components.login {
+  .login-shell {
+    background:var(--login-bg);
+    color:var(--login-text);
+  }
+
+  .login-card {
+    background:var(--login-card);
+    border-color:var(--login-line);
+    box-shadow:var(--login-shadow);
+  }
+
+  .login-title {
+    color:var(--login-text);
+  }
+
+  .login-kicker,
+  .login-label,
+  .login-reset,
+  .login-footer {
+    color:var(--login-muted);
+  }
+
+  .login-subtitle {
+    color:var(--login-accent);
+  }
+
+  .login-input {
+    background:var(--login-input);
+    border-color:var(--login-line);
+    color:var(--login-text);
+    box-shadow:none;
+  }
+
+  .login-input::placeholder {
+    color:var(--login-placeholder);
+  }
+
+  .login-submit {
+    background:linear-gradient(135deg,var(--login-accent),var(--login-accent-strong));
+    color:#fff;
+    box-shadow:0 8px 20px color-mix(in srgb,var(--login-accent) 22%,transparent);
+  }
+
+  .login-eye {
+    color:var(--login-muted);
+  }
+
+  #login-erro {
+    color:var(--login-danger);
+  }
+}
