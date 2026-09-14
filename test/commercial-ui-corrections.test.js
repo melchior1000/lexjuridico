@@ -13,9 +13,10 @@ test('tema comercial sincroniza com tema legado',()=>{
   assert.match(js,/classList\.toggle\('noite'/);
 });
 
-test('varredura antiga e suprimida apenas no boot comercial',()=>{
-  assert.match(js,/function\s+suppressLegacySweepBoot\s*\(/);
-  assert.match(js,/Assessor\\s\+LEX/);
+test('varredura antiga e desativada no boot comercial',()=>{
+  assert.match(js,/function\s+disableLegacySweep\s*\(/);
+  assert.match(js,/window\.varreduraInicial\s*=\s*function/);
+  assert.match(js,/varredura-overlay/);
   assert.match(js,/setInterval/);
 });
 
