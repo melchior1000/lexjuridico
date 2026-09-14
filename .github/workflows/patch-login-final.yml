@@ -2,14 +2,16 @@ name: Patch login light DOM final
 
 on:
   push:
-    branches: [fix/login-lightdom-final]
+    branches:
+      - fix/login-lightdom-final
+    paths:
+      - .github/workflows/patch-login-final.yml
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[skip-login-final]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,11 +80,10 @@ jobs:
 
 '''
           s=s[:start]+login+s[end:]
-          forbidden=['background:#07070f','background:#0d0d1a','color:#e8eaf6','color:#555878','LOGIN CLARO COMERCIAL — CUT 4']
           block=s[s.index('<!-- TELA DE LOGIN -->'):s.index('<div id="sidebar">')]
-          for x in forbidden:
-              if x in block or (x.startswith('LOGIN') and x in s):
-                  raise SystemExit('resíduo de tema: '+x)
+          for x in ['background:#07070f','background:#0d0d1a','color:#e8eaf6','color:#555878']:
+              if x in block: raise SystemExit('resíduo de tema: '+x)
+          if 'LOGIN CLARO COMERCIAL — CUT 4' in s: raise SystemExit('CUT 4 ainda presente')
           for cls in ['login-shell','login-card','login-input','login-submit','login-label','login-footer']:
               if cls not in block: raise SystemExit('classe ausente: '+cls)
           p.write_text(s)
@@ -97,5 +98,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "refactor: limpa login light DOM [skip-login-final]"
+          git commit -m "refactor: limpa login light DOM"
           git push origin HEAD:fix/login-lightdom-final
