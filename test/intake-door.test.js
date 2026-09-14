@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {intakeDecision,INTRO}=require('../lib/intake-door');
+const {intakeDecision,INTRO,RESPONSIBLE_NAME}=require('../lib/intake-door');
 const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode}=require('../lib/integration-status');
 const {createTelegramReception,isTelegramOwner}=require('../lib/telegram-reception');
 const vm=require('node:vm');
@@ -15,14 +15,15 @@ function turn(history,text,data={}) {
 test('print: oi + quem é vc tem apresentação única e não arquiva',()=>{
   const d=intakeDecision('Oi | Quem é vc?');
   assert.equal(d.reply,INTRO);assert.equal(d.archive,false);
-  assert.match(d.reply,/assistente virtual.*LEX Jurídico.*Dr. Kleuber/);
+  assert.match(d.reply,/assistente virtual.*LEX Jurídico/i);
+  assert.match(d.reply,new RegExp(RESPONSIBLE_NAME.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));
 });
-test('Kleuber → João da Silva mantém o pedido e não pergunta o nome novamente',()=>{
+test('pedido pelo responsável → João da Silva mantém o pedido e não pergunta o nome novamente',()=>{
   const history=[];
   assert.equal(turn(history,'Quero falar com Kleuber').kind,'lawyer');
   const next=turn(history,'João da Silva');
   assert.equal(next.kind,'lawyer');assert.equal(next.name,'João da Silva');
-  assert.match(next.reply,/Dr. Kleuber/);assert.doesNotMatch(next.reply,/diga seu nome/);
+  assert.match(next.reply,new RegExp(RESPONSIBLE_NAME.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));assert.doesNotMatch(next.reply,/diga seu nome/);
   const third=turn(history,'Ele pode me retornar?');
   assert.equal(third.name,'João da Silva');assert.doesNotMatch(third.reply,/diga seu nome/);
 });
