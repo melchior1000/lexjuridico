@@ -1,12 +1,33 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-let failures = 0;
+let failures = 0, checked = 0;
 function check(label, input, filename) {
   const r=spawnSync(process.execPath,['--check',...(filename ? [filename] : [])],{input,encoding:'utf8'});
+  checked++;
   if(r.status!==0){failures++; console.error(label+'\n'+r.stderr);}
 }
-for(const name of ['bot.js','lex_agente_vivo.js','lex_agente_vivo_core.js','office-ui.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','office-flow-ui.js','login-theme.js','conector-navegador/popup.js',...['lib','scripts','test'].flatMap(dir=>fs.readdirSync(dir).filter(f=>f.endsWith('.js')).map(f=>path.join(dir,f)))]) check(name,null,name);
+const SKIP=new Set(['.git','node_modules','.vercel','coverage','dist','artifacts']);
+const CRITICAL=[
+  'bot.js','lex_agente_vivo.js','lex_agente_vivo_core.js',
+  'office-ui.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','office-flow-ui.js',
+  'login-theme.js','conector-navegador/popup.js'
+];
+function walk(dir='.'){
+  const out=[];
+  for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
+    if(SKIP.has(entry.name)) continue;
+    const full=path.join(dir,entry.name);
+    if(entry.isDirectory()) out.push(...walk(full));
+    else if(entry.isFile()&&entry.name.endsWith('.js')) out.push(full.replace(/^\.\//,''));
+  }
+  return out;
+}
+const jsFiles=walk().sort();
+for(const name of CRITICAL){
+  if(!jsFiles.includes(name)){failures++;console.error('Arquivo JavaScript crítico ausente: '+name);}
+}
+for(const name of jsFiles) check(name,null,name);
 for(const name of ['index.html','lex-whatsapp.html']) {
   const html=fs.readFileSync(name,'utf8'); let n=0;
   for(const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
@@ -15,4 +36,4 @@ for(const name of ['index.html','lex-whatsapp.html']) {
   }
 }
 if(failures) process.exitCode=1;
-else console.log('Sintaxe validada: backend, módulos, casca comercial, fluxo do escritório, tema do login e scripts inline.');
+else console.log('Sintaxe validada em '+checked+' unidades: todo JavaScript rastreado, arquivos críticos presentes, casca comercial, fluxo do escritório, tema do login e scripts inline.');
