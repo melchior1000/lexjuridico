@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {intakeDecision,INTRO}=require('../lib/intake-door');
+const {intakeDecision,INTRO,RESPONSIBLE_NAME}=require('../lib/intake-door');
 
 function next(history,text){
   const d=intakeDecision(text,{},[...history].reverse());
@@ -18,12 +18,12 @@ test('Oi -> Quem é vc? não repete o INTRO completo',()=>{
   assert.match(second.reply,/Sou o LEX/i);
 });
 
-test('Oi -> Quem é vc? -> Quero falar com Kleuber progride sem voltar ao início',()=>{
+test('Oi -> Quem é vc? -> pedido pelo responsável progride sem voltar ao início',()=>{
   const h=[];
   next(h,'Oi');
   next(h,'Quem é vc?');
   const third=next(h,'Quero falar com Kleuber');
   assert.equal(third.kind,'lawyer');
-  assert.match(third.reply,/Dr\. Kleuber/i);
+  assert.match(third.reply,new RegExp(RESPONSIBLE_NAME.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));
   assert.doesNotMatch(third.reply,/assistente virtual do escritório/i);
 });
