@@ -10,9 +10,14 @@ test('peticao, pericia e analise sempre recebem o nucleo comum',()=>{
   }
 });
 
-test('recepcao recebe somente o nucleo quando nao ha modulo pelo tipo',()=>{
-  assert.equal(playbookFor('', 'recepcao'),CORE);
-  assert.equal(playbookFor('', 'Recepção'),CORE);
+test('recepcao recebe somente o nucleo comum de excelencia quando nao ha modulo pelo tipo',()=>{
+  for(const setor of ['recepcao','Recepção']) {
+    const playbook=playbookFor('',setor);
+    assert.ok(playbook.startsWith(CORE));
+    assert.match(playbook,/REGRA DE OURO: a maquina avisa; o humano decide; a maquina nunca cala/);
+    assert.match(playbook,/TRIAGEM DOCUMENTAL/);
+    assert.doesNotMatch(playbook,/MODULO: PETICAO|MODULO: PERICIA|MODULO: ANALISE PROFISSIONAL/);
+  }
 });
 
 test('peticao exige escolha do instrumento correto',()=>{
