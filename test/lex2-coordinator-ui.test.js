@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const src=fs.readFileSync(path.join(__dirname,'..','lex2-coordinator-ui.js'),'utf8');
+const loader=fs.readFileSync(path.join(__dirname,'..','office-ui.js'),'utf8');
+test('LEX é a interface principal e mantém cinco destinos',()=>{assert.match(src,/O que precisamos resolver\?/);for(const x of ['Início','Processos','LEX','Prazos','Mais'])assert.match(src,new RegExp('>'+x+'<'))});
+test('setores e bots não viram menu da conversa',()=>{assert.doesNotMatch(src,/Setores do Escritório/);assert.doesNotMatch(src,/LEX Perícia|LEX Jurídico|LEX Redator/)});
+test('LEX mantém processo como contexto e preserva envio real',()=>{assert.match(src,/lex-chat-process/);assert.match(src,/lex-chat-input/);assert.match(src,/lexSendChat\(event\)/);assert.match(src,/__lexDossierContext/)});
+test('comandos comerciais expõem capacidade sem expor organograma',()=>{for(const x of ['WhatsApp','Atualize os processos','cadastros','Levar para perícia','Jurisprudência'])assert.match(src,new RegExp(x))});
+test('loader mantém canais, anexos, dossiê e coordenador',()=>{for(const x of ['office-command-ui.js','reception-handoff-ui.js','office-attachment-ui.js','office-dossier-ui.js','lex2-coordinator-ui.js'])assert.match(loader,new RegExp(x.replaceAll('.','\\.')))});
