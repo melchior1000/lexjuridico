@@ -25,3 +25,4 @@ document.write('<script src="reception-handoff-ui.js"><\/script>');
 document.write('<script src="office-attachment-ui.js"><\/script>');
 document.write('<script src="office-dossier-ui.js"><\/script>');
 document.write('<script src="lex2-interface-core.js"><\/script>');
+document.write('<script src="lex2-coordinator-ui.js"><\/script>');
