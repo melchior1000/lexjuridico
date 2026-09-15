@@ -1,55 +1,27 @@
 (function(){
 'use strict';
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const list=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const byId=id=>list().find(p=>String(p.id)===String(id));
-const stage=p=>String(p?.office_stage||p?.fluxo_setor||p?.setor||'processos').toLowerCase();
-const docs=p=>{
-  const out=[];
-  for(const field of ['entrada_processual','arquivos','recebimentos']){
-    for(const item of (Array.isArray(p?.[field])?p[field]:[])){
-      const key=String(item?.sha256||'')||[item?.nome,item?.recebido_em||item?.data||item?.criado_em].join('|');
-      if(out.some(x=>x.key===key))continue;
-      out.push({key,nome:item?.nome||item?.arquivo||'Documento',origem:item?.origem||field,status:item?.status||item?.motivo||'recebido',data:item?.recebido_em||item?.data||item?.criado_em||'',mime:item?.mimeType||item?.mime||''});
-    }
-  }
-  return out;
-};
-const movements=p=>(Array.isArray(p?.andamentos)?p.andamentos:[]).slice(0,12);
-function statusLabel(v){
-  const s=String(v||'recebido').toLowerCase();
-  if(s==='novo_andamento')return'Novo andamento';
-  if(s==='provavel_duplicado')return'Provável duplicado';
-  if(s==='provavel_antigo')return'Provável antigo';
-  if(s==='precisa_conferencia')return'Precisa conferência';
-  return String(v||'Recebido').replaceAll('_',' ');
-}
-function originLabel(v){const s=String(v||'manual').toLowerCase();if(s.includes('whatsapp'))return'WhatsApp';if(s.includes('telegram'))return'Telegram';if(s.includes('datajud'))return'Datajud';if(s.includes('pje'))return'PJe';if(s.includes('lex_chat'))return'LEX';return s==='upload'?'Manual':String(v||'Manual')}
-function docRows(p){const items=docs(p);if(!items.length)return'<div class="lex-empty">Nenhum documento recebido neste processo ainda.</div>';return'<div class="lex-dossier-list">'+items.map(x=>'<article><div><strong>'+esc(x.nome)+'</strong><small>'+esc(originLabel(x.origem))+(x.mime?' · '+esc(x.mime):'')+'</small></div><span class="lex-doc-status">'+esc(statusLabel(x.status))+'</span><time>'+esc(x.data?String(x.data).slice(0,19).replace('T',' '):'')+'</time></article>').join('')+'</div>'}
-function movementRows(p){const items=movements(p);if(!items.length)return'<div class="lex-empty">Nenhum andamento cadastrado.</div>';return'<div class="lex-dossier-list">'+items.map(x=>'<article><div><strong>'+esc(x.txt||x.texto||'Andamento')+'</strong><small>'+esc(originLabel(x.origem||''))+'</small></div><time>'+esc(x.data||x.date||'')+'</time></article>').join('')+'</div>'}
-function shell(p){
-  const id=esc(String(p.id));
-  const numero=esc(p.numero||'sem número');
-  const nome=esc(p.nome||p.partes||'Processo');
-  const current=esc(stage(p));
-  const body='<main class="lex-screen lex-dossier-screen"><header class="lex-top"><div><strong>LEX</strong><small>DOSSIÊ DO PROCESSO</small></div><div class="lex-top-actions"><button onclick="lexProcessos()" aria-label="Voltar">←</button></div></header>'+
-  '<section class="lex-dossier-head"><div><small>'+numero+'</small><h1>'+nome+'</h1><p>'+esc(p.tribunal||p.area||p.assunto||'')+'</p></div><span>'+current+'</span></section>'+
-  '<section class="lex-dossier-actions"><button onclick="lexDossierDatajud(\''+id+'\')">↻ Atualizar Datajud</button><button onclick="lexDossierTask(\''+id+'\',\'peticao\')">✎ Redigir petição</button><button onclick="lexDossierTask(\''+id+'\',\'pericia\')">∑ Perícia</button></section>'+
-  '<section class="lex-panel"><h2>Encaminhar entre setores</h2><p class="lex-move-help">Baixa o setor atual e registra a entrada no destino. O motivo é obrigatório.</p><div class="lex-move-form"><select id="lex-dossier-target"><option value="cadastro">Cadastro</option><option value="iniciais">Iniciais</option><option value="processos">Processos</option><option value="prazos">Prazos</option><option value="pecas">Peças</option><option value="pericia">Perícia</option><option value="revisao">Revisão</option><option value="concluidos">Concluídos</option></select><input id="lex-dossier-reason" placeholder="Motivo da transferência"><button onclick="lexDossierMove(\''+id+'\')">Encaminhar</button></div><div id="lex-dossier-status" class="lex-dossier-status"></div></section>'+
-  '<section class="lex-panel"><div class="lex-section-title"><h2>Documentos recebidos</h2><button onclick="lexDossierAttach(\''+id+'\')">＋ Anexar</button></div>'+docRows(p)+'</section>'+
-  '<section class="lex-panel"><h2>Últimos andamentos</h2>'+movementRows(p)+'</section></main>';
-  const host=document.getElementById('content');if(host){document.body.classList.add('lex-commercial');host.innerHTML=body}
-}
-function setStatus(text){const out=document.getElementById('lex-dossier-status');if(out)out.textContent=text}
-window.lexDossierOpen=function(id){const p=byId(id);if(!p){window.lexProcessos?.();return}shell(p)};
-window.lexDossierMove=async function(id){const destino=document.getElementById('lex-dossier-target')?.value,motivo=document.getElementById('lex-dossier-reason')?.value?.trim();if(!destino||!motivo){setStatus('Informe o destino e o motivo.');return}setStatus('Movimentando…');try{const r=await lexApi('/api/escritorio/mover',{method:'POST',body:JSON.stringify({processo_id:id,destino,motivo})});setStatus('Movido para '+(r.setor||destino)+'. Baixa e entrada registradas.');}catch(e){setStatus(e?.message||'Não foi possível movimentar o processo.')}};
-window.lexDossierDatajud=async function(id){setStatus('Consultando Datajud…');try{const r=await lexApi('/api/escritorio/datajud',{method:'POST',body:JSON.stringify({processo_id:id})});const novos=Number(r?.novos??r?.inseridos??0);const ignorados=Number(r?.duplicados??r?.ignorados??0);setStatus('Datajud concluído: '+novos+' novo(s), '+ignorados+' repetido(s).');}catch(e){setStatus(e?.message||'Não foi possível consultar o Datajud.')}};
-window.lexDossierTask=async function(id,tipo){setStatus('Delegando ao setor…');try{const r=await lexApi('/api/tarefas',{method:'POST',body:JSON.stringify({processo_id:id,tipo,instrucao:tipo==='pericia'?'Analise os documentos do processo e prepare a perícia conforme o playbook.':'Redija a peça adequada com base nos documentos e andamentos do processo.',request_id:'dossier-'+Date.now()})});setStatus('Tarefa '+String(r?.tarefa?.id||'').slice(0,8)+' criada. A entrega irá para Revisão.');}catch(e){setStatus(e?.message||'Não foi possível criar a tarefa.')}};
-window.lexDossierAttach=function(id){
-  const select=document.getElementById('lex-chat-process');
-  if(select){select.value=String(id);window.lexChat?.();setTimeout(()=>document.getElementById('lex-attach-button')?.click(),80);return}
-  window.lexChat?.();setTimeout(()=>{const s=document.getElementById('lex-chat-process');if(s)s.value=String(id);document.getElementById('lex-attach-button')?.click()},120);
-};
+const stage=p=>String(p?.current_sector_id||p?.office_stage||p?.fluxo_setor||p?.setor||'processos').toLowerCase();
+const when=x=>x?.occurred_at||x?.created_at||x?.data||x?.date||x?.recebido_em||x?.criado_em||'';
+const originLabel=v=>{const s=String(v||'manual').toLowerCase();if(s.includes('whatsapp'))return'WhatsApp';if(s.includes('telegram'))return'Telegram';if(s.includes('datajud'))return'Datajud';if(s.includes('pje'))return'PJe';if(s.includes('lex'))return'LEX';return s==='upload'?'Manual':String(v||'Manual')};
+function timeline(p){const out=[],seen=new Set();const push=x=>{const key=x.key||[x.kind,x.title,x.at,x.detail].join('|');if(seen.has(key))return;seen.add(key);out.push({...x,key})};
+ for(const e of (p.case_events||[]))push({kind:eventKind(e.event_type),title:eventTitle(e),detail:eventDetail(e),at:when(e),source:e.actor_id||e.actor_type||'Malha'});
+ for(const field of ['entrada_processual','arquivos','recebimentos'])for(const d of (Array.isArray(p[field])?p[field]:[]))push({kind:'documentos',title:d.nome||d.arquivo||'Documento recebido',detail:[originLabel(d.origem||field),String(d.status||d.motivo||'recebido').replaceAll('_',' ')].join(' · '),at:when(d),source:originLabel(d.origem||field),key:'doc:'+(d.sha256||[d.nome,when(d)].join('|'))});
+ for(const a of (Array.isArray(p.andamentos)?p.andamentos:[]))push({kind:'andamentos',title:a.txt||a.texto||'Andamento',detail:originLabel(a.origem||''),at:when(a),source:originLabel(a.origem||'')});
+ for(const d of (Array.isArray(p.deadlines)?p.deadlines:[]))push({kind:'prazos',title:d.type||d.tipo||'Prazo',detail:d.status||'',at:d.due_at||d.prazo||when(d),source:'Prazos'});
+ for(const d of (Array.isArray(p.drafts)?p.drafts:[]))push({kind:'pecas',title:d.title||d.titulo||d.type||'Peça',detail:['V'+(d.version_number||d.versao||'?'),d.approval_status||d.status||''].filter(Boolean).join(' · '),at:when(d),source:d.agent_id||'Peças'});
+ return out.sort((a,b)=>String(b.at).localeCompare(String(a.at)))}
+function eventKind(t=''){if(t.startsWith('document.'))return'documentos';if(t.startsWith('deadline.'))return'prazos';if(t.startsWith('draft.'))return'pecas';return'andamentos'}
+function eventTitle(e){const t=String(e.event_type||'Evento');const map={'case.sector_changed':'Processo movimentado','document.received':'Documento recebido','document.gate_passed':'Gate aprovado','document.quarantined':'Documento em quarentena','document.override_authorized':'Uso excepcional autorizado','task.completed':'Tarefa concluída','task.blocked':'Tarefa bloqueada','draft.version_created':'Nova versão de peça','draft.returned':'Peça devolvida','draft.approved':'Peça aprovada','deadline.created':'Prazo criado','deadline.changed':'Prazo alterado','human.authorization_granted':'Autorização humana concedida'};return map[t]||t.replaceAll('.',' · ')}
+function eventDetail(e){const p=e.payload||e.payload_json||{};if(e.event_type==='case.sector_changed')return[(p.from||e.previous_state_json?.sector),(p.to||e.new_state_json?.sector)].filter(Boolean).join(' → ');if(e.event_type==='document.quarantined')return p.message||p.reason||'Precisa de conferência';return p.reason||e.result||''}
+function row(x){return '<article class="lex-timeline-item" data-kind="'+esc(x.kind)+'"><time>'+esc(x.at?String(x.at).slice(0,19).replace('T',' '):'')+'</time><div><strong>'+esc(x.title)+'</strong><p>'+esc(x.detail||'')+'</p><small>'+esc(x.source||'')+'</small></div></article>'}
+function shell(p){const id=esc(String(p.id)),numero=esc(p.numero||p.case_number||''),nome=esc(p.nome||p.cliente||p.partes||p.title||'Processo'),current=esc(stage(p)),caseType=esc(p.case_type||p.tipo_processo||'judicial'),next=esc(p.next_action||p.proxima_acao||'Sem ação pendente registrada'),due=esc(p.next_action_due_at||p.prazo||'');const items=timeline(p);
+ const body='<main class="lex-screen lex-dossier-screen"><header class="lex-top"><div><strong>LEX</strong><small>DOSSIÊ</small></div><button onclick="lexProcessos()" aria-label="Voltar">←</button></header><section class="lex-dossier-head"><div><small>'+caseType+(numero?' · '+numero:'')+'</small><h1>'+nome+'</h1><p>'+current+' · Próxima ação: '+next+(due?' · '+due:'')+'</p></div></section><section class="lex-dossier-primary"><button onclick="lexDossierTalk(\''+id+'\')">Falar com o LEX sobre este processo</button></section><nav class="lex-dossier-filters" aria-label="Filtrar dossiê"><button class="active" onclick="lexDossierFilter(this,\'tudo\')">Tudo</button><button onclick="lexDossierFilter(this,\'documentos\')">Documentos</button><button onclick="lexDossierFilter(this,\'andamentos\')">Andamentos</button><button onclick="lexDossierFilter(this,\'prazos\')">Prazos</button><button onclick="lexDossierFilter(this,\'pecas\')">Peças</button></nav><section class="lex-panel lex-dossier-timeline">'+(items.length?items.map(row).join(''):'<div class="lex-empty">Nenhum evento registrado neste dossiê.</div>')+'</section><section class="lex-dossier-ask"><button onclick="lexDossierTalk(\''+id+'\')">Pergunte ao LEX sobre este processo…</button></section></main>';const host=document.getElementById('content');if(host){document.body.classList.add('lex-commercial');host.innerHTML=body}}
+window.lexDossierOpen=id=>{const p=byId(id);if(!p){window.lexProcessos?.();return}shell(p)};
+window.lexDossierFilter=function(btn,kind){document.querySelectorAll('.lex-dossier-filters button').forEach(x=>x.classList.remove('active'));btn?.classList.add('active');document.querySelectorAll('.lex-timeline-item').forEach(x=>{x.hidden=kind!=='tudo'&&x.dataset.kind!==kind})};
+window.lexDossierTalk=function(id){window.__lexDossierContext={case_id:String(id)};window.lexChat?.();setTimeout(()=>{const s=document.getElementById('lex-chat-process');if(s)s.value=String(id);const i=document.getElementById('lex-chat-input')||document.querySelector('.lex-chat-input textarea,.lex-chat-input input');if(i)i.placeholder='Pergunte ao LEX sobre este processo…'},80)};
 function boot(){const old=window.lexOpenProc;if(typeof old==='function'&&!old.__dossier){const fn=id=>window.lexDossierOpen(id);fn.__dossier=true;fn.legacy=old;window.lexOpenProc=fn}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,0),{once:true});else setTimeout(boot,0);
 })();
