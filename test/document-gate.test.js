@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const Gate=require('../lib/document-gate');
+const Ledger=require('../lib/event-ledger');
+test('documento bom passa no gate',()=>{const d=Gate.receive({case_id:'c1',name:'a.pdf',bytes:'abc'});assert.equal(d.status,'gate_passed');assert.equal(d.productive,true);assert.equal(Gate.assertProductive(d),true)});
+test('problema crítico põe página e região em quarentena',()=>{const d=Gate.receive({case_id:'c1',name:'a.pdf',bytes:'abc',quality:{issues:[{page:3,region:{x:10,y:20,width:30,height:40},type:'blur',severity:'critical',message:'Trecho ilegível'}]}});assert.equal(d.status,'quarantined');assert.equal(d.quality.issues[0].page_number,3);assert.deepEqual(d.quality.issues[0].region,{x:10,y:20,width:30,height:40});assert.throws(()=>Gate.assertProductive(d),e=>e.code==='DOCUMENT_GATE_BLOCKED')});
+test('mesmo hash no mesmo processo é provável duplicado',()=>{const a=Gate.receive({case_id:'c1',document_id:'d1',bytes:'igual'}),b=Gate.receive({case_id:'c1',document_id:'d2',bytes:'igual'});assert.equal(Gate.probableDuplicate(b,[a])?.id,'d1');assert.equal(Gate.probableDuplicate({...b,case_id:'c2'},[a]),null)});
+test('override exige humano e fica auditável',()=>{const d=Gate.receive({case_id:'c1',bytes:'x',quality:{issues:[{type:'unreadable',severity:'critical'}]}});assert.throws(()=>Gate.override(d,{}));const o=Gate.override(d,{authorization_id:'auth1',actor_id:'humano1',reason:'original conferido visualmente'});assert.equal(o.productive,true);assert.equal(o.gate_override.authorization_id,'auth1')});
+test('registro do gate é idempotente e ledger íntegro',()=>{const d=Gate.receive({case_id:'c1',document_id:'d1',bytes:'abc'});const a=Gate.record({},d,{intent_id:'int1'}),b=Gate.record(a,d,{intent_id:'int1'});assert.equal(b.case_events.length,2);assert.equal(Ledger.verify(b.case_events),true)});
