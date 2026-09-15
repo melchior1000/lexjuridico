@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const src=fs.readFileSync(path.join(__dirname,'..','office-dossier-ui.js'),'utf8');
+test('dossiê é superfície única com cinco filtros',()=>{for(const label of ['Tudo','Documentos','Andamentos','Prazos','Peças'])assert.match(src,new RegExp('>'+label+'<'));assert.match(src,/lex-dossier-timeline/)});
+test('dossiê leva contexto do processo ao LEX',()=>{assert.match(src,/Falar com o LEX sobre este processo/);assert.match(src,/__lexDossierContext=\{case_id:String\(id\)\}/);assert.match(src,/Pergunte ao LEX sobre este processo/)});
+test('dossiê não mantém formulário manual permanente de transferência',()=>{assert.doesNotMatch(src,/lex-dossier-target/);assert.doesNotMatch(src,/Motivo da transferência/)});
+test('timeline inclui eventos documentos andamentos prazos e peças',()=>{for(const token of ['case_events','entrada_processual','andamentos','deadlines','drafts'])assert.match(src,new RegExp(token))});
