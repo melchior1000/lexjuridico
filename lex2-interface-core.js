@@ -1,5 +1,8 @@
 (function(){
 'use strict';
+// Experimental HOJE interface must never replace the approved commercial UI by default.
+// It can still be explicitly enabled for isolated experiments.
+if(window.LEX_EXPERIMENTAL_INTERFACE!==true)return;
 const $=(s,r=document)=>r.querySelector(s);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo||p?.next_action_due_at;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();return Math.ceil((d-n)/86400000)};
