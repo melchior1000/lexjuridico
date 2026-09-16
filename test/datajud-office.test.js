@@ -2,6 +2,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const Datajud=require('../lib/datajud');
+const {verifyReadingLogEntry}=require('../lib/reading-log-schema');
+const {mintCourtSyncEvidence,isCourtSyncEvidence}=require('../lib/court-sync-evidence');
 const {parseOfficeCommand}=require('../lib/office-command');
 
 function store(initial){
@@ -29,16 +31,25 @@ test('sem chave não chama a rede',async()=>{
   assert.equal(calls,0);
 });
 
-test('grava movimento novo uma vez e deduplica repetição',async()=>{
+test('grava movimento e readingLog auditável; repetição deduplica',async()=>{
   const db=store([{id:'p1',nome:'Caso GO',numero:GO,andamentos:[]}]);
   const payload={hits:{hits:[{_source:{movimentos:[{dataHora:'2026-09-14T12:00:00Z',nome:'Juntada de Petição'}]}}]}};
-  const fetchImpl=async()=>({ok:true,status:200,json:async()=>payload});
+  const raw=JSON.stringify(payload);
+  const fetchImpl=async()=>({ok:true,status:200,headers:{get:n=>n==='content-type'?'application/json':n==='x-request-id'?'cnj-request-1':''},text:async()=>raw});
   let r=await Datajud.syncProcess(db,'p1',{apiKey:'public-key',fetchImpl,actor:'admin'});
   assert.equal(r.novos,1);assert.equal(r.duplicados,0);
+  assert.equal(verifyReadingLogEntry(r.reading),true);
+  assert.equal(r.reading.proveniencia.conector,'lib/datajud');
+  assert.equal(r.reading.proveniencia.authenticated,true);
+  assert.equal(r.reading.recibo.raw_receipt,raw);
+  assert.equal(r.reading.recibo.metadata.remote_request_id,'cnj-request-1');
+  const ev=mintCourtSyncEvidence({readingId:r.reading.reading_id},{readingLog:new Map([[r.reading.reading_id,r.reading]]),now:Date.parse(r.reading.observed_at)});
+  assert.equal(isCourtSyncEvidence(ev),true);
   r=await Datajud.syncProcess(db,'p1',{apiKey:'public-key',fetchImpl,actor:'admin'});
   assert.equal(r.novos,0);assert.equal(r.duplicados,1);
   const p=db.snapshot()[0];
   assert.equal(p.andamentos.length,1);
+  assert.equal(p.court_readings.length,2);
   assert.equal(p.andamentos[0].origem,'datajud');
   assert.match(p.andamentos[0].txt,/^\[DATAJUD\] Juntada de Petição/);
 });
