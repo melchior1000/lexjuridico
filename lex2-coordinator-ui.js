@@ -1,5 +1,7 @@
 (function(){
 'use strict';
+// Experimental coordinator surface must not replace the approved commercial chat by default.
+if(window.LEX_EXPERIMENTAL_INTERFACE!==true)return;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const context=()=>window.__lexDossierContext?.case_id||'';
