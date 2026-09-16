@@ -5,14 +5,15 @@ const cnj='0001234-56.2026.8.13.0001';
 function setup(response){
  const processos=[{id:42, numero:cnj, nome:'Caso sintético', prazo:'12/10/2026', status:'ATIVO', andamentos:[]}];
  let writes=0;
- const deps={processos,sbReq:async()=>{writes++;return response||{ok:true,body:[{id:42}]};}};
+ const trustedProvenance={authenticated:true,endpoint:'https://pje.tjmg.jus.br/consulta',request_id:'test-pje-request',timestamp_requisicao:'2026-09-08T10:00:00.000Z',timestamp_resposta:'2026-09-08T10:00:01.000Z',raw_receipt:'{"movimento":"Juntada de documento"}',content_type:'application/json',tipo_operacao:'pje_authenticated_import'};
+ const deps={processos,trustedProvenance,sbReq:async()=>{writes++;return response||{ok:true,body:[{id:42}]};}};
  return {deps,processos,writes:()=>writes};
 }
 const evento={cnj,data:'08/09/2026',andamento_texto:'Juntada de documento'};
 test('PJe preserva prazo e status e guarda origem do andamento confirmado',async()=>{
  const {deps,processos}=setup();await applyPjeMovement(deps,evento);
  assert.equal(processos[0].prazo,'12/10/2026');assert.equal(processos[0].status,'ATIVO');
- assert.equal(processos[0].andamentos[0].origem,'pje');
+ assert.equal(processos[0].andamentos[0].origem,'pje');assert.equal(processos[0].court_readings.length,1);
 });
 for(const response of [{ok:false,status:503},{ok:true,body:[]},{ok:true,body:[{id:99}]}]){
  test('PJe não altera memória quando a gravação não é confirmada: '+JSON.stringify(response),async()=>{
@@ -62,7 +63,7 @@ test('Datajud sem configuração não faz rede nem afirma consulta concluída',a
 });
 test('Datajud erro de API não vira resultado vazio bem-sucedido',async()=>{
  const ctx=datajud({httpsPost:async()=>({error:{type:'security_exception'}})});
- assert.equal((await ctx._buscarAndamentosDatajud(cnj)).ok,false);
+ const r=await ctx._buscarAndamentosDatajud(cnj);assert.equal(r.ok,false);
 });
 test('Datajud inclui autorização e seleciona o movimento mais recente',async()=>{
  let headers;
