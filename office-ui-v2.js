@@ -14,11 +14,11 @@ const ACTIVE_PROCESS_KEY='lex_active_process_id';
 const LEGACY_CHAT_PROCESS_KEY='lex_chat_process_id';
 let procTab='todos',procQuery='',prazoTab='hoje';
 
-window.lexGetActiveProcess=function(){try{return String(sessionStorage.getItem(ACTIVE_PROCESS_KEY)||sessionStorage.getItem(LEGACY_CHAT_PROCESS_KEY)||'')}catch{return''}};
+window.lexGetActiveProcess=function(){try{return sessionStorage.getItem(ACTIVE_PROCESS_KEY)||sessionStorage.getItem(LEGACY_CHAT_PROCESS_KEY)||null}catch{return null}};
 window.lexSetActiveProcess=function(id,source='unknown'){
-  const next=String(id||''),previous=window.lexGetActiveProcess();
-  try{sessionStorage.setItem(ACTIVE_PROCESS_KEY,next);sessionStorage.setItem(LEGACY_CHAT_PROCESS_KEY,next)}catch{}
-  if(previous!==next)window.dispatchEvent(new CustomEvent('lex:active-process-changed',{detail:{id:next,previousId:previous,source:String(source||'unknown')}}));
+  const next=id==null||id===''?null:String(id),previous=window.lexGetActiveProcess();
+  try{if(next===null)sessionStorage.removeItem(ACTIVE_PROCESS_KEY);else sessionStorage.setItem(ACTIVE_PROCESS_KEY,next)}catch{}
+  if(previous!==next)window.dispatchEvent(new CustomEvent('lex:active-process-changed',{detail:{id:next,source:String(source||'unknown')}}));
   return next;
 };
 
