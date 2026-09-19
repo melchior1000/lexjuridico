@@ -14,12 +14,13 @@ function chips(id){
     ['Peça','Prepare uma minuta de peça para minha revisão.'],
     ['Risco','Analise os riscos e próximos passos deste caso.'],
     ['Jurisprudência','Pesquise jurisprudência atual e relevante para este caso.'],
-    ['Perícia','Leve este processo para análise pericial e diga o que falta.']
+    ['Levar para perícia','Levar para perícia este processo e dizer o que falta.']
   ]:[
     ['Precisa de mim','O que precisa de mim agora? Diga quem, o que aconteceu e qual ação devo tomar.'],
     ['Mensagens','O que chegou no WhatsApp e Telegram e está aguardando minha decisão?'],
     ['Prazos','Mostre os prazos que exigem atenção, sem inventar prazo não confirmado.'],
-    ['Atualize os processos','Atualize os processos e diga quais precisam de ação agora.']
+    ['Atualize os processos','Atualize os processos e diga quais precisam de ação agora.'],
+    ['Cadastros','O que falta nos cadastros e precisa de providência?']
   ];
   return '<div class="lex2-context-chips">'+c.map(([label,prompt])=>'<button type="button" onclick="lex2Prefill(\''+esc(prompt)+'\')">'+esc(label)+'</button>').join('')+'</div>'
 }
