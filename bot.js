@@ -101,6 +101,7 @@ const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-re
 const http = require('http');
 const {intakeDecision} = require('./lib/intake-door');
 const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-reception');
+const {createTelegramPoller} = require('./lib/telegram-poller');
 
 const {brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
@@ -689,7 +690,6 @@ let ESCRITORIO = {
   segmento: process.env.ESCRITORIO_SEG || 'juridico'
 };
 
-let lastUpdateId = 0;
 let processos = [];
 let processosVersao = 0;            // ⬅ NOVO: timestamp da última atualização (sync entre aparelhos)
 let processosUltimoAparelho = '';   // quem fez a última escrita (pra debug)
@@ -767,6 +767,7 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
     return tg;
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
+const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore});
 let officeProfile={...ESCRITORIO};
 const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
 const taskEngine=new TaskEngine({store:recordStore,processes:async()=>(await processStore.read()).processes,
@@ -9185,24 +9186,6 @@ async function adapterEvolution(body) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// POLLING TELEGRAM
-// ════════════════════════════════════════════════════════════════════════════
-async function poll() {
-  if(!TK) return;
-  try {
-    const data = await requestJson('https://api.telegram.org/bot'+TK+'/getUpdates?offset='+(lastUpdateId+1)+'&timeout=30&allowed_updates='+encodeURIComponent('["message","channel_post"]'), {timeoutMs:40000});
-    if(data.ok && data.result?.length) {
-      for(const u of data.result) {
-        lastUpdateId = u.update_id;
-        const msg = u.message || u.channel_post;
-        if(msg) await adapterTelegram(msg).catch(e=>console.error('Erro Telegram:', e.message));
-      }
-    }
-  } catch(e) { console.error('Poll:', e.message); }
-  setTimeout(poll, 3000);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // SERVIDOR HTTP + API REST
 // ════════════════════════════════════════════════════════════════════════════
 // FIX (PDF grandes): limite elevado para 500MB p/ aceitar lotes e anexos muito grandes.
@@ -12795,9 +12778,10 @@ async function _motorProativoLex() {
     
     // Enviar pro Kleuber via Telegram
     try {
-      await envTelegramAgendado(msg, null, CHAT_ID);
-      console.log('[LEX MOTOR] Relatório enviado ao Telegram.');
-    } catch(e) { console.warn('[LEX MOTOR] Erro ao enviar:', e.message); }
+      const queued = await envTelegramAgendado(msg, null, CHAT_ID);
+      if(queued?.enfileirado) console.log('[LEX MOTOR] Relatório enfileirado para Telegram.');
+      else console.warn('[LEX MOTOR] Relatório não enfileirado para Telegram.');
+    } catch(e) { console.warn('[LEX MOTOR] Falha ao enfileirar relatório:', e.message); }
     
     // Notificar painel via SSE
     try {
@@ -13496,7 +13480,7 @@ async function bootInicio() {
     const avisos = urg.map(a=>(a.dias<0?'🔴 VENCIDO: ':a.dias===0?'🚨 HOJE: ':'⚠️ '+a.dias+'d: ')+a.nome).join('\n');
     await envTelegramAgendado('Sistema ativo. '+processos.length+' processos.\n\n'+avisos);
   }
-  if(TK) poll();
+  await telegramPoller.start();
 }
 bootInicio();
 
@@ -13589,6 +13573,7 @@ if(require.main !== module) {
 // Evita perda de processos em memória ao reiniciar no Render/PM2
 // ════════════════════════════════════════════════════════════════════════════
 async function _gracefulShutdown(signal) {
+  telegramPoller.stop();
   console.log('[Lex] '+signal+' recebido. Salvando dados...');
   const t = setTimeout(()=>{ console.error('[Lex] Timeout no shutdown.'); process.exit(1); }, 10000);
   try { await _persistirProcessosCache(); console.log('[Lex] Processos salvos.'); }
