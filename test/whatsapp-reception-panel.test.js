@@ -19,12 +19,12 @@ function req(url,method='GET'){return {url,method};}
 function resetInbox(){global._whatsappPublicInbox=[];}
 function put(row){global._whatsappPublicInbox.push(row);}
 
-test('recepcao do painel exige administrador',async()=>{
+test('recepcao do painel exige login e aceita equipe autorizada',async()=>{
   resetInbox();
-  for(const profile of [null,'advogado','secretaria']){
+  for(const profile of [null,'admin','advogado','secretaria']){
     const r=response();
     await officeRoutes(req('/api/escritorio/recepcao?status=aguardando_advogado'),r.res,deps(profile));
-    assert.equal(r.get().status,profile?403:401);
+    assert.equal(r.get().status,profile?200:401);
   }
 });
 
