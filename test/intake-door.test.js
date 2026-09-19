@@ -137,7 +137,7 @@ test('adaptador Telegram interrompe texto e documento de terceiro antes do downl
 test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()=>{
   const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
   let calls=0;const sent=[];
-  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},whatsappAccessMode,EVO_INST:'LEX',
+  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},whatsappAccessMode,EVO_INST:'LEX',
     handleWhatsappOperatorCommand:async()=>false,envWhatsApp:async t=>sent.push(t),processarMensagem:async()=>{calls++;}});
   const start=source.indexOf('async function adapterEvolution(');
   const end=source.indexOf('async function ',start+30);
