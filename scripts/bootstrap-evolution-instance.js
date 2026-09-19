@@ -1,3 +1,4 @@
+const {configureWebhook} = require('../lib/whatsapp-pairing');
 const {url:evolutionUrl, key:apiKey, instance:instanceName} = require('../lib/evolution-config').evolutionConfig();
 
 async function request(path, options = {}) {
@@ -32,6 +33,23 @@ function safeBody(body) {
   return 'detalhes_omitidos';
 }
 
+async function ensureWebhook() {
+  const webhookSecret=String(process.env.WHATSAPP_WEBHOOK_SECRET||'').trim();
+  const publicUrl=String(process.env.LEX_PUBLIC_URL||process.env.RENDER_EXTERNAL_URL||'').trim();
+  if(!webhookSecret||!publicUrl){
+    console.log('[LEX Evolution] webhook não revalidado: segredo ou URL pública ausente');
+    return false;
+  }
+  try{
+    await configureWebhook({url:evolutionUrl,key:apiKey,instance:instanceName,webhookSecret,publicUrl});
+    console.log('[LEX Evolution] webhook MESSAGES_UPSERT revalidado');
+    return true;
+  }catch(error){
+    console.log('[LEX Evolution] webhook não confirmado; recepção pode ficar indisponível');
+    return false;
+  }
+}
+
 module.exports = (async () => {
   if (!evolutionUrl || !apiKey) {
     console.log(`[LEX Evolution] configuração ausente; url=${!!evolutionUrl} chave=${!!apiKey}; bootstrap ignorado`);
@@ -54,6 +72,7 @@ module.exports = (async () => {
     });
     if (exists) {
       console.log(`[LEX Evolution] instância ${instanceName} já existe`);
+      await ensureWebhook();
       return;
     }
 
@@ -72,6 +91,7 @@ module.exports = (async () => {
       return;
     }
     console.log(`[LEX Evolution] instância ${instanceName} criada`);
+    await ensureWebhook();
   } catch (error) {
     const reason = error && error.name === 'AbortError' ? 'timeout de 25s' : 'falha de rede ou resposta inválida';
     console.log(`[LEX Evolution] bootstrap falhou sem derrubar o LEX: ${reason}`);
