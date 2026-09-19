@@ -1,7 +1,16 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {pairing}=require('../lib/whatsapp-pairing');const {setup}=require('./runtime');
+const {pairing,configureWebhook}=require('../lib/whatsapp-pairing');const {setup}=require('./runtime');
 const config={url:'https://evo.invalid/prefix',key:'test-key',instance:'LEX-JURIDICO',webhookSecret:'test-webhook',publicUrl:'https://lex.invalid'};
+test('revalidação do webhook funciona sem gerar QR nem reconectar instância',async()=>{
+  const calls=[];
+  assert.equal(await configureWebhook(config,async(url,opts)=>{calls.push({url,...opts});return {ok:true};}),true);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,'https://evo.invalid/prefix/webhook/set/LEX-JURIDICO');
+  assert.equal(calls[0].data.webhook.url,'https://lex.invalid/api/webhook-whatsapp');
+  assert.deepEqual(calls[0].data.webhook.events,['MESSAGES_UPSERT']);
+});
+
 test('pareamento configura webhook autenticado e só devolve QR',async()=>{
   const calls=[];const result=await pairing(config,async(url,opts)=>{calls.push({url,...opts});return {base64:'data:image/png;base64,YQ==',apikey:'secret-not-returned'};});
   assert.equal(calls[0].url,'https://evo.invalid/prefix/webhook/set/LEX-JURIDICO');
