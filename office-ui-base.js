@@ -22,6 +22,13 @@ function lexTaskCard(t) {
     ${['falhou','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao'].includes(t.status)?`<button class="btn-outline" onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`:''}
     </div></article>`;
 }
+function lexApplyServerCounts(data){
+  const counts=data?.contagens||{};
+  for(const key of ['autuacao','judicial','administrativo','urgentes']){
+    const el=document.getElementById('work-count-'+key);
+    if(el&&Number.isFinite(Number(counts[key])))el.textContent=String(Number(counts[key]));
+  }
+}
 async function renderTrabalho() {
   clearTimeout(lexWorkTimer);
   const host=document.getElementById('content');
@@ -44,6 +51,7 @@ async function renderTrabalho() {
   const surface=document.getElementById('work-home');
   try {
     const data=await lexApi('/api/trabalho');if(!surface.isConnected) return;
+    lexApplyServerCounts(data);
     document.getElementById('work-connection').textContent='Servidor confirmado · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('work-tasks').innerHTML=data.tarefas.length?data.tarefas.map(lexTaskCard).join(''):'<div class="work-empty"><strong>Nenhuma tarefa pendente.</strong><p>Selecione um processo e dê a primeira ordem ao LEX.</p></div>';
     if(!data.ia_configurada) document.getElementById('work-feedback').textContent='Configure a IA no servidor. As ordens ficam salvas enquanto isso.';
@@ -56,6 +64,7 @@ async function lexPollTasks() {
   try {
     const d=await lexApi('/api/trabalho');
     if(pag!=='trabalho') return;
+    lexApplyServerCounts(d);
     document.getElementById('work-tasks').innerHTML=d.tarefas.map(lexTaskCard).join('');
     if(d.tarefas.some(t=>['na_fila','executando'].includes(t.status))) lexWorkTimer=setTimeout(lexPollTasks,5000);
   }catch(e){const h=document.getElementById('work-connection');if(h) h.textContent=e.message;}
