@@ -1,6 +1,6 @@
 /* Interface de trabalho: usa os controles e temas do LEX existente. */
 let lexWorkTimer=null;
-const lexTaskStatus={na_fila:'Na fila',executando:'Em execução',aguardando_dados:'Precisa de informação',aguardando_configuracao:'Configuração pendente',aguardando_revisao:'Revisar entrega',concluida:'Concluída',falhou:'Falhou'};
+const lexTaskStatus={na_fila:'Na fila',executando:'Em execução',aguardando_dados:'Precisa de informação',aguardando_documento_nitido:'Documento legível necessário',aguardando_configuracao:'Configuração pendente',aguardando_revisao:'Revisar entrega',concluida:'Concluída',falhou:'Falhou'};
 async function lexApi(path,options={}) {
   const response=await fetchComTimeout(SERVIDOR+path,{...options,headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken(),...(options.headers||{})}},30000);
   const data=await response.json();
@@ -19,8 +19,15 @@ function lexTaskCard(t) {
     ${t.pendencia?`<p>${lexEscape(t.pendencia)}</p>`:''}<div class="work-actions">
     ${t.tem_documento||t.resultado?`<button class="btn-outline" onclick="lexDownloadTask('${t.id}')">Baixar Word</button>`:''}
     ${t.status==='aguardando_revisao'?`<button class="btn-outline" onclick="lexReviewTask('${t.id}')">Conferi a minuta</button>`:''}
-    ${['falhou','aguardando_dados','aguardando_configuracao'].includes(t.status)?`<button class="btn-outline" onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`:''}
+    ${['falhou','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao'].includes(t.status)?`<button class="btn-outline" onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`:''}
     </div></article>`;
+}
+function lexApplyServerCounts(data){
+  const counts=data?.contagens||{};
+  for(const key of ['autuacao','judicial','administrativo','urgentes']){
+    const el=document.getElementById('work-count-'+key);
+    if(el&&Number.isFinite(Number(counts[key])))el.textContent=String(Number(counts[key]));
+  }
 }
 async function renderTrabalho() {
   clearTimeout(lexWorkTimer);
@@ -44,6 +51,7 @@ async function renderTrabalho() {
   const surface=document.getElementById('work-home');
   try {
     const data=await lexApi('/api/trabalho');if(!surface.isConnected) return;
+    lexApplyServerCounts(data);
     document.getElementById('work-connection').textContent='Servidor confirmado · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('work-tasks').innerHTML=data.tarefas.length?data.tarefas.map(lexTaskCard).join(''):'<div class="work-empty"><strong>Nenhuma tarefa pendente.</strong><p>Selecione um processo e dê a primeira ordem ao LEX.</p></div>';
     if(!data.ia_configurada) document.getElementById('work-feedback').textContent='Configure a IA no servidor. As ordens ficam salvas enquanto isso.';
@@ -56,6 +64,7 @@ async function lexPollTasks() {
   try {
     const d=await lexApi('/api/trabalho');
     if(pag!=='trabalho') return;
+    lexApplyServerCounts(d);
     document.getElementById('work-tasks').innerHTML=d.tarefas.map(lexTaskCard).join('');
     if(d.tarefas.some(t=>['na_fila','executando'].includes(t.status))) lexWorkTimer=setTimeout(lexPollTasks,5000);
   }catch(e){const h=document.getElementById('work-connection');if(h) h.textContent=e.message;}
@@ -117,14 +126,17 @@ function lexReceptionTime(value){
   return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
 function lexReceptionCard(item,archived=false){
-  const number=lexEscape(String(item.numero||''));
+  const origem=String(item.origem||'whatsapp'),id=String(item.id||item.numero||'');
+  const safeOrigin=lexEscape(origem),safeId=lexEscape(id);
   const badge=item.urgente?'URGENTE':lexEscape(String(item.classe||'geral').toUpperCase());
+  const canal=origem==='telegram'?'Telegram':'WhatsApp';
   return `<article class="lex-reception-card ${item.urgente?'is-urgent':''}">
     <div class="lex-reception-head"><strong>${lexEscape(item.nome||'Contato')}</strong><span>${badge}</span></div>
-    <div class="lex-reception-number">${number}</div>
+    <div class="lex-reception-number">${lexEscape(canal)} · ${safeId}</div>
     <p>${lexEscape(item.ultima_mensagem||'Sem texto')}</p>
     <div class="lex-reception-meta"><span>${lexReceptionTime(item.atualizado_em)}</span><span>${Number(item.contador)||1} msg</span></div>
-    ${archived?'':`<button class="btn-outline" onclick="lexArchiveReception('${number}')">Arquivar</button>`}
+    <div class="work-actions"><button class="btn-outline" onclick="lexOpenReceptionConversation('${safeOrigin}','${safeId}')">Conversar</button>
+    ${archived?'':`<button class="btn-outline" onclick="lexArchiveReception('${safeOrigin}','${safeId}')">Arquivar</button>`}</div>
   </article>`;
 }
 function lexReceptionColumn(title,items,archived=false){
@@ -133,7 +145,7 @@ function lexReceptionColumn(title,items,archived=false){
 }
 async function renderRecepcaoLex(){
   const host=document.getElementById('content');if(!host)return;
-  host.innerHTML='<section class="work-home"><div class="work-title"><div><div class="work-eyebrow">WhatsApp do escritório</div><h1>Recepção</h1><p>Contatos externos aguardando sua análise. Esta tela não abre processos nem libera dados jurídicos.</p></div><button class="btn-outline" onclick="renderRecepcaoLex()">Atualizar</button></div><div id="lex-reception-status" class="work-notice">Consultando a recepção persistente…</div><div id="lex-reception-grid" class="lex-reception-grid"></div></section>';
+  host.innerHTML='<section class="work-home"><div class="work-title"><div><div class="work-eyebrow">Ouvidos e voz do LEX</div><h1>Recepção</h1><p>Contatos externos aguardando sua análise. Esta tela não abre processos nem libera dados jurídicos.</p></div><button class="btn-outline" onclick="renderRecepcaoLex()">Atualizar</button></div><div id="lex-reception-status" class="work-notice">Consultando a recepção persistente…</div><div id="lex-reception-grid" class="lex-reception-grid"></div></section>';
   const grid=document.getElementById('lex-reception-grid'),status=document.getElementById('lex-reception-status');
   try{
     const [urgent,waiting,admin,archived]=await Promise.all([
@@ -144,13 +156,23 @@ async function renderRecepcaoLex(){
     ]);
     if(!grid.isConnected)return;
     grid.innerHTML=lexReceptionColumn('Urgentes',urgent.contatos||[])+lexReceptionColumn('Aguardando você',waiting.contatos||[])+lexReceptionColumn('Administrativos',admin.contatos||[])+lexReceptionColumn('Arquivados',archived.contatos||[],true);
-    status.textContent='Fonte: Supabase · atualização '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'. Para responder pelo WhatsApp do escritório, use /responder NUMERO mensagem no seu 7171.';
+    status.textContent='WhatsApp + Telegram · mesma Recepção do LEX · atualização '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'.';
   }catch(e){if(status.isConnected)status.textContent=e.message;}
 }
-async function lexArchiveReception(numero){
+async function lexArchiveReception(origem,id){
   if(!confirm('Arquivar este contato da recepção?')) return;
-  try{await lexApi('/api/escritorio/recepcao/arquivar',{method:'POST',body:JSON.stringify({numero})});await renderRecepcaoLex();}
+  try{await lexApi('/api/escritorio/recepcao/arquivar',{method:'POST',body:JSON.stringify({origem,id})});await renderRecepcaoLex();}
   catch(e){toast(e.message,'erro');}
+}
+async function lexOpenReceptionConversation(origem,id){
+  try{
+    const d=await lexApi('/api/escritorio/recepcao/historico?origem='+encodeURIComponent(origem)+'&id='+encodeURIComponent(id));
+    const lines=(d.historico||[]).map(x=>(x.direcao==='entrada'?'Contato':x.direcao==='saida_operador'?'Você':'LEX')+': '+String(x.texto||'')).join('\n\n');
+    const reply=prompt((lines||'Sem histórico registrado.')+'\n\nResposta exata pelo '+(origem==='telegram'?'Telegram':'WhatsApp')+':');
+    if(reply==null||!reply.trim())return;
+    await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:reply.trim()})});
+    toast('Resposta confirmada pelo canal.','ok');await renderRecepcaoLex();
+  }catch(e){toast(e.message,'erro');}
 }
 function lexOpenReception(btn){
   if(typeof pag!=='undefined')pag='recepcao';
