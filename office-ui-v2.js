@@ -10,7 +10,7 @@ const openProc=id=>{if(typeof abrirProc==='function')abrirProc(id)};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000)};
 const active=p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''));
 const CHAT_HISTORY_LIMIT=20;
-let procTab='todos',procQuery='',prazoTab='hoje';
+let procTab='todos',procQuery='',prazoTab='hoje',inboxFilter='todos',inboxActive=null,inboxTimer=null,inboxContacts=[];
 
 function chatHistoryKey(id){return 'lex_chat_history_'+(id?'process_'+String(id):'general')}
 function loadChatHistory(id){try{const raw=sessionStorage.getItem(chatHistoryKey(id));const items=raw?JSON.parse(raw):[];if(!Array.isArray(items))return[];return items.filter(m=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string'&&m.content.trim()).slice(-CHAT_HISTORY_LIMIT)}catch{return[]}}
@@ -42,7 +42,7 @@ function syncLegacyThemeButton(){
   }
 }
 function dock(on){return '<nav class="lex-dock"><button '+(on==='home'?'class="on"':'')+' onclick="lexHome()"><b>⌂</b><span>Início</span></button><button '+(on==='processos'?'class="on"':'')+' onclick="lexProcessos()"><b>▣</b><span>Processos</span></button><button class="lex-main '+(on==='lex'?'on':'')+'" onclick="lexChat()"><b>◉</b><span>LEX</span></button><button '+(on==='prazos'?'class="on"':'')+' onclick="lexPrazos()"><b>◷</b><span>Prazos</span></button><button '+(on==='mais'?'class="on"':'')+' onclick="lexMais()"><b>☰</b><span>Mais</span></button></nav>'}
-function shell(title,body,on){const host=$('#content');if(!host)return;document.body.classList.add('lex-commercial');host.innerHTML='<main class="lex-screen"><header class="lex-top"><div><strong>LEX</strong><small>ESCRITÓRIO VIRTUAL INTELIGENTE</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="typeof toggleSidebar===\'function\'&&toggleSidebar()">☰</button></div></header>'+body+dock(on)+'</main>';const t=$('#page-title');if(t)t.textContent=title}
+function shell(title,body,on){if(inboxTimer){clearInterval(inboxTimer);inboxTimer=null}const host=$('#content');if(!host)return;document.body.classList.add('lex-commercial');host.innerHTML='<main class="lex-screen"><header class="lex-top"><div><strong>LEX</strong><small>ESCRITÓRIO VIRTUAL INTELIGENTE</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="typeof toggleSidebar===\'function\'&&toggleSidebar()">☰</button></div></header>'+body+dock(on)+'</main>';const t=$('#page-title');if(t)t.textContent=title}
 function badge(d){if(d===9999)return '';if(d<0)return '<em class="late">Vencido</em>';if(d===0)return '<em class="urgent">Prazo hoje</em>';if(d<=2)return '<em class="urgent">'+d+' dias</em>';if(d<=7)return '<em class="soon">'+d+' dias</em>';return '<em class="ok">Em curso</em>'}
 function procRows(list){return list.slice(0,30).map(p=>'<button class="lex-proc-row" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><span class="bar"></span><span><code>'+esc(p.numero||'sem número')+'</code><strong>'+esc(p.nome||p.partes||'Processo')+'</strong><small>'+esc(p.tribunal||p.area||p.assunto||'')+'</small><span class="chips">'+badge(days(p))+'</span></span><b>›</b></button>').join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>'}
 function filteredProcesses(){let list=procs();if(procTab==='ativos')list=list.filter(active);else if(procTab==='prazos')list=list.filter(p=>days(p)<=7);if(procQuery)list=list.filter(p=>[p.nome,p.numero,p.partes,p.assunto,p.area,p.tribunal,p.status].join(' ').toLowerCase().includes(procQuery));return list}
@@ -95,6 +95,71 @@ window.lexStartVoice=function(){const SR=window.SpeechRecognition||window.webkit
 window.lexChat=function(selectedId){const items=procs();let saved='';try{saved=String(selectedId||sessionStorage.getItem('lex_chat_process_id')||'')}catch{saved=String(selectedId||'')}if(saved&&!items.some(p=>String(p.id)===saved))saved='';window.lexSelectChatProcess(saved);const history=chatHistoryHtml(saved);const body='<div class="lex-chat-head">'+bot()+'<div><h1>Olá, Dr. '+esc(first())+'!</h1><p>Como posso ajudar hoje?</p></div></div><div class="lex-search lex-chat-context"><span>⚖</span><select id="lex-chat-process" onchange="lexSwitchChatProcess(this.value)" style="width:100%;min-height:44px;background:transparent;border:0;color:inherit;outline:0"><option value="">Conversa geral — sem processo</option>'+items.slice(0,150).map(p=>'<option value="'+esc(String(p.id))+'" '+(String(p.id)===saved?'selected':'')+'>'+esc((p.numero||'sem número')+' · '+(p.nome||p.partes||'Processo'))+'</option>').join('')+'</select></div><div class="lex-chat-shortcuts"><button onclick="lexPrefill(\'Analise o processo selecionado e a última decisão.\')">⚖ Analisar processo</button><button onclick="lexPrefill(\'Prepare uma minuta de peça para minha revisão.\')">📄 Minuta de peça</button><button onclick="lexPrazos()">◷ Ver prazos</button><button onclick="lexPrefill(\'Analise os riscos e próximos passos deste caso.\')">♟ Analisar risco</button><button onclick="lexPrefill(\'Pesquise jurisprudência atual e relevante para este caso.\')">⌕ Jurisprudência</button><button onclick="lexEscritorio()">▦ Setores</button></div><div class="lex-conversation" id="lex-conversation"><div class="lex-msg bot">Sou o LEX. Posso analisar casos, organizar prazos e acionar os agentes certos. As entregas relevantes continuam sob sua revisão.</div>'+history+'</div><form class="lex-chatbar" onsubmit="lexSendChat(event)"><textarea id="lex-chat-input" rows="1" placeholder="Digite sua mensagem..."></textarea><button id="lex-mic-btn" type="button" title="Falar" onclick="lexStartVoice()">🎙</button><button type="submit">↑</button></form><div class="lex-suggestion"><b>💡 Sugestão do LEX</b><span>Quer que eu organize primeiro os casos com prazo crítico?</span><button onclick="lexPrazos()">Ver prazos</button></div>';shell('LEX',body,'lex');setTimeout(()=>{const c=$('#lex-conversation');if(c)c.scrollTop=c.scrollHeight;$('#lex-chat-input')?.focus()},60)};
 window.lexPrefill=t=>{const i=$('#lex-chat-input');if(i){i.value=t;i.focus()}};
 window.lexSendChat=async function(e){e?.preventDefault();const input=$('#lex-chat-input'),box=$('#lex-conversation');const text=input?.value.trim();if(!text||!box)return;const selected=String($('#lex-chat-process')?.value||'');const process=procs().find(p=>String(p.id)===selected)||null;if(selected&&!process){box.insertAdjacentHTML('beforeend','<div class="lex-msg bot error">O processo selecionado não está mais disponível. Atualize a carteira e selecione novamente.</div>');return}window.lexSelectChatProcess(selected);const historico=loadChatHistory(selected);box.insertAdjacentHTML('beforeend','<div class="lex-msg me">'+esc(text)+'</div>');input.value='';box.insertAdjacentHTML('beforeend','<div class="lex-msg bot pending" id="lex-pending">LEX está analisando…</div>');box.scrollTop=box.scrollHeight;try{const payload={mensagem:text,historico};if(process){payload.processo_id=process.id;payload.numero_processo=process.numero||null;payload.processo_nome=process.nome||process.partes||null;payload.setor=process.setor||null}const d=await lexApi('/api/vivo/conversar',{method:'POST',body:JSON.stringify(payload)});const ans=d?.resposta||d?.reply||d?.mensagem||d?.texto||d?.resultado||d?.content||'Recebi a ordem. Vou organizar isso dentro do fluxo do escritório.';const answer=typeof ans==='string'?ans:JSON.stringify(ans);$('#lex-pending')?.remove();box.insertAdjacentHTML('beforeend','<div class="lex-msg bot">'+esc(answer)+'</div>');saveChatHistory(selected,[...historico,{role:'user',content:text},{role:'assistant',content:answer}])}catch(err){$('#lex-pending')?.remove();box.insertAdjacentHTML('beforeend','<div class="lex-msg bot error">Não consegui concluir a conversa agora: '+esc(err.message||'falha no servidor')+'.</div>')}box.scrollTop=box.scrollHeight};
+
+function inboxKey(x){return String(x?.origem||'whatsapp')+':'+String(x?.id||x?.numero||'')}
+function inboxTime(v){if(!v)return'';const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+function inboxIcon(o){return o==='telegram'?'✈':'◉'}
+function inboxLabel(o){return o==='telegram'?'Telegram':'WhatsApp'}
+function inboxFiltered(){return inboxContacts.filter(x=>inboxFilter==='todos'||x.origem===inboxFilter)}
+function inboxListHtml(){
+  const list=inboxFiltered();
+  return list.length?list.map(x=>{
+    const key=inboxKey(x),active=inboxActive===key?' on':'',urgent=x.urgente?' urgent':'';
+    return '<button class="lex-inbox-contact'+active+urgent+'" onclick="lexInboxOpen(\''+esc(x.origem)+'\',\''+esc(x.id||x.numero||'')+'\')"><span class="lex-channel-dot '+esc(x.origem)+'">'+inboxIcon(x.origem)+'</span><span><strong>'+esc(x.nome||'Contato')+'</strong><small>'+esc(x.ultima_mensagem||'Sem mensagem')+'</small></span><em>'+esc(inboxTime(x.atualizado_em))+'</em></button>';
+  }).join(''):'<div class="lex-empty">Nenhuma conversa neste canal.</div>';
+}
+function inboxEmptyChat(){return '<div class="lex-inbox-empty-chat"><b>Mensagens do escritório</b><span>Escolha uma conversa. WhatsApp e Telegram ficam na mesma mesa, sem misturar os canais.</span></div>'}
+function inboxChatHeader(item){return '<header class="lex-inbox-chat-head"><button class="lex-inbox-back" onclick="lexInboxBack()">‹</button><span class="lex-channel-dot '+esc(item.origem)+'">'+inboxIcon(item.origem)+'</span><div><strong>'+esc(item.nome||'Contato')+'</strong><small>'+inboxLabel(item.origem)+' · '+esc(item.id||item.numero||'')+'</small></div><button title="Atualizar conversa" onclick="lexInboxOpen(\''+esc(item.origem)+'\',\''+esc(item.id||item.numero||'')+'\')">↻</button></header>'}
+function inboxMessagesHtml(rows){
+  return (rows||[]).map(m=>{
+    const mine=m.direcao!=='entrada',who=m.direcao==='saida_lex'?'LEX':m.direcao==='saida_operador'?'Equipe':'Contato';
+    return '<div class="lex-inbox-msg '+(mine?'mine':'theirs')+'"><small>'+who+'</small><span>'+esc(m.texto||'')+'</span><time>'+esc(inboxTime(m.criado_em))+'</time></div>';
+  }).join('')||'<div class="lex-empty">Ainda não há histórico persistido desta conversa.</div>';
+}
+async function loadInboxContacts(){
+  const statuses=['urgente','aguardando_advogado','administrativo','arquivado'];
+  const data=await Promise.all(statuses.map(s=>lexApi('/api/escritorio/recepcao?status='+s)));
+  const map=new Map();
+  data.flatMap(d=>d.contatos||[]).forEach(x=>{const k=inboxKey(x),old=map.get(k);if(!old||String(x.atualizado_em||'')>String(old.atualizado_em||''))map.set(k,x)});
+  inboxContacts=[...map.values()].sort((a,b)=>Number(b.urgente)-Number(a.urgente)||String(b.atualizado_em||'').localeCompare(String(a.atualizado_em||'')));
+  return inboxContacts;
+}
+function inboxRenderList(){const h=$('#lex-inbox-list');if(h)h.innerHTML=inboxListHtml();const count=$('#lex-inbox-count');if(count)count.textContent=String(inboxFiltered().length)}
+window.lexInbox=async function(filter='todos'){
+  inboxFilter=['todos','whatsapp','telegram'].includes(filter)?filter:'todos';
+  const body='<div class="lex-page-head lex-inbox-title"><div><small>Central de comunicação</small><h1>Mensagens</h1></div><span id="lex-inbox-count">0</span></div><div class="lex-tabs lex-inbox-tabs"><button class="'+(inboxFilter==='todos'?'on':'')+'" onclick="lexInbox(\'todos\')">Todas</button><button class="'+(inboxFilter==='whatsapp'?'on':'')+'" onclick="lexInbox(\'whatsapp\')">◉ WhatsApp</button><button class="'+(inboxFilter==='telegram'?'on':'')+'" onclick="lexInbox(\'telegram\')">✈ Telegram</button></div><section class="lex-inbox-shell" id="lex-inbox-shell"><aside class="lex-inbox-list" id="lex-inbox-list"><div class="lex-empty">Carregando conversas…</div></aside><main class="lex-inbox-chat" id="lex-inbox-chat">'+inboxEmptyChat()+'</main></section>';
+  shell('Mensagens',body,'mais');
+  try{
+    await loadInboxContacts();inboxRenderList();
+    const visible=inboxFiltered();
+    const selected=visible.find(x=>inboxKey(x)===inboxActive);
+    if(selected&&matchMedia('(min-width: 701px)').matches)await window.lexInboxOpen(selected.origem,selected.id||selected.numero);
+    else if(!inboxActive&&visible[0]&&matchMedia('(min-width: 701px)').matches)await window.lexInboxOpen(visible[0].origem,visible[0].id||visible[0].numero);
+    inboxTimer=setInterval(async()=>{try{await loadInboxContacts();inboxRenderList()}catch{}},5000);
+  }catch(e){const h=$('#lex-inbox-list');if(h)h.innerHTML='<div class="lex-empty">'+esc(e.message||'Não foi possível carregar as conversas.')+'</div>'}
+};
+window.lexInboxOpen=async function(origem,id){
+  const key=origem+':'+id;inboxActive=key;inboxRenderList();
+  const shellEl=$('#lex-inbox-shell'),chat=$('#lex-inbox-chat');if(!chat)return;
+  const item=inboxContacts.find(x=>inboxKey(x)===key)||{origem,id,nome:'Contato'};
+  shellEl?.classList.add('has-active');chat.innerHTML=inboxChatHeader(item)+'<div class="lex-inbox-thread"><div class="lex-empty">Carregando histórico…</div></div>';
+  try{
+    const d=await lexApi('/api/escritorio/recepcao/historico?origem='+encodeURIComponent(origem)+'&id='+encodeURIComponent(id));
+    const thread=$('.lex-inbox-thread',chat);if(thread){thread.innerHTML=inboxMessagesHtml(d.historico||[]);thread.scrollTop=thread.scrollHeight}
+    chat.insertAdjacentHTML('beforeend','<form class="lex-inbox-compose" onsubmit="lexInboxSend(event,\''+esc(origem)+'\',\''+esc(id)+'\')"><textarea id="lex-inbox-text" rows="1" maxlength="3500" placeholder="Mensagem pelo '+inboxLabel(origem)+'…"></textarea><button type="submit" aria-label="Enviar">↑</button></form>');
+    $('#lex-inbox-text')?.focus();
+  }catch(e){const thread=$('.lex-inbox-thread',chat);if(thread)thread.innerHTML='<div class="lex-empty">'+esc(e.message||'Falha ao carregar histórico.')+'</div>'}
+};
+window.lexInboxSend=async function(e,origem,id){
+  e?.preventDefault();const input=$('#lex-inbox-text'),btn=e?.submitter,text=String(input?.value||'').trim();if(!text)return;
+  if(btn)btn.disabled=true;if(input)input.disabled=true;
+  try{
+    await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text})});
+    await loadInboxContacts();await window.lexInboxOpen(origem,id);inboxRenderList();
+  }catch(err){if(input){input.disabled=false;input.focus()}if(btn)btn.disabled=false;typeof toast==='function'?toast(err.message||'Envio não confirmado.','erro'):alert(err.message||'Envio não confirmado.')}
+};
+window.lexInboxBack=function(){inboxActive=null;$('#lex-inbox-shell')?.classList.remove('has-active');const chat=$('#lex-inbox-chat');if(chat)chat.innerHTML=inboxEmptyChat();inboxRenderList()};
+
 window.lexMais=function(){const body='<div class="lex-page-head"><div><small>Funções complementares</small><h1>Mais</h1></div><button onclick="lexToggleTheme()">◐</button></div><div class="lex-menu"><button onclick="goLex(\'agenda\')">👥<span>Clientes / Contatos</span><b>›</b></button><button onclick="goLex(\'calendario\')">📅<span>Agenda</span><b>›</b></button><button onclick="goLex(\'autuacao\')">📄<span>Documentos / Autuação</span><b>›</b></button><button disabled title="Módulo financeiro ainda não possui rota comercial própria">＄<span>Financeiro · em breve</span><b>·</b></button><button onclick="goLex(\'estatisticas\')">▥<span>Relatórios / Estatísticas</span><b>›</b></button><button onclick="lexEscritorio()">▦<span>Escritório / Setores</span><b>›</b></button><button onclick="goLex(\'escritorio\')">⚙<span>Configurações do escritório</span><b>›</b></button></div><h2 class="lex-channel-title">Canais de comunicação</h2><div class="lex-channels"><button onclick="goLex(\'whatsapp\')">🟢<span>WhatsApp</span></button><button onclick="goLex(\'telegram\')">🔵<span>Telegram</span></button><button onclick="goLex(\'mensagens\')">✉️<span>Mensagens</span></button><button onclick="goLex(\'pje\')">Pe<span>PJe</span></button></div>';shell('Mais',body,'mais')};
 window.goLex=p=>go(p);
 window.renderPainel=home;window.renderTrabalho=window.lexTarefas;window.renderProcessos=window.lexProcessos;window.renderPrazos=window.lexPrazos;window.lexFocusV2=window.lexChat;
