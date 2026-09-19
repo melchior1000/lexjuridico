@@ -42,3 +42,49 @@ test('fallback em memoria preserva recepcao quando banco falha',async()=>{
   assert.equal(await store.archive('5561977777777'),true);
   assert.equal((await store.list()).length,0);
 });
+
+test('busca por nome encontra contato unico apos mais de 100 registros',async()=>{
+  const rows=Array.from({length:151},(_,i)=>({numero:String(5561981000000+i),nome:'Contato '+i}));
+  rows[150].nome='  Ána   Maria  ';
+  let calls=0;
+  const store=createReceptionStore({request:async(method,table,data,query)=>{
+    calls++;
+    assert.equal(method,'GET');
+    assert.equal(table,'whatsapp_recepcao_publica');
+    assert.equal(query.status,'eq.aguardando_advogado');
+    assert.equal(query.order,'numero.asc');
+    const after=query.numero?.slice(3)||'';
+    return {ok:true,status:200,body:rows.filter(row=>row.numero>after).slice(0,Number(query.limit))};
+  }});
+  assert.deepEqual(await store.findWaitingByName('Ana Maria'),[rows[150]]);
+  assert.equal(calls,3);
+});
+
+test('busca por nome nao usa cache parcial quando banco falha',async()=>{
+  global._whatsappPublicInbox=[{numero:'5561981111111',nome:'Ana',status:'aguardando_advogado'}];
+  const store=createReceptionStore({request:async()=>({ok:false,status:503,body:null})});
+  await assert.rejects(store.findWaitingByName('Ana'),/banco indisponivel/);
+});
+
+test('busca rejeita pagina repetida sem concluir unicidade ou entrar em loop',async()=>{
+  let calls=0;
+  const store=createReceptionStore({request:async()=>{
+    calls++;
+    return {ok:true,status:200,body:[{numero:'5561981111111',nome:'Ana'}]};
+  }});
+  await assert.rejects(store.findWaitingByName('Ana'),/sem progresso/);
+  assert.equal(calls,2);
+});
+
+test('busca encerra assim que comprova dois candidatos',async()=>{
+  let calls=0;
+  const store=createReceptionStore({request:async()=>{
+    calls++;
+    return {ok:true,status:200,body:[
+      {numero:'5561981111111',nome:'Ana Maria'},
+      {numero:'5561982222222',nome:'Ana Souza'}
+    ]};
+  }});
+  assert.equal((await store.findWaitingByName('Ana')).length,2);
+  assert.equal(calls,1);
+});
