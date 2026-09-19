@@ -127,7 +127,7 @@ Integração com PJe (Processo Judicial Eletrônico):
 - Sempre diga a próxima ação concreta derivada do movimento PJe importado.
 
 Linguagem com o usuário — regras de ouro para uso profissional:
-- Fale como advogado parceiro, nunca como sistema ou robô.
+- Fale como parceiro jurídico experiente, nunca como sistema ou robô.
 - Evite jargão de TI: sem "endpoint", "payload", "API", "tool", "módulo".
 - Quando houver incerteza, pergunte antes de propor. Nunca faça suposições silenciosas sobre fatos.
 - Use frases curtas. Português claro. Pontos concretos. O usuário está no calor do trabalho.
@@ -697,6 +697,42 @@ function erroSeguro(msg) {
   return s.length > 300 ? s.slice(0, 300) + '...' : s;
 }
 
+function erroAnthropicIndisponivel(error) {
+  const msg=String(error?.message||'').toLowerCase();
+  return error?.status===402 || msg.includes('credit balance') || msg.includes('billing') || msg.includes('insufficient') || msg.includes('quota');
+}
+
+function chamarOpenAIFallback(deps,payload) {
+  const key=process.env.OPENAI_API_KEY||'';
+  if(!key) throw new Error('IA principal indisponível e fallback não configurado.');
+  const tools=(payload.tools||[]).filter(t=>t?.name).map(t=>({type:'function',function:{name:t.name,description:t.description||'',parameters:t.input_schema||{type:'object',properties:{}}}}));
+  const messages=[];
+  if(payload.system) messages.push({role:'system',content:payload.system});
+  for(const m of payload.messages||[]) {
+    if((m.role==='user'||m.role==='assistant')&&typeof m.content==='string') messages.push({role:m.role,content:m.content});
+  }
+  const body=JSON.stringify({model:process.env.LEX_OPENAI_MODEL_TOP||'gpt-4.1',max_tokens:payload.max_tokens||4096,messages,...(tools.length?{tools,tool_choice:'auto'}:{})});
+  return aiAdmission.run(()=>new Promise((resolve,reject)=>{
+    const req=deps.https.request({hostname:'api.openai.com',path:'/v1/chat/completions',method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+key,'content-length':Buffer.byteLength(body)}},r=>{
+      let data='';r.on('data',x=>data+=x);r.on('end',()=>{
+        try{
+          const parsed=JSON.parse(data||'{}');
+          if(r.statusCode<200||r.statusCode>=300||parsed.error) return reject(new Error('Fallback de IA indisponível.'));
+          const msg=parsed.choices?.[0]?.message||{};
+          const toolsUsadas=(msg.tool_calls||[]).filter(x=>x?.function?.name).map(x=>{
+            let input={};try{input=JSON.parse(x.function.arguments||'{}')}catch{}
+            return {id:x.id,name:x.function.name,input};
+          });
+          resolve({texto:String(msg.content||'').trim(),toolsUsadas,buscasWeb:[],stop_reason:'fallback_openai'});
+        }catch{return reject(new Error('Fallback de IA retornou resposta inválida.'))}
+      });
+    });
+    req.on('error',()=>reject(new Error('Fallback de IA sem conexão.')));
+    req.setTimeout(60000,()=>{req.destroy();reject(new Error('Fallback de IA excedeu o tempo de resposta.'))});
+    req.write(body);req.end();
+  }));
+}
+
 // =====================================================================
 // RESOLVER LOOP DE TOOL_USE
 // Envia tool_result de volta quando stop_reason='tool_use'.
@@ -705,8 +741,15 @@ function erroSeguro(msg) {
 async function resolverToolUse(deps, payload) {
   const maxLoops = (typeof MAX_TOOL_LOOPS !== 'undefined') ? MAX_TOOL_LOOPS : 3;
   payload = {...payload, system: (payload.system || '') + '\nREGRA DE EXECUCAO: uma proposta preparada ainda nao foi aplicada. So afirme que houve gravacao quando a ferramenta comprovar persistencia. Ferramentas desconhecidas ou com erro nao foram executadas.'};
-  let resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, payload);
-  let resultado = extrairRespostaModelo(resposta);
+  let resposta,resultado;
+  try {
+    resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, payload);
+    resultado = extrairRespostaModelo(resposta);
+  } catch(error) {
+    if(!erroAnthropicIndisponivel(error)) throw error;
+    console.warn('[VIVO] Anthropic sem crédito/quota; usando fallback OpenAI.');
+    return chamarOpenAIFallback(deps,payload);
+  }
   let textoAcumulado = resultado.texto;
   const todasTools = resultado.toolsUsadas.slice();
   const todasBuscas = (resultado.buscasWeb || []).slice();
