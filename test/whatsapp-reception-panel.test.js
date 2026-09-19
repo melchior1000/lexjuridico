@@ -54,5 +54,5 @@ test('interface possui Recepcao, quatro colunas e nao envia resposta direta',()=
   for(const label of ['Urgentes','Aguardando você','Administrativos','Arquivados']) assert.match(js,new RegExp(label));
   assert.match(js,/\/api\/escritorio\/recepcao\/arquivar/);
   assert.doesNotMatch(js,/recepcao[^\n]{0,120}message\/sendText/i);
-  assert.match(js,/use \/responder NUMERO mensagem no seu 7171/);
+  assert.match(js,/\/api\/escritorio\/recepcao\/responder/);\n  assert.match(js,/WhatsApp \+ Telegram/);
 });
