@@ -10,7 +10,7 @@ function response(){
   return {res:{writeHead:s=>{status=s;},end:b=>{body=String(b||'');}},get:()=>({status,body:body?JSON.parse(body):null})};
 }
 function deps(profile,body={}){
-  return {headers:{},authenticate:()=>profile,body:async()=>body,records:{read:async()=>({value:{}})},
+  return {headers:{},authenticate:()=>profile,body:async()=>body,records:{read:async()=>({value:{}}),list:async()=>[],change:async(_k,fn)=>fn({})},
     processStore:{read:async()=>({processes:[]}),mutate:async()=>({})},engine:{list:async()=>[]},docx:()=>Buffer.from(''),
     aiAvailable:()=>false,setOffice:()=>{},log:()=>{}};
 }
@@ -19,13 +19,16 @@ function req(url,method='GET'){return {url,method};}
 function resetInbox(){global._whatsappPublicInbox=[];}
 function put(row){global._whatsappPublicInbox.push(row);}
 
-test('recepcao do painel exige administrador',async()=>{
+test('recepcao do painel permite equipe do escritorio e bloqueia perfil externo',async()=>{
   resetInbox();
-  for(const profile of [null,'advogado','secretaria']){
+  for(const profile of ['admin','advogado','secretaria']){
     const r=response();
     await officeRoutes(req('/api/escritorio/recepcao?status=aguardando_advogado'),r.res,deps(profile));
-    assert.equal(r.get().status,profile?403:401);
+    assert.equal(r.get().status,200);
   }
+  const anon=response();
+  await officeRoutes(req('/api/escritorio/recepcao?status=aguardando_advogado'),anon.res,deps(null));
+  assert.equal(anon.get().status,401);
 });
 
 test('painel separa urgente, aguardando e administrativo sem outra fila',async()=>{
