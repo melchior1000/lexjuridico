@@ -73,5 +73,5 @@ test('Patch 5: documento ilegível volta ao Cadastro e aparece como pendência h
   assert.equal(Pipeline.taskResultStage({status:'aguardando_documento_nitido'}),'cadastro');
   const ui=fs.readFileSync(path.join(__dirname,'../office-ui-base.js'),'utf8');
   assert.match(ui,/aguardando_documento_nitido:'Documento legível necessário'/);
-  assert.match(ui,/\['falhou','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao'\]/);
+  assert.match(ui,/\['falhou','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao'\]/);\n  assert.match(ui,/lexApplyServerCounts\(data\)/);
 });
