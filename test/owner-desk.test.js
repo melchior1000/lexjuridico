@@ -71,6 +71,35 @@ test('nome ambiguo nao envia mensagem ao cliente',async()=>{
   assert.match(calls[0].text,/mais de um contato/i);
 });
 
+test('nome informado mais completo nao casa com contato de nome parcial',async()=>{
+  const calls=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const store={list:async()=>[
+    {nome:'Ana',numero:'5561981111111',status:'aguardando_advogado'}
+  ]};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('A Ana Maria diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/não encontrei/i);
+});
+
+test('ordem natural consulta ate 100 candidatos antes de concluir unicidade',async()=>{
+  const calls=[];
+  let requestedLimit=null;
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const rows=Array.from({length:51},(_,i)=>({nome:'Contato '+i,numero:'556198'+String(1000000+i).padStart(7,'0'),status:'aguardando_advogado'}));
+  rows[0]={nome:'Ana Silva',numero:'5561981111111',status:'aguardando_advogado'};
+  rows[50]={nome:'Ana Souza',numero:'5561982222222',status:'aguardando_advogado'};
+  const store={list:async opts=>{requestedLimit=opts.limit;return rows;}};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(requestedLimit,100);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
+});
+
 test('oi no 7171 abre mesa com contatos isolados por numero',async()=>{
   resetReception();
   const calls=[];
