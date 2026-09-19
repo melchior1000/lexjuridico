@@ -13475,12 +13475,14 @@ async function bootInicio() {
     console.log('Boot: '+processos.length+' processos; versão '+processosVersao);
   } catch(e) { console.error('Banco indisponível; sincronização bloqueada até recuperação.'); }
 
+  await telegramPoller.start();
+
   const urg = getPrazos(3).filter(a=>a.dias<=3);
   if(urg.length) {
     const avisos = urg.map(a=>(a.dias<0?'🔴 VENCIDO: ':a.dias===0?'🚨 HOJE: ':'⚠️ '+a.dias+'d: ')+a.nome).join('\n');
-    await envTelegramAgendado('Sistema ativo. '+processos.length+' processos.\n\n'+avisos);
+    try { await envTelegramAgendado('Sistema ativo. '+processos.length+' processos.\n\n'+avisos); }
+    catch(e) { console.warn('[Telegram] Falha ao enfileirar aviso de boot:', e.message); }
   }
-  await telegramPoller.start();
 }
 bootInicio();
 
@@ -13573,9 +13575,10 @@ if(require.main !== module) {
 // Evita perda de processos em memória ao reiniciar no Render/PM2
 // ════════════════════════════════════════════════════════════════════════════
 async function _gracefulShutdown(signal) {
-  telegramPoller.stop();
-  console.log('[Lex] '+signal+' recebido. Salvando dados...');
-  const t = setTimeout(()=>{ console.error('[Lex] Timeout no shutdown.'); process.exit(1); }, 10000);
+  console.log('[Lex] '+signal+' recebido. Drenando Telegram...');
+  await telegramPoller.stop();
+  console.log('[Lex] Telegram drenado. Salvando dados...');
+  const t = setTimeout(()=>{ console.error('[Lex] Timeout ao salvar dados no shutdown.'); process.exit(1); }, 10000);
   try { await _persistirProcessosCache(); console.log('[Lex] Processos salvos.'); }
   catch(e) { console.warn('[Lex] Falha ao salvar processos:', e.message); }
   clearTimeout(t);
