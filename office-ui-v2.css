@@ -36,3 +36,40 @@ body.lex-commercial #content{background:var(--bg)!important;padding:0!important}
   .lex-channel-page-head{margin-bottom:9px}.lex-channel-console{display:block;height:calc(100vh - 150px);min-height:420px;border-radius:14px}.lex-channel-sidebar{height:100%;border-right:0}.lex-channel-chat{display:none;height:100%}.lex-channel-console.has-open-chat .lex-channel-sidebar{display:none}.lex-channel-console.has-open-chat .lex-channel-chat{display:flex}.lex-channel-back{display:block}.lex-channel-chat-head{grid-template-columns:auto auto minmax(0,1fr) auto}.lex-channel-messages{padding:11px}.lex-channel-bubble{max-width:88%}.lex-channel-compose{padding:8px}.lex-channel-compose button{padding:0 12px}
 }
 @media(min-width:701px) and (max-width:1024px){.lex-channel-console{grid-template-columns:minmax(260px,38%) 1fr;height:min(720px,calc(100vh - 170px))}}
+
+
+/* LEX coordenador: uma única mesa responsiva para web, celular e tablet. */
+.lex2-lex{display:flex;flex-direction:column;gap:11px}
+.lex2-lex-head{padding:16px 17px;border:1px solid var(--line);border-radius:17px;background:linear-gradient(145deg,var(--card2),var(--card))}
+.lex2-lex-head small{display:block;color:#56afff;text-transform:uppercase;letter-spacing:.12em;font-size:8px;font-weight:800;margin-bottom:6px}
+.lex2-lex-head h1{font-size:25px;line-height:1.08;letter-spacing:-.03em}
+.lex2-lex-head p{margin-top:7px!important;color:var(--muted);font-size:11px;line-height:1.45}
+.lex2-context-chips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.lex2-context-chips button{min-height:43px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-size:10px;font-weight:750;text-align:center}
+.lex2-context-chips button:hover{border-color:#2c86df;background:var(--card2)}
+.lex2-lex .lex-conversation{min-height:190px;max-height:42vh}
+.lex2-welcome{max-width:720px!important;color:var(--muted)}
+.lex2-command{display:grid;gap:7px;padding:11px;border:1px solid var(--line);border-radius:15px;background:var(--card)}
+.lex2-command>label{font-size:8px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}
+.lex2-command>select{width:100%;min-height:42px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:var(--card2);color:var(--text);outline:0}
+.lex2-command-row{display:grid;grid-template-columns:42px minmax(0,1fr) 44px;gap:7px;align-items:stretch}
+.lex2-command-row textarea{width:100%;min-width:0;resize:none;min-height:46px;max-height:120px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);outline:0}
+.lex2-command-row textarea:focus,.lex2-command>select:focus{border-color:#2c86df}
+.lex2-command-row button{border:1px solid var(--line);border-radius:12px;background:var(--card2)}
+.lex2-command-row .lex2-send{background:#0b74ff;border-color:#0b74ff;color:#fff;font-size:20px;font-weight:800}
+.lex2-command-row .lex2-attach{font-size:20px;color:#9fc8ef}
+.lex2-command-note{color:var(--muted);font-size:9px;line-height:1.35}
+@media(max-width:620px){
+  .lex2-lex{gap:8px}
+  .lex2-lex-head{padding:12px 13px;border-radius:14px}
+  .lex2-lex-head h1{font-size:20px}
+  .lex2-lex-head p{font-size:10px}
+  .lex2-context-chips{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .lex2-context-chips button{min-height:39px;padding:7px 6px;font-size:9px}
+  .lex2-lex .lex-conversation{min-height:150px;max-height:34vh;padding:9px}
+  .lex2-command{padding:9px;gap:6px}
+  .lex2-command>select{min-height:39px;font-size:10px}
+  .lex2-command-row{grid-template-columns:39px minmax(0,1fr) 41px;gap:6px}
+  .lex2-command-row textarea{min-height:43px;font-size:11px}
+  .lex2-command-note{font-size:8px}
+}
