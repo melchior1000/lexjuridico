@@ -34,6 +34,7 @@ test('ordem natural enderecada pelo nome e reconhecida sem inventar destinatario
     instrucao:'hj é sábado segunda falo com ela.'
   });
   assert.equal(normalizeOwnerNamedReply('diga a ela qualquer coisa'),null);
+  assert.equal(normalizeOwnerNamedReply('Está aí fala comigo'),null);
 });
 
 test('ordem natural por nome envia somente ao contato unico da fila',async()=>{
