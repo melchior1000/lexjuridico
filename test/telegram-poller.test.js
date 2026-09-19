@@ -16,3 +16,18 @@ test('401 403 e 404 sao terminais e nao agendam loop infinito',async()=>{for(con
 test('cursor e carregado uma unica vez mesmo se webhook falha no start',async()=>{const t=timers();let reads=0;const s=store({update_id:8});const originalRead=s.read;s.read=async()=>{reads++;return originalRead();};let webhookCalls=0;const p=createTelegramPoller({token:'x',requestJson:async url=>{if(url.includes('getWebhookInfo')&&webhookCalls++===0)throw new Error('rede');if(url.includes('getWebhookInfo'))return {ok:true,result:{url:''}};return {ok:true,result:[]};},adapter:async()=>{},records:s,setTimer:t.set,clearTimer:t.clear,logger:{warn(){}},baseDelayMs:1});assert.equal((await p.start()).retrying,true);await t.q.shift().fn();assert.equal(reads,1);assert.equal(p.state().cursorLoaded,true);});
 test('stop invalida tick em voo e espera drenagem sem chamar adapter',async()=>{const t=timers();const s=store({update_id:2});const gate=deferred();let adapterCalls=0,webhookCalls=0;const p=createTelegramPoller({token:'x',requestJson:async url=>{if(url.includes('getWebhookInfo')){webhookCalls++;if(webhookCalls===1)return {ok:true,result:{url:''}};return gate.promise;}return {ok:true,result:[{update_id:3,message:{message_id:1}}]};},adapter:async()=>{adapterCalls++;},records:s,setTimer:t.set,clearTimer:t.clear});await p.start();const tickPromise=t.q.shift().fn();while(!p.state().inFlight)await Promise.resolve();const stopPromise=p.stop();gate.resolve({ok:true,result:{url:''}});await stopPromise;await tickPromise;assert.equal(adapterCalls,0);assert.equal(p.state().running,false);assert.equal(p.state().inFlight,false);});
 test('start e idempotente e stop cancela timer',async()=>{const t=timers();const s=store({update_id:2});const p=createTelegramPoller({token:'x',requestJson:async()=>({ok:true,result:{url:''}}),adapter:async()=>{},records:s,setTimer:t.set,clearTimer:t.clear});assert.equal((await p.start()).ok,true);assert.deepEqual(await p.start(),{ok:true,already_running:true});const pending=t.q[0];await p.stop();assert.equal(pending.cancelled,true);assert.equal(p.state().running,false);});
+
+
+test('takeover explicito remove webhook, confirma e inicia polling',async()=>{
+  const t=timers();const s=store({update_id:5});const calls=[];let active=true;
+  const p=createTelegramPoller({token:'x',takeoverWebhook:true,requestJson:async url=>{
+    calls.push(url);
+    if(url.includes('getWebhookInfo'))return {ok:true,result:{url:active?'https://old.example/hook':''}};
+    if(url.includes('deleteWebhook')){active=false;return {ok:true,result:true};}
+    return {ok:true,result:[]};
+  },adapter:async()=>{},records:s,setTimer:t.set,clearTimer:t.clear,logger:{warn(){}}});
+  assert.equal((await p.start()).ok,true);assert.equal(active,false);
+  assert.equal(calls.filter(x=>x.includes('deleteWebhook')).length,1);
+  assert.equal(calls.filter(x=>x.includes('getWebhookInfo')).length,2);
+  assert.equal(t.q.length,1);
+});
