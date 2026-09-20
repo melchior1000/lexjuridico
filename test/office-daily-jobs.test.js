@@ -32,7 +32,6 @@ test('leitura concluída depois do relógio inicial não vira future por engano'
   const cnj='5001234-56.2026.8.09.0001';
   const db=store([{id:'p1',numero:cnj,nome:'Caso',status:'ATIVO',prazo:'2099-01-01',andamentos:[]}]);
   const payload={hits:{hits:[{_source:{movimentos:[]}}]}},raw=JSON.stringify(payload);
-  const original=Date;
   const out=await runDailyOfficeJobs({
     processStore:db,
     now:new Date('2026-09-20T18:00:00Z'),
