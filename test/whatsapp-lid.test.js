@@ -47,7 +47,7 @@ test('mesa do dono responde pelo mesmo LID recebido',async()=>{
   const sent=[];
   const request=async(_,opts)=>{sent.push(opts.data);return {key:{id:'sent'}};};
   const store={list:async()=>[]};
-  const body=lidBody('Oi',{lid:'887766554433@lid',phone:'556199171717@s.whatsapp.net',name:'Kleuber'});
+  const body=lidBody('/recepcao',{lid:'887766554433@lid',phone:'556199171717@s.whatsapp.net',name:'Kleuber'});
   const handled=await handleWhatsappOperatorCommand(body,'LEX',{...cfg,store,request});
   assert.equal(handled,true);
   assert.equal(sent[0].number,'887766554433@lid');
