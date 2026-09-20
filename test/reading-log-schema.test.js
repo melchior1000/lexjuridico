@@ -22,3 +22,9 @@ test('alterar flag no topo e no resultado continua invalidando HMAC',()=>{const 
 test('alterar recibo sem assinatura nova invalida a leitura',()=>{const r=structuredClone(valid());r.recibo.raw_receipt='{"hits":[1]}';r.raw_receipt=r.recibo.raw_receipt;assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false)});
 test('process_id é obrigatório na origem',()=>assert.throws(()=>valid({process_id:null}),/READING_PROCESS_ID_REQUIRED/));
 test('chave de integridade curta ou ausente é rejeitada',()=>assert.throws(()=>createReadingLogEntry({processo:'x',process_id:'p',source:'datajud',raw_receipt:'{}',observed_at:'2026-09-20T18:00:00Z',proveniencia:{conector:'lib/datajud',endpoint:'x',request_id:'r',authenticated:true,timestamp_requisicao:'2026-09-20T18:00:00Z',timestamp_resposta:'2026-09-20T18:00:00Z'}},{integrityKey:'curta'}),/READING_INTEGRITY_KEY_REQUIRED/));
+
+test('alterar reading_id invalida o HMAC',()=>{const r=structuredClone(valid());r.reading_id='r2';assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false)});
+test('alterar content_type invalida o HMAC',()=>{const r=structuredClone(valid());r.integridade.content_type='text/plain';assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false)});
+test('alterar metadata invalida o HMAC',()=>{const r=structuredClone(valid({metadata:{request:'a'}}));r.recibo.metadata.request='b';assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false)});
+test('query_context rejeita array esparso e undefined',()=>{const sparse=[];sparse.length=1;assert.throws(()=>valid({query_context:{a:sparse}}),/READING_IJSON_INVALID/);assert.throws(()=>valid({query_context:{a:[undefined]}}),/READING_IJSON_INVALID/)});
+test('query_context rejeita número não finito',()=>assert.throws(()=>valid({query_context:{a:Infinity}}),/READING_IJSON_INVALID/));
