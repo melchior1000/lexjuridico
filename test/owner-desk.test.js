@@ -101,6 +101,56 @@ test('ordem natural consulta ate 100 candidatos antes de concluir unicidade',asy
   assert.match(calls[0].text,/mais de um contato/i);
 });
 
+test('ordem natural usa cursor estavel alem de 100 antes de afirmar destinatario unico',async()=>{
+  const calls=[];
+  const cursors=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const rows=Array.from({length:101},(_,i)=>({
+    nome:'Contato '+i,
+    numero:'556190'+String(i).padStart(7,'0'),
+    status:'aguardando_advogado'
+  }));
+  rows[0]={...rows[0],nome:'Ana Silva'};
+  rows[100]={...rows[100],nome:'Ana Souza'};
+  const store={list:async opts=>{
+    const cursor=opts.afterNumero||'';
+    cursors.push(cursor||null);
+    return rows.filter(row=>!cursor||row.numero>cursor).slice(0,opts.limit);
+  }};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.deepEqual(cursors,['0',rows[99].numero]);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
+});
+
+test('cursor nao perde segundo nome se contato anterior for arquivado entre paginas',async()=>{
+  const calls=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  let active=Array.from({length:101},(_,i)=>({
+    nome:'Contato '+i,
+    numero:'556191'+String(i).padStart(7,'0'),
+    status:'aguardando_advogado'
+  }));
+  active[0]={...active[0],nome:'Ana Silva'};
+  active[100]={...active[100],nome:'Ana Souza'};
+  let page=0;
+  const store={list:async opts=>{
+    const cursor=opts.afterNumero||'';
+    const result=active.filter(row=>!cursor||row.numero>cursor).slice(0,opts.limit);
+    page+=1;
+    if(page===1) active=active.filter(row=>row.numero!=='5561910000010');
+    return result;
+  }};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(page,2);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
+});
+
 test('oi no 7171 abre mesa com contatos isolados por numero',async()=>{
   resetReception();
   const calls=[];
