@@ -8,11 +8,11 @@ const {mintDeadlineTruth}=require('../lib/deadline-truth');
 
 const KEY='0123456789abcdef0123456789abcdef';
 const NOW=new Date('2026-09-20T18:05:00.000Z');
-function signedReading({id='r1',process='c1',observed='2026-09-20T18:00:00.000Z',due='2026-09-30'}={}){
-  return createReadingLogEntry({reading_id:id,processo:'5000000-00.2026.8.13.0001',process_id:process,source:'pje',observed_at:observed,ok:true,status_code:200,proveniencia:{conector:'lib/pje-sync',endpoint:'https://pje.example',request_id:'req-'+id,authenticated:true,timestamp_requisicao:observed,timestamp_resposta:observed},raw_receipt:'{"ok":true}',sincronizado:true,explicit_no_change:true,due_at:due},{integrityKey:KEY});
+function signedReading({id='r1',process='c1',observed='2026-09-20T18:00:00.000Z'}={}){
+  return createReadingLogEntry({reading_id:id,processo:'5000000-00.2026.8.13.0001',process_id:process,source:'pje',observed_at:observed,ok:true,status_code:200,proveniencia:{conector:'lib/pje-sync',endpoint:'https://pje.example',request_id:'req-'+id,authenticated:true,timestamp_requisicao:observed,timestamp_resposta:observed},raw_receipt:'{"ok":true}',sincronizado:true,explicit_no_change:true},{integrityKey:KEY});
 }
 function evidence(r=signedReading()){return mintCourtSyncEvidence({readingId:r.reading_id},{readingLog:new Map([[r.reading_id,r]]),integrityKey:KEY,now:NOW.getTime()})}
-function truth(r=signedReading()){const a={id:'a1',reading_id:r.reading_id,process_id:r.process_id,human_id:'u1',authorized_at:'2026-09-20T18:01:00.000Z'};return mintDeadlineTruth({readingId:r.reading_id,authorizationId:'a1'},{readingLog:new Map([[r.reading_id,r]]),authorizationLog:new Map([['a1',a]]),integrityKey:KEY,now:NOW.getTime()})}
+function truth(r=signedReading()){const a={id:'a1',reading_id:r.reading_id,process_id:r.process_id,human_id:'u1',authorized_at:'2026-09-20T18:01:00.000Z',due_at:'2026-09-30'};return mintDeadlineTruth({readingId:r.reading_id,authorizationId:'a1'},{readingLog:new Map([[r.reading_id,r]]),authorizationLog:new Map([['a1',a]]),integrityKey:KEY,now:NOW.getTime()})}
 test('evidência oficial cunhada e recente permite carimbo',()=>{const e=evidence();assert.equal(Bridge.canStampOfficialSync([e],NOW),true);assert.equal(Bridge.sourceState([e],NOW).freshness,'fresh')});
 test('shape oficial não verificado nunca permite carimbo',()=>{const raw={source:'pje',ok:true,explicit_no_change:true,observed_at:'2026-09-20T18:00:00Z'};assert.equal(Bridge.canStampOfficialSync([raw],NOW),false);assert.equal(Bridge.sourceState([raw],NOW).freshness,'stale')});
 test('evidência antiga deixa de ser fresh',()=>{const e=evidence();const later=new Date('2026-09-20T18:20:01.000Z');assert.equal(Bridge.canStampOfficialSync([e],later),false);assert.equal(Bridge.sourceState([e],later).freshness,'stale')});
