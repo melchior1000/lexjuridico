@@ -119,7 +119,7 @@ test('ordem natural usa cursor estavel alem de 100 antes de afirmar destinatario
   }};
   const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
   assert.equal(ok,true);
-  assert.deepEqual(cursors,[null,rows[99].numero]);
+  assert.deepEqual(cursors,['0',rows[99].numero]);
   assert.equal(calls.length,1);
   assert.equal(calls[0].number,'5561999171717');
   assert.match(calls[0].text,/mais de um contato/i);
