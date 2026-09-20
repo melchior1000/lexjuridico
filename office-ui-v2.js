@@ -77,7 +77,16 @@ window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos'].includes(tab)?
 window.lexFilterProc=q=>{procQuery=String(q||'').toLowerCase();const h=$('#lex-proc-list');if(h)h.innerHTML=procRows(filteredProcesses())};
 window.lexPrazos=function(){const all=deadlineItems();const visible=prazoTab==='hoje'?all.filter(x=>x.d===0):prazoTab==='7dias'?all.filter(x=>x.d>=0&&x.d<=7):all;const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')">▣</button></div><div class="lex-tabs"><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+all.filter(x=>x.d===0).length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+all.filter(x=>x.d>=0&&x.d<=7).length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos</button></div><div class="lex-timeline">'+deadlineRows(visible)+'</div><div class="lex-recommend"><b>💡 LEX recomenda</b><p>Priorize prazos de hoje e dos próximos 2 dias.</p><button onclick="lexChat()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
 window.lexSetPrazoTab=tab=>{prazoTab=['hoje','7dias','todos'].includes(tab)?tab:'hoje';window.lexPrazos()};
-window.lexTarefas=async function(){let tasks=[];try{const d=await lexApi('/api/trabalho');tasks=Array.isArray(d.tarefas)?d.tarefas:[]}catch{}const body='<div class="lex-page-head"><div><small>Entregas do escritório</small><h1>Tarefas</h1></div><button onclick="lexHome()">⌂</button></div><div class="lex-panel"><h2>Fila do LEX</h2>'+(tasks.length?tasks.slice(0,60).map(t=>'<div class="lex-agent-row"><i class="'+(['na_fila','executando'].includes(t.status)?'busy':'')+'"></i><span><strong>'+esc(t.agente||t.tipo||'LEX')+'</strong><small>'+esc(t.processo_nome||t.instrucao||'Tarefa do escritório')+'</small></span><em>'+esc(t.status||'')+'</em></div>').join(''):'<div class="lex-empty">Nenhuma tarefa registrada.</div>')+'</div>';shell('Tarefas',body,'home')};
+window.lexTarefas=async function(selectedId){
+  shell('Tarefas','<div class="lex-page-head"><div><small>Entregas do escritório</small><h1>Tarefas</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-task-detail" class="lex-panel" role="status">Consultando tarefas…</div>','home');
+  const detail=$('#lex-task-detail');
+  try{
+    const d=await lexApi('/api/trabalho');if(!detail.isConnected)return;
+    if(!Array.isArray(d.tarefas))throw new Error('Resposta de tarefas inválida.');
+    const tasks=selectedId?d.tarefas.filter(t=>String(t.id)===String(selectedId)):d.tarefas;
+    detail.innerHTML=(selectedId?'<button class="btn-outline" onclick="lexTarefas()">Ver todas as tarefas</button>':'')+(tasks.length?tasks.map(t=>lexTaskCard(t)).join(''):'<div class="lex-empty">'+(selectedId?'Esta tarefa não está mais disponível.':'Nenhuma tarefa registrada.')+'</div>');
+  }catch(err){if(detail.isConnected)detail.textContent='Não consegui carregar as tarefas: '+(err.message||'falha no servidor')}
+};
 window.lexEscritorio=async function(){
   let tasks=[],quadro=null;
   try{const d=await lexApi('/api/trabalho');tasks=Array.isArray(d.tarefas)?d.tarefas:[];quadro=officeCounts(d)}catch{}
@@ -96,7 +105,7 @@ window.lexChat=function(selectedId){const items=procs();let saved='';try{saved=S
 window.lexPrefill=t=>{const i=$('#lex-chat-input');if(i){i.value=t;i.focus()}};
 window.lexSendChat=async function(e){e?.preventDefault();const input=$('#lex-chat-input'),box=$('#lex-conversation');const text=input?.value.trim();if(!text||!box)return;const selected=String($('#lex-chat-process')?.value||'');const process=procs().find(p=>String(p.id)===selected)||null;if(selected&&!process){box.insertAdjacentHTML('beforeend','<div class="lex-msg bot error">O processo selecionado não está mais disponível. Atualize a carteira e selecione novamente.</div>');return}window.lexSelectChatProcess(selected);const historico=loadChatHistory(selected);box.insertAdjacentHTML('beforeend','<div class="lex-msg me">'+esc(text)+'</div>');input.value='';box.insertAdjacentHTML('beforeend','<div class="lex-msg bot pending" id="lex-pending">LEX está analisando…</div>');box.scrollTop=box.scrollHeight;try{const payload={mensagem:text,historico};if(process){payload.processo_id=process.id;payload.numero_processo=process.numero||null;payload.processo_nome=process.nome||process.partes||null;payload.setor=process.setor||null}const d=await lexApi('/api/vivo/conversar',{method:'POST',body:JSON.stringify(payload)});const ans=d?.resposta||d?.reply||d?.mensagem||d?.texto||d?.resultado||d?.content||'Recebi a ordem. Vou organizar isso dentro do fluxo do escritório.';const answer=typeof ans==='string'?ans:JSON.stringify(ans);$('#lex-pending')?.remove();box.insertAdjacentHTML('beforeend','<div class="lex-msg bot">'+esc(answer)+'</div>');saveChatHistory(selected,[...historico,{role:'user',content:text},{role:'assistant',content:answer}])}catch(err){$('#lex-pending')?.remove();box.insertAdjacentHTML('beforeend','<div class="lex-msg bot error">Não consegui concluir a conversa agora: '+esc(err.message||'falha no servidor')+'.</div>')}box.scrollTop=box.scrollHeight};
 
-const channelDesk={channel:'all',rows:[],selected:null,query:''};
+const channelDesk={channel:'all',rows:[],selected:null,query:'',historyGeneration:0};
 function channelName(channel){return channel==='telegram'?'Telegram':channel==='whatsapp'?'WhatsApp':'Mensagens'}
 function channelIcon(channel){return channel==='telegram'?'🔵':'🟢'}
 function channelKey(row){return String(row.origem||'whatsapp')+':'+String(row.id||row.numero||'')}
@@ -125,7 +134,7 @@ function renderChannelList(){
 }
 window.lexChannelSearch=function(value){channelDesk.query=String(value||'');renderChannelList()};
 window.lexChannel=async function(channel='all'){
-  channelDesk.channel=['whatsapp','telegram','all'].includes(channel)?channel:'all';channelDesk.selected=null;channelDesk.query='';
+  channelDesk.channel=['whatsapp','telegram','all'].includes(channel)?channel:'all';channelDesk.selected=null;channelDesk.query='';channelDesk.historyGeneration++;
   const title=channelName(channelDesk.channel);
   const body='<div class="lex-page-head lex-channel-page-head"><div><small>Comunicação do escritório</small><h1>'+esc(title)+'</h1></div><button onclick="lexMais()">‹</button></div>'
     +'<section class="lex-channel-console" id="lex-channel-console"><aside class="lex-channel-sidebar"><div class="lex-channel-sidebar-head"><div><strong>'+esc(title)+'</strong><span><b id="lex-channel-count">0</b> aguardando</span></div><button onclick="lexChannel(\''+esc(channelDesk.channel)+'\')" title="Atualizar">↻</button></div><label class="lex-channel-search">⌕<input placeholder="Buscar conversa..." oninput="lexChannelSearch(this.value)"></label><div id="lex-channel-list" class="lex-channel-list"><div class="lex-empty">Carregando conversas…</div></div></aside>'
@@ -134,12 +143,13 @@ window.lexChannel=async function(channel='all'){
   try{channelDesk.rows=await loadChannelRows(channelDesk.channel);renderChannelList()}catch(err){const list=$('#lex-channel-list');if(list)list.innerHTML='<div class="lex-empty">Não consegui carregar as conversas: '+esc(err.message||'falha no servidor')+'</div>'}
 };
 window.lexSelectChannelContact=async function(origem,id){
-  const key=String(origem)+':'+String(id);channelDesk.selected=key;renderChannelList();
+  const key=String(origem)+':'+String(id);channelDesk.selected=key;const generation=++channelDesk.historyGeneration;renderChannelList();
   const consoleEl=$('#lex-channel-console'),chat=$('#lex-channel-chat');if(consoleEl)consoleEl.classList.add('has-open-chat');if(!chat)return;
   const row=channelDesk.rows.find(x=>channelKey(x)===key)||{origem,id,nome:'Contato'};
   chat.innerHTML='<div class="lex-channel-chat-loading">Carregando histórico…</div>';
   try{
     const d=await lexApi('/api/escritorio/recepcao/historico?origem='+encodeURIComponent(origem)+'&id='+encodeURIComponent(id));
+    if(generation!==channelDesk.historyGeneration||channelDesk.selected!==key||!chat.isConnected)return;
     const history=Array.isArray(d.historico)?d.historico:[];
     const msgs=history.map(m=>{
       const outgoing=m.direcao!=='entrada',who=m.direcao==='saida_operador'?'Você':m.direcao==='saida_lex'?'LEX':'Contato';
@@ -147,13 +157,13 @@ window.lexSelectChannelContact=async function(origem,id){
     }).join('')||'<div class="lex-empty">Sem histórico registrado.</div>';
     chat.innerHTML='<header class="lex-channel-chat-head"><button class="lex-channel-back" onclick="lexCloseChannelContact()">‹</button><span class="lex-channel-avatar">'+channelIcon(origem)+'</span><div><strong>'+esc(row.nome||'Contato')+'</strong><small>'+esc(channelName(origem))+' · '+esc(String(id))+'</small></div><button class="lex-channel-archive" onclick="lexArchiveChannelContact(\''+esc(origem)+'\',\''+esc(String(id))+'\')" '+(row.status==='arquivado'?'disabled':'')+'>'+(row.status==='arquivado'?'Arquivado':'Arquivar')+'</button></header><div class="lex-channel-messages" id="lex-channel-messages">'+msgs+'</div><form class="lex-channel-compose" onsubmit="lexSendChannelMessage(event)"><textarea id="lex-channel-compose-text" rows="1" maxlength="3500" placeholder="Digite a resposta…"></textarea><button type="submit">Enviar</button></form>';
     const messages=$('#lex-channel-messages');if(messages)messages.scrollTop=messages.scrollHeight;$('#lex-channel-compose-text')?.focus();
-  }catch(err){chat.innerHTML='<div class="lex-channel-placeholder"><h2>Não consegui abrir a conversa</h2><p>'+esc(err.message||'falha no servidor')+'</p><button onclick="lexCloseChannelContact()">Voltar</button></div>'}
+  }catch(err){if(generation!==channelDesk.historyGeneration||channelDesk.selected!==key||!chat.isConnected)return;chat.innerHTML='<div class="lex-channel-placeholder"><h2>Não consegui abrir a conversa</h2><p>'+esc(err.message||'falha no servidor')+'</p><button onclick="lexCloseChannelContact()">Voltar</button></div>'}
 };
-window.lexCloseChannelContact=function(){channelDesk.selected=null;$('#lex-channel-console')?.classList.remove('has-open-chat');renderChannelList();const chat=$('#lex-channel-chat');if(chat)chat.innerHTML='<div class="lex-channel-placeholder">'+bot('sm')+'<h2>Central de atendimento</h2><p>Escolha uma conversa para responder pelo canal de origem.</p></div>'};
+window.lexCloseChannelContact=function(){channelDesk.historyGeneration++;channelDesk.selected=null;$('#lex-channel-console')?.classList.remove('has-open-chat');renderChannelList();const chat=$('#lex-channel-chat');if(chat)chat.innerHTML='<div class="lex-channel-placeholder">'+bot('sm')+'<h2>Central de atendimento</h2><p>Escolha uma conversa para responder pelo canal de origem.</p></div>'};
 window.lexSendChannelMessage=async function(e){
   e?.preventDefault();const input=$('#lex-channel-compose-text');const text=String(input?.value||'').trim();if(!text||!channelDesk.selected)return;
-  const [origem,id]=channelDesk.selected.split(':');const button=e?.submitter||e?.target?.querySelector('button[type=submit]');if(button)button.disabled=true;
-  try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text})});if(input)input.value='';await lexSelectChannelContact(origem,id)}
+  const selected=channelDesk.selected;const [origem,id]=selected.split(':');const button=e?.submitter||e?.target?.querySelector('button[type=submit]');if(button)button.disabled=true;
+  try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text})});if(input)input.value='';if(channelDesk.selected===selected&&input?.isConnected)await lexSelectChannelContact(origem,id)}
   catch(err){if(typeof window.toast==='function')window.toast(err.message||'Envio não confirmado','erro')}
   finally{if(button)button.disabled=false}
 };

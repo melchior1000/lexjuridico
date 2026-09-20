@@ -29,3 +29,48 @@ test('secretaria e responsável jurídico podem operar a Recepção sem liberar 
   assert.match(routes,/\['admin','advogado','secretaria'\]\.includes\(profile\)/);
   assert.match(routes,/Recepção restrita à equipe autorizada/);
 });
+
+
+test('chips do coordenador mantêm grade móvel e flex apenas acima de 620px',()=>{
+  assert.match(css,/@media\(max-width:620px\)[\s\S]*\.lex2-context-chips\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/@media\(min-width:621px\)\{[\s\S]*\.lex2-context-chips\{display:flex/);
+  const mobile=css.match(/@media\(max-width:620px\)\{([\s\S]*?)\n\}/)?.[1]||'';
+  assert.doesNotMatch(mobile,/\.lex2-context-chips\{display:flex/);
+});
+
+test('retorno atrasado do mesmo contato não substitui histórico mais novo',async()=>{
+  const vm=require('node:vm');
+  const start=ui.indexOf('window.lexSelectChannelContact=async function');
+  const end=ui.indexOf('window.lexCloseChannelContact=',start);
+  assert.ok(start>=0&&end>start);
+
+  let resolveFirst,resolveSecond,calls=0;
+  const first=new Promise(r=>{resolveFirst=r}),second=new Promise(r=>{resolveSecond=r});
+  const chat={innerHTML:'',isConnected:true};
+  const consoleEl={classList:{add(){}}};
+  const messages={scrollTop:0,scrollHeight:10};
+  const compose={focus(){}};
+  const context={
+    window:{},
+    renderChannelList(){},
+    channelKey:r=>String(r.origem)+':'+String(r.id),
+    $:sel=>sel==='#lex-channel-chat'?chat:sel==='#lex-channel-console'?consoleEl:sel==='#lex-channel-messages'?messages:sel==='#lex-channel-compose-text'?compose:null,
+    lexApi:()=>{calls++;return calls===1?first:second},
+    esc:v=>String(v??''),
+    channelIcon:()=>'*',
+    channelWhen:()=> '',
+    channelName:v=>String(v)
+  };
+  vm.createContext(context);
+  vm.runInContext("const channelDesk={channel:'all',rows:[{origem:'whatsapp',id:'1',nome:'Contato'}],selected:null,query:'',historyGeneration:0};"+ui.slice(start,end),context);
+
+  const older=context.window.lexSelectChannelContact('whatsapp','1');
+  const newer=context.window.lexSelectChannelContact('whatsapp','1');
+  resolveSecond({historico:[{direcao:'entrada',texto:'NOVO'}]});
+  await newer;
+  resolveFirst({historico:[{direcao:'entrada',texto:'VELHO'}]});
+  await older;
+
+  assert.match(chat.innerHTML,/NOVO/);
+  assert.doesNotMatch(chat.innerHTML,/VELHO/);
+});
