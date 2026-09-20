@@ -29,3 +29,10 @@ test('autorização anterior à leitura é rejeitada',()=>assert.throws(()=>call
 test('autorização futura além do skew é rejeitada',()=>assert.throws(()=>call(reading(),auth({authorized_at:'2026-09-20T18:10:00.000Z'})),e=>e.code==='authorization_in_future'));
 test('autorização com timestamp inválido é rejeitada',()=>assert.throws(()=>call(reading(),auth({authorized_at:'x'})),e=>e.code==='authorization_timestamp_invalid'));
 test('fonte recente precisa de observed_at além de ok',()=>{assert.equal(checkFreshness({ok:true,observed_at:'2026-09-20T18:00:00Z'},{now:NOW}).fresh,true);assert.equal(checkFreshness({ok:true},{now:NOW}).reason,'observed_at_missing')});
+
+test('truth persiste e revalida por HMAC após serialização',()=>{const persisted=JSON.parse(JSON.stringify(call()));assert.equal(isLegalTruth(persisted,{integrityKey:KEY}),true);persisted.due_at='2026-10-01';assert.equal(isLegalTruth(persisted,{integrityKey:KEY}),false)});
+test('DataJud nunca cunha vencimento mesmo com due_at e autorização',()=>{
+  const observed='2026-09-20T18:00:00.000Z';
+  const r=createReadingLogEntry({reading_id:'read_1',processo:'5000000-00.2026.8.13.0001',process_id:'proc_1',source:'datajud',observed_at:observed,ok:true,status_code:200,proveniencia:{conector:'lib/datajud',endpoint:'https://datajud.example',request_id:'req-dj',authenticated:true,timestamp_requisicao:observed,timestamp_resposta:observed},raw_receipt:'{}',sincronizado:true,explicit_no_change:true,due_at:'2026-09-30'},{integrityKey:KEY});
+  assert.throws(()=>call(r),e=>e instanceof DeadlineTruthError&&e.code==='source_not_deadline_capable');
+});
