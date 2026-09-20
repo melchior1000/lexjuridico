@@ -5,9 +5,9 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function selectedProcess(){return String(document.getElementById('lex-chat-process')?.value||'').trim()}
 function conversation(){return document.getElementById('lex-conversation')}
 function append(message,selected){
-  const box=conversation();if(!box)return;
-  box.insertAdjacentHTML('beforeend','<div class="lex-msg bot">'+esc(message)+'</div>');box.scrollTop=box.scrollHeight;
   try{const key='lex_chat_history_'+(selected?'process_'+selected:'general'),old=JSON.parse(sessionStorage.getItem(key)||'[]'),next=(Array.isArray(old)?old:[]).concat([{role:'assistant',content:message}]).slice(-20);sessionStorage.setItem(key,JSON.stringify(next))}catch{}
+  const box=conversation();if(!box||selectedProcess()!==selected)return;
+  box.insertAdjacentHTML('beforeend','<div class="lex-msg bot">'+esc(message)+'</div>');box.scrollTop=box.scrollHeight;
 }
 function toBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('Não foi possível ler o arquivo.'));reader.onload=()=>{const value=String(reader.result||''),i=value.indexOf(',');resolve(i>=0?value.slice(i+1):value)};reader.readAsDataURL(file)})}
 async function sendFile(file){
@@ -31,8 +31,8 @@ function install(){
   const input=document.getElementById('lex-chat-input'),composer=composerFor(input);
   if(!input||!composer||document.getElementById('lex-attach-button'))return false;
   const file=document.createElement('input');file.type='file';file.id='lex-chat-file';file.hidden=true;file.accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt';file.addEventListener('change',async()=>{const picked=file.files?.[0];file.value='';await sendFile(picked)});
-  const btn=document.createElement('button');btn.type='button';btn.id='lex-attach-button';btn.className='lex-attach-button';btn.setAttribute('aria-label','Anexar documento ao processo');btn.title='Anexar documento';btn.textContent='＋';btn.addEventListener('click',()=>{if(!selectedProcess()){append('Selecione o processo antes de anexar um documento.','');return}file.click()});
-  composer.insertBefore(btn,input);composer.appendChild(file);return true;
+  const btn=composer.querySelector('[data-lex-attachment]')||document.createElement('button');btn.type='button';btn.id='lex-attach-button';btn.classList.add('lex-attach-button');btn.setAttribute('aria-label','Anexar documento ao processo');btn.title='Anexar documento';btn.textContent='＋';btn.addEventListener('click',()=>{if(!selectedProcess()){append('Selecione o processo antes de anexar um documento.','');return}file.click()});
+  if(!btn.isConnected)input.parentElement.insertBefore(btn,input);composer.appendChild(file);return true;
 }
 function boot(){install();const observer=new MutationObserver(()=>install());observer.observe(document.body,{childList:true,subtree:true})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();

@@ -42,3 +42,18 @@ test('fallback em memoria preserva recepcao quando banco falha',async()=>{
   assert.equal(await store.archive('5561977777777'),true);
   assert.equal((await store.list()).length,0);
 });
+
+test('list usa cursor por numero para paginação estável',async()=>{
+  const calls=[];
+  const request=async(method,table,data,query)=>{
+    calls.push({method,table,data,query});
+    return {ok:true,status:200,body:[]};
+  };
+  const store=createReceptionStore({request});
+  await store.list({status:'aguardando_advogado',limit:100,afterNumero:'5561910000099'});
+  const query=calls[0].query;
+  assert.equal(query.numero,'gt.5561910000099');
+  assert.equal(query.order,'numero.asc');
+  assert.equal(query.limit,'100');
+  assert.equal(query.offset,undefined);
+});

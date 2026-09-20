@@ -73,3 +73,29 @@ body.lex-commercial #content{background:var(--bg)!important;padding:0!important}
   .lex2-command-row textarea{min-height:43px;font-size:11px}
   .lex2-command-note{font-size:8px}
 }
+
+/* Conversa ocupa a área útil; compositor permanece visível, inclusive com teclado. */
+body.lex-commercial #content .lex-screen.lex2-lex{display:grid;grid-template-rows:auto auto auto minmax(60px,1fr) auto;height:var(--lex-vh,100dvh);min-height:0;padding-bottom:calc(88px + env(safe-area-inset-bottom))!important;max-width:1120px;overflow:hidden}
+.lex2-lex .lex-top{position:static;padding-bottom:9px}
+body.lex-commercial .lex2-lex .lex-conversation{min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain}
+.lex2-lex .lex-msg{font-size:14px;overflow-wrap:anywhere}
+.lex2-context-chips{display:flex;overflow-x:auto;scrollbar-width:thin;gap:8px;padding-bottom:3px}
+.lex2-context-chips button{flex:0 0 auto;min-height:44px;font-size:12px;padding:9px 14px}
+.lex2-command-row textarea{font-size:16px;line-height:1.4;min-height:64px}
+.lex2-command button:disabled{opacity:.55;cursor:wait}
+.lex-today-head{padding:24px 0 20px;max-width:750px}
+.lex-today-head>small{font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:700}
+.lex-today-head h1{font-size:32px;line-height:1.2;margin:10px 0}
+.lex-today-head p{font-size:14px;color:var(--muted);line-height:1.5}
+.lex-today-talk{display:flex;justify-content:space-between;align-items:center;gap:50px;margin-top:18px;padding:12px 18px;min-height:48px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-weight:700}
+.lex-today-feedback:not(:empty){padding:14px;margin-bottom:14px;border:1px solid var(--amber);border-radius:12px;font-size:14px}
+.lex-today-feedback button{min-height:44px;padding:8px 12px;margin-left:8px;background:var(--card);border:1px solid var(--line);border-radius:8px}
+.lex-today-list{display:grid;gap:12px}
+.lex-today-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:20px;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:12px;background:var(--card)}
+.lex-today-item.critical{border-left-color:var(--red)}.lex-today-item.blocked,.lex-today-item.quarantine{border-left-color:var(--amber)}
+.lex-today-item small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.lex-today-item h2{font-size:18px;margin:5px 0 8px;overflow-wrap:anywhere}.lex-today-item strong{font-size:14px}.lex-today-item p{font-size:14px;line-height:1.5;color:var(--muted);margin-top:5px;overflow-wrap:anywhere}
+.lex-today-item>button{min-height:44px;padding:10px 15px;border:1px solid var(--line);border-radius:10px;background:var(--card2);font-size:13px;font-weight:700}
+.lex-today-clear{display:grid;gap:8px;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.lex-today-clear span{color:var(--muted)}
+#lex-task-detail .work-task{margin-top:14px}#lex-task-detail .work-task-head{gap:10px;flex-wrap:wrap}#lex-task-detail p{overflow-wrap:anywhere}
+@media(max-width:620px){.lex2-command-note{font-size:10px}.lex-today-head{padding:18px 2px}.lex-today-head h1{font-size:26px}.lex-today-item{grid-template-columns:minmax(0,1fr);padding:16px;gap:12px}.lex-today-item>button{justify-self:start}}
+@media(max-height:620px){.lex2-lex-head p,.lex2-command-note{display:none}.lex2-lex-head{padding:8px 12px}.lex2-lex-head h1{font-size:18px}.lex2-lex-head small{margin-bottom:3px}.lex2-command>label{display:none}.lex2-command-row textarea{min-height:44px;height:44px}.lex2-lex{gap:5px}.lex2-lex .lex-top{padding:0}.lex2-lex .lex-top-actions button{height:36px}.lex2-lex .lex-dock{display:none}body.lex-commercial #content .lex-screen.lex2-lex{padding-bottom:calc(8px + env(safe-area-inset-bottom))!important}}

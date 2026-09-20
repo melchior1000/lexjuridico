@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {normalizeOwnerDeskCommand}=require('../lib/owner-desk');
+const {normalizeOwnerDeskCommand,normalizeOwnerNamedReply}=require('../lib/owner-desk');
 const {publicWhatsappReception,handleWhatsappOperatorCommand}=require('../lib/integration-status');
 
 const cfg={operator:'5561999171717',url:'https://evo.example.test',key:'fake'};
@@ -26,6 +26,129 @@ test('mesa do dono entende linguagem natural sem barra',()=>{
   assert.equal(normalizeOwnerDeskCommand('responder 5561987777777 Texto exato'),'/responder 5561987777777 Texto exato');
   assert.equal(normalizeOwnerDeskCommand('resolver 5561987777777'),'/arquivar 5561987777777');
   assert.equal(normalizeOwnerDeskCommand('qual a melhor tese?'),null);
+});
+
+test('ordem natural enderecada pelo nome e reconhecida sem inventar destinatario',()=>{
+  assert.deepEqual(normalizeOwnerNamedReply('A Leidyanny diga a ela q hj é sábado segunda falo com ela.'),{
+    nome:'Leidyanny',
+    instrucao:'hj é sábado segunda falo com ela.'
+  });
+  assert.equal(normalizeOwnerNamedReply('diga a ela qualquer coisa'),null);
+  assert.equal(normalizeOwnerNamedReply('Está aí fala comigo'),null);
+});
+
+test('ordem natural por nome envia somente ao contato unico da fila',async()=>{
+  const calls=[];
+  const events=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const store={
+    list:async()=>[
+      {nome:'Leidyanny',numero:'5561999522015',classe:'juridico',status:'aguardando_advogado'},
+      {nome:'Outro',numero:'5561988888888',classe:'geral',status:'aguardando_advogado'}
+    ],
+    appendEvent:async event=>events.push(event)
+  };
+  const ok=await handleWhatsappOperatorCommand(ownerBody('A Leidyanny diga a ela q hj é sábado segunda falo com ela.'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(calls[0].number,'5561999522015');
+  assert.equal(calls[0].text,'hoje é sábado segunda falo com você.');
+  assert.equal(events[0].direcao,'saida_operador');
+  assert.equal(events[0].numero,'5561999522015');
+  assert.equal(calls[1].number,'5561999171717');
+  assert.match(calls[1].text,/Resposta enviada para Leidyanny/);
+});
+
+test('nome ambiguo nao envia mensagem ao cliente',async()=>{
+  const calls=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const store={list:async()=>[
+    {nome:'Ana Silva',numero:'5561981111111',status:'aguardando_advogado'},
+    {nome:'Ana Souza',numero:'5561982222222',status:'aguardando_advogado'}
+  ]};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
+});
+
+test('nome informado mais completo nao casa com contato de nome parcial',async()=>{
+  const calls=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const store={list:async()=>[
+    {nome:'Ana',numero:'5561981111111',status:'aguardando_advogado'}
+  ]};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('A Ana Maria diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/não encontrei/i);
+});
+
+test('ordem natural consulta ate 100 candidatos antes de concluir unicidade',async()=>{
+  const calls=[];
+  let requestedLimit=null;
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const rows=Array.from({length:51},(_,i)=>({nome:'Contato '+i,numero:'556198'+String(1000000+i).padStart(7,'0'),status:'aguardando_advogado'}));
+  rows[0]={nome:'Ana Silva',numero:'5561981111111',status:'aguardando_advogado'};
+  rows[50]={nome:'Ana Souza',numero:'5561982222222',status:'aguardando_advogado'};
+  const store={list:async opts=>{requestedLimit=opts.limit;return rows;}};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(requestedLimit,100);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
+});
+
+test('ordem natural usa cursor estavel alem de 100 antes de afirmar destinatario unico',async()=>{
+  const calls=[];
+  const cursors=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  const rows=Array.from({length:101},(_,i)=>({
+    nome:'Contato '+i,
+    numero:'556190'+String(i).padStart(7,'0'),
+    status:'aguardando_advogado'
+  }));
+  rows[0]={...rows[0],nome:'Ana Silva'};
+  rows[100]={...rows[100],nome:'Ana Souza'};
+  const store={list:async opts=>{
+    const cursor=opts.afterNumero||'';
+    cursors.push(cursor||null);
+    return rows.filter(row=>!cursor||row.numero>cursor).slice(0,opts.limit);
+  }};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.deepEqual(cursors,['0',rows[99].numero]);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
+});
+
+test('cursor nao perde segundo nome se contato anterior for arquivado entre paginas',async()=>{
+  const calls=[];
+  const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
+  let active=Array.from({length:101},(_,i)=>({
+    nome:'Contato '+i,
+    numero:'556191'+String(i).padStart(7,'0'),
+    status:'aguardando_advogado'
+  }));
+  active[0]={...active[0],nome:'Ana Silva'};
+  active[100]={...active[100],nome:'Ana Souza'};
+  let page=0;
+  const store={list:async opts=>{
+    const cursor=opts.afterNumero||'';
+    const result=active.filter(row=>!cursor||row.numero>cursor).slice(0,opts.limit);
+    page+=1;
+    if(page===1) active=active.filter(row=>row.numero!=='5561910000010');
+    return result;
+  }};
+  const ok=await handleWhatsappOperatorCommand(ownerBody('Ana diga a ela que retorno segunda'),'LEX-JURIDICO',{...cfg,request,store});
+  assert.equal(ok,true);
+  assert.equal(page,2);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].number,'5561999171717');
+  assert.match(calls[0].text,/mais de um contato/i);
 });
 
 test('oi no 7171 abre mesa com contatos isolados por numero',async()=>{
