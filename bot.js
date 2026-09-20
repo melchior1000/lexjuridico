@@ -12508,6 +12508,10 @@ async function _flushNotificacoes() {
 
 setInterval(_flushNotificacoes, 5 * 60 * 1000);
 
+// Falha fechada antes de abrir a porta: leituras judiciais auditáveis exigem
+// segredo HMAC válido já no boot, não somente no primeiro sync.
+require('./lib/reading-log-schema').resolveIntegrityKey();
+
 server.listen(process.env.PORT||3000, async () => {
   // VALIDACAO DE SEGURANCA NO STARTUP
   const errosSeguranca = [];
