@@ -82,3 +82,13 @@ test('Home mostra somente prazo confirmado vindo da mesa do servidor',async()=>{
   assert.match(h.nodes['.lex-today-list'].innerHTML,/Prazo confirmado vence amanhã/);
   assert.match(h.nodes['.lex-today-list'].innerHTML,/DJEN dj2/);
 });
+
+
+test('Home denuncia DJEN sem OAB como bloqueio crítico',async()=>{
+  const h=home(async path=>path==='/api/trabalho'?{
+    tarefas:[],prazos:{cunhar:[],correndo:[],vigia:{status:'blocked',djen_status:'not_configured'}}
+  }:{contatos:[]});
+  await h.window.lexHome();
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/Diário ainda não configurado/);
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/não tem uma OAB definida/);
+});
