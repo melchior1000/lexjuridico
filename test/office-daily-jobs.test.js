@@ -39,3 +39,14 @@ test('leitura concluída depois do relógio inicial não vira future por engano'
   });
   assert.equal(out.evidence.falhas,0);
 });
+
+
+test('DataJud ausente não derruba a vigia de prazo nem fabrica evidência',async()=>{
+  const db=store([{id:'p1',numero:'5001234-56.2026.8.09.0001',nome:'Caso',status:'ATIVO',andamentos:[]}]);
+  const out=await runDailyOfficeJobs({processStore:db,now:new Date('2026-09-20T18:00:00Z'),datajudOptions:{integrityKey:KEY}});
+  assert.equal(out.datajud.enabled,false);
+  assert.equal(out.datajud.skipped,true);
+  assert.equal(out.datajud.falhas,0);
+  assert.equal(out.evidence.validas,0);
+  assert.equal(out.ok,true);
+});
