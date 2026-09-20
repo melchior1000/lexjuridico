@@ -777,6 +777,20 @@ function _djenOabsRuntime(){
   const m=raw.match(/^(\d+)\/([A-Z]{2})$/);
   return m?[{oab:m[1],uf:m[2]}]:[];
 }
+
+async function _analisarPrazoDjen(input){
+  const system=[
+    'Você é um extrator conservador de prazo processual brasileiro.',
+    'Receba o texto e uma lista de candidatos que JÁ foram encontrados literalmente no documento.',
+    'Você NÃO pode criar número de dias, prazo ou trecho novo.',
+    'Escolha candidate_index somente se aquele candidato corresponder ao prazo processual da intimação dirigida à parte.',
+    'Se houver dúvida, múltiplos prazos independentes ou não for prazo processual, use candidate_index null.',
+    'regime pode ser cpc, clt ou unknown. Não calcule vencimento.',
+    'trecho deve copiar literalmente um trecho recebido no texto.',
+    'Responda SOMENTE JSON: {"candidate_index":0|null,"regime":"cpc|clt|unknown","confidence":0..1,"trecho":"...","justificativa":"curta"}.'
+  ].join('\n');
+  return ia([{role:'user',content:JSON.stringify(input)}],system,500,MODELO_ECO);
+}
 const deadlineScheduler=createDeadlineScheduler({
   records:recordStore,
   run:now=>runDailyOfficeJobs({
@@ -784,6 +798,8 @@ const deadlineScheduler=createDeadlineScheduler({
     datajudOptions:{apiKey:process.env.DATAJUD_API_KEY,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,fetchImpl:globalThis.fetch},
     djenOptions:{
       oabs:_djenOabsRuntime(),oabsEnv:process.env.DJEN_OABS,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
+      aiAnalyze:aiAvailable()?input=>_analisarPrazoDjen(input):null,
+      calendarioVerificado:false,
       clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY}
     }
   }),
