@@ -6,9 +6,9 @@ Controle definido pelo titular em 19/09/2026 e consolidado para o fechamento com
 
 | # | Etapa | Estado |
 | --- | --- | --- |
-| 1 | Telegram: transporte/polling | ✅ concluído, conforme homologação informada pelo titular |
-| 2 | Recepção unificada WhatsApp + Telegram | ✅ concluído, conforme homologação informada pelo titular |
-| 3 | Histórico/resposta pelo canal correto | ✅ concluído, conforme homologação informada pelo titular |
+| 1 | Telegram: transporte/polling | ✅ concluído — evidência E1 |
+| 2 | Recepção unificada WhatsApp + Telegram | ✅ concluído — evidência E2 |
+| 3 | Histórico/resposta pelo canal correto | ✅ concluído — evidência E3 |
 | 4 | Task Engine — recuperação segura | 🟡 implementado/testado; falta homologação real da recuperação |
 | 5 | Pipeline/Home/status | 🟡 implementado; falta homologação funcional/visual final |
 | 6 | LEX vivo — entender ordens naturais e EXECUTAR | 🟡 em correção; execução natural/Core comum ainda exige fechamento e homologação funcional |
@@ -22,6 +22,22 @@ Controle definido pelo titular em 19/09/2026 e consolidado para o fechamento com
 | 14 | PJe autenticado + autorização + intimações/citações | 🟡 fundação iniciada; integração real não pode ser simulada |
 | 15 | Prazo oficial/auditável + Datajud/PJe/DJEN | 🟡 fundação iniciada; fechar proveniência, frescor e fluxo real |
 | 16 | Regressão completa + CodeRabbit + produção | ⬜ final |
+
+## Evidências rastreáveis dos itens concluídos
+
+**E1 — Telegram transporte/polling.** Implementação e endurecimento registrados nos PRs #79 (“Patch 1 — Telegram polling 24/7 seguro”), #82 e #83; o PR #85 registra explicitamente teste real em 19/09/2026 no qual o Telegram recebia mensagens. Ambiente operacional: LEX implantado. Essas referências sustentam o ✅ do transporte/polling, não substituem a homologação E2E separada da etapa 8.
+
+**E2 — Recepção unificada WhatsApp + Telegram.** PR #84 implementa a recepção única preservando origem e persistências separadas; PRs #85 e #86 levam a central integrada para a interface e registram a correção a partir do teste real de 19/09/2026. O ✅ cobre a recepção unificada; não antecipa os E2E finais das etapas 7 e 8.
+
+**E3 — Histórico/resposta pelo canal correto.** PR #84 registra a regra de resposta pelo canal de origem e de só persistir a saída após confirmação do provedor; PRs #85/#86 conectam esse fluxo à central integrada. O aceite funcional foi consolidado em 19/09/2026 na lista-mestra. O ✅ cobre roteamento/histórico; não equivale a homologação E2E dos canais 7 e 8.
+
+Links localizáveis:
+- https://github.com/melchior1000/lexjuridico/pull/79
+- https://github.com/melchior1000/lexjuridico/pull/82
+- https://github.com/melchior1000/lexjuridico/pull/83
+- https://github.com/melchior1000/lexjuridico/pull/84
+- https://github.com/melchior1000/lexjuridico/pull/85
+- https://github.com/melchior1000/lexjuridico/pull/86
 
 ## Regras de independência
 
@@ -57,6 +73,6 @@ Não exigir escolha de IA/setor ou comandos decorados. Exemplos de aceite: “re
 
 ## Gate comercial adicional
 
-Fechar a lista funcional não autoriza vender o sistema se o isolamento entre escritórios não estiver comprovado. Antes da declaração comercial, cumprir o gate SaaS de `AGENTS.md`: identidade por usuário/escritório, isolamento de dados/ferramentas, RLS ou mecanismo equivalente comprovado, segredos, documentos/versionamento, backup/restore, limites, observabilidade, onboarding e rollback.
+Fechar a lista funcional não autoriza vender o sistema se o isolamento entre escritórios não estiver comprovado. Antes da declaração comercial, cumprir o gate SaaS de AGENTS.md: identidade por usuário/escritório, isolamento de dados/ferramentas, RLS ou mecanismo equivalente comprovado, teste A/B, segredos, documentos/versionamento, backup/restore, limites, observabilidade, onboarding, rollback e billing isolado quando habilitado.
 
 Nenhum novo ✅ deve ser atribuído apenas por CI, mock, PR ou preview.
