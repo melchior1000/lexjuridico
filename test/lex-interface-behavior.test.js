@@ -92,3 +92,22 @@ test('Home denuncia DJEN sem OAB como bloqueio crítico',async()=>{
   assert.match(h.nodes['.lex-today-list'].innerHTML,/Diário ainda não configurado/);
   assert.match(h.nodes['.lex-today-list'].innerHTML,/não tem uma OAB definida/);
 });
+
+
+test('Home mostra sugestão sem tratá-la como prazo confirmado',async()=>{
+  const h=home(async path=>path==='/api/trabalho'?{
+    tarefas:[],
+    prazos:{cunhar:[{
+      djen_id:'dj-s1',processo_id:'p1',cnj:'5000000-00.2026.8.13.0001',data_disponibilizacao:'2026-09-21',tipo:'Intimação',
+      texto:'Manifeste-se no prazo de 5 dias úteis.',
+      prazo_sugestao:{status:'proposta_calculada',legal_truth:false,dias:5,modo:'uteis',regime:'cpc',due_at_proposto:'2026-09-29',trecho:'Manifeste-se no prazo de 5 dias úteis.',calendario_verificado:false}
+    }],correndo:[]}
+  }:{contatos:[]});
+  await h.window.lexHome();
+  const html=h.nodes['.lex-today-list'].innerHTML;
+  assert.match(html,/Prazo sugerido — falta sua confirmação/);
+  assert.match(html,/Vencimento sugerido: 2026-09-29/);
+  assert.match(html,/Confirmar 2026-09-29/);
+  assert.match(html,/Corrigir/);
+  assert.doesNotMatch(html,/Prazo confirmado vence/);
+});
