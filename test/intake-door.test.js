@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {intakeDecision,INTRO}=require('../lib/intake-door');
-const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode}=require('../lib/integration-status');
+const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode,incomingWhatsappMessage}=require('../lib/integration-status');
 const {createTelegramReception,isTelegramOwner}=require('../lib/telegram-reception');
 const vm=require('node:vm');
 const fs=require('node:fs');
@@ -132,6 +132,46 @@ test('adaptador Telegram interrompe texto e documento de terceiro antes do downl
   await c.adapterTelegram(tg('123','Quem é vc?'));
   await c.adapterTelegram(tg('123','',2,{document:{file_id:'x',mime_type:'application/pdf'}}));
   assert.equal(calls,2);
+});
+
+test('webhook despacha conversa livre do dono para o adaptador do LEX',async()=>{
+  const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
+  const start=source.indexOf("if(url==='/api/webhook-whatsapp' && req.method==='POST')");
+  const end=source.indexOf('// GET /api/fila',start);
+  assert.ok(start>=0&&end>start,'rota webhook WhatsApp deve existir');
+
+  const payload=body('Vamos trabalhar?','556199171717');
+  const responses=[];
+  let adapterCalls=0;
+  let adapterBody=null;
+  const c=vm.createContext({
+    url:'/api/webhook-whatsapp',
+    req:{method:'POST'},
+    res:{
+      writeHead:(status,headers)=>responses.push({status,headers}),
+      end:text=>responses.push({body:text})
+    },
+    EVO_INST:'LEX',
+    lerBody:async()=>payload,
+    incomingWhatsappMessage,
+    adapterEvolution:async value=>{adapterCalls++;adapterBody=value;},
+    corsHeaders:()=>({}),
+    console
+  });
+
+  const before=process.env.LEX_OPERATOR_WHATSAPP;
+  process.env.LEX_OPERATOR_WHATSAPP=cfg.operator;
+  try {
+    vm.runInContext('async function executarWebhook(){'+source.slice(start,end)+'}',c);
+    await c.executarWebhook();
+    assert.equal(adapterCalls,1);
+    assert.equal(adapterBody,payload);
+    assert.equal(responses[0].status,200);
+    assert.match(responses[1].body,/recebido/);
+  } finally {
+    if(before===undefined) delete process.env.LEX_OPERATOR_WHATSAPP;
+    else process.env.LEX_OPERATOR_WHATSAPP=before;
+  }
 });
 
 test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()=>{
