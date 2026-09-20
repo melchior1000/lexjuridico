@@ -19,3 +19,19 @@ test('falha DJEN fica em retry e pode tentar de novo',async()=>{
   await s.tick();await s.tick();
   assert.equal(runs,2);assert.equal(rec.get('lex_deadline_daily_job').status,'retry');s.stop();
 });
+
+
+test('DJEN sem OAB fica bloqueado e não é registrado como dia concluído',async()=>{
+  const rec=records();let runs=0;const notices=[];
+  const s=createDeadlineScheduler({
+    records:rec,now:()=>new Date('2026-09-20T12:00:00-03:00'),
+    notify:async text=>notices.push(text),
+    run:async()=>{runs++;return{ok:true,djen:{enabled:false,ok:true,cunhar_total:0},alerts:{novos:0},exceptions:[]}}
+  });
+  await s.tick();await s.tick();
+  assert.equal(runs,2);
+  assert.equal(rec.get('lex_deadline_daily_job').status,'blocked');
+  assert.equal(rec.get('lex_deadline_daily_job').djen_status,'not_configured');
+  assert.ok(notices.some(x=>/não tem OAB configurada/i.test(x)));
+  s.stop();
+});
