@@ -19,9 +19,10 @@ function ownerBody(text,id='owner-1'){
 }
 
 test('mesa do dono entende linguagem natural sem barra',()=>{
-  assert.equal(normalizeOwnerDeskCommand('Oi'),'/recepcao');
+  assert.equal(normalizeOwnerDeskCommand('Oi'),null);
   assert.equal(normalizeOwnerDeskCommand('mesa'),'/recepcao');
   assert.equal(normalizeOwnerDeskCommand('resumo'),'/recepcao');
+  assert.equal(normalizeOwnerDeskCommand('Bom dia'),null);
   assert.equal(normalizeOwnerDeskCommand('histórico 5561987777777'),'/historico 5561987777777');
   assert.equal(normalizeOwnerDeskCommand('responder 5561987777777 Texto exato'),'/responder 5561987777777 Texto exato');
   assert.equal(normalizeOwnerDeskCommand('resolver 5561987777777'),'/arquivar 5561987777777');
@@ -151,7 +152,7 @@ test('cursor nao perde segundo nome se contato anterior for arquivado entre pagi
   assert.match(calls[0].text,/mais de um contato/i);
 });
 
-test('oi no 7171 abre mesa com contatos isolados por numero',async()=>{
+test('mesa no 7171 abre contatos isolados por numero',async()=>{
   resetReception();
   const calls=[];
   const request=async(url,opts)=>{calls.push(opts.data);return {key:{id:'ok-'+calls.length}};};
@@ -160,7 +161,7 @@ test('oi no 7171 abre mesa com contatos isolados por numero',async()=>{
   await publicWhatsappReception(publicBody('5561982222222','Bruno','Tenho um processo de indenização','b1'),'LEX-JURIDICO',{...cfg,request});
   calls.length=0;
 
-  assert.equal(await handleWhatsappOperatorCommand(ownerBody('Oi'),'LEX-JURIDICO',{...cfg,request}),true);
+  assert.equal(await handleWhatsappOperatorCommand(ownerBody('mesa'),'LEX-JURIDICO',{...cfg,request}),true);
   assert.equal(calls.length,1);
   assert.equal(calls[0].number,'5561999171717');
   assert.match(calls[0].text,/Ana \(5561981111111\)/);
