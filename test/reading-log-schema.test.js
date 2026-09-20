@@ -28,3 +28,16 @@ test('alterar content_type invalida o HMAC',()=>{const r=structuredClone(valid()
 test('alterar metadata invalida o HMAC',()=>{const r=structuredClone(valid({metadata:{request:'a'}}));r.recibo.metadata.request='b';assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false)});
 test('query_context rejeita array esparso e undefined',()=>{const sparse=[];sparse.length=1;assert.throws(()=>valid({query_context:{a:sparse}}),/READING_IJSON_INVALID/);assert.throws(()=>valid({query_context:{a:[undefined]}}),/READING_IJSON_INVALID/)});
 test('query_context rejeita número não finito',()=>assert.throws(()=>valid({query_context:{a:Infinity}}),/READING_IJSON_INVALID/));
+
+
+test('query_context rejeita Map, Set, Date e instância de classe',()=>{
+  class Example{constructor(){this.a=1}}
+  for(const value of [new Map([['a',1]]),new Set([1]),new Date('2026-01-01T00:00:00Z'),new Example()]){
+    assert.throws(()=>valid({query_context:{a:value}}),/READING_IJSON_INVALID/);
+  }
+});
+
+test('query_context rejeita propriedades symbol antes do structuredClone',()=>{
+  const value={a:1};value[Symbol('hidden')]=2;
+  assert.throws(()=>valid({query_context:value}),/READING_IJSON_INVALID/);
+});
