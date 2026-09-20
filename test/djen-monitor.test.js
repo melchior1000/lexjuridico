@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {syncWindows,communicationRow}=require('../lib/djen-monitor');
+const {syncWindows,communicationRow,suggestPendingDeadlines}=require('../lib/djen-monitor');
 
 test('primeira ativação consulta sete dias incluindo hoje',()=>{
   const w=syncWindows(null,new Date('2026-09-20T12:00:00-03:00'),7);
@@ -33,4 +33,30 @@ test('communicationRow preserva o recibo original e localiza o item',()=>{
   assert.equal(row.raw_receipt,raw);
   assert.equal(row.receipt_item_key,'dj1');
   assert.equal(row.receipt_page,2);
+});
+
+
+test('sugestão de prazo é persistida mas nunca vira legal_truth',async()=>{
+  const row={djen_id:'dj-s1',texto:'Manifeste-se no prazo de 5 dias úteis.',tribunal:'TJMG',data_disponibilizacao:'2026-09-21',status:'casada',prazo_cunhado:false};
+  const patches=[];
+  const sbReq=async(method,table,data,query)=>{
+    assert.equal(table,'djen_comunicacoes');
+    if(method==='PATCH'){patches.push(data);return{ok:true,status:200,body:[{...row,...data}]}}
+    throw new Error('unexpected '+method);
+  };
+  const out=await suggestPendingDeadlines(sbReq,[row],{
+    calendarioVerificado:true,
+    aiAnalyze:async()=>({candidate_index:0,regime:'cpc',confidence:.99,trecho:'Manifeste-se no prazo de 5 dias úteis.'})
+  });
+  assert.equal(out.failures.length,0);
+  assert.equal(out.rows[0].prazo_sugestao.due_at_proposto,'2026-09-29');
+  assert.equal(out.rows[0].prazo_sugestao.legal_truth,false);
+  assert.equal(patches[0].prazo_sugestao.legal_truth,false);
+});
+
+test('sugestão já persistida não chama IA de novo',async()=>{
+  let calls=0;
+  const row={djen_id:'dj-s2',prazo_sugestao:{status:'proposta_calculada',legal_truth:false,due_at_proposto:'2026-09-29'}};
+  const out=await suggestPendingDeadlines(async()=>{throw new Error('não deveria persistir')},[row],{aiAnalyze:async()=>{calls++;return{}}});
+  assert.equal(calls,0);assert.equal(out.rows[0],row);
 });
