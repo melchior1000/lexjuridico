@@ -79,8 +79,10 @@ body.lex-commercial #content .lex-screen.lex2-lex{display:grid;grid-template-row
 .lex2-lex .lex-top{position:static;padding-bottom:9px}
 body.lex-commercial .lex2-lex .lex-conversation{min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain}
 .lex2-lex .lex-msg{font-size:14px;overflow-wrap:anywhere}
-.lex2-context-chips{display:flex;overflow-x:auto;scrollbar-width:thin;gap:8px;padding-bottom:3px}
-.lex2-context-chips button{flex:0 0 auto;min-height:44px;font-size:12px;padding:9px 14px}
+@media(min-width:621px){
+  .lex2-context-chips{display:flex;overflow-x:auto;scrollbar-width:thin;gap:8px;padding-bottom:3px}
+  .lex2-context-chips button{flex:0 0 auto;min-height:44px;font-size:12px;padding:9px 14px}
+}
 .lex2-command-row textarea{font-size:16px;line-height:1.4;min-height:64px}
 .lex2-command button:disabled{opacity:.55;cursor:wait}
 .lex-today-head{padding:24px 0 20px;max-width:750px}
