@@ -2,6 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {syncWindows,communicationRow,suggestPendingDeadlines}=require('../lib/djen-monitor');
+const DeadlineSuggestion=require('../lib/deadline-suggestion');
 
 test('primeira ativação consulta sete dias incluindo hoje',()=>{
   const w=syncWindows(null,new Date('2026-09-20T12:00:00-03:00'),7);
@@ -56,7 +57,23 @@ test('sugestão de prazo é persistida mas nunca vira legal_truth',async()=>{
 
 test('sugestão já persistida não chama IA de novo',async()=>{
   let calls=0;
-  const row={djen_id:'dj-s2',prazo_sugestao:{status:'proposta_calculada',legal_truth:false,due_at_proposto:'2026-09-29'}};
+  const row={djen_id:'dj-s2',texto:'Manifeste-se no prazo de 5 dias úteis.',data_disponibilizacao:'2026-09-21',tribunal:'TJMG'};
+  row.prazo_sugestao={status:'proposta_calculada',legal_truth:false,due_at_proposto:'2026-09-29',source_hash:DeadlineSuggestion.sourceHash(row)};
   const out=await suggestPendingDeadlines(async()=>{throw new Error('não deveria persistir')},[row],{aiAnalyze:async()=>{calls++;return{}}});
   assert.equal(calls,0);assert.equal(out.rows[0],row);
+});
+
+
+test('mudança no teor invalida a sugestão anterior e força nova análise',async()=>{
+  let calls=0;
+  const row={djen_id:'dj-s3',texto:'Manifeste-se no prazo de 10 dias úteis.',data_disponibilizacao:'2026-09-21',tribunal:'TJMG',status:'casada'};
+  row.prazo_sugestao={status:'proposta_calculada',legal_truth:false,due_at_proposto:'2026-09-29',source_hash:'hash-antigo'};
+  const sbReq=async(method,table,data)=>({ok:true,status:200,body:[{...row,...data}]});
+  const out=await suggestPendingDeadlines(sbReq,[row],{
+    calendarioVerificado:true,
+    aiAnalyze:async()=>{calls++;return{candidate_index:0,regime:'cpc',confidence:.95,trecho:'Manifeste-se no prazo de 10 dias úteis.'}}
+  });
+  assert.equal(calls,1);
+  assert.equal(out.rows[0].prazo_sugestao.dias,10);
+  assert.notEqual(out.rows[0].prazo_sugestao.source_hash,'hash-antigo');
 });
