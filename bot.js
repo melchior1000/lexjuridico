@@ -95,6 +95,8 @@ const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMo
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
 const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-quality');
 const {applyPjeMovement} = require('./lib/pje-sync');
+const {runDailyOfficeJobs} = require('./lib/office-daily-jobs');
+const {createDeadlineScheduler} = require('./lib/deadline-scheduler');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
 const { modelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
 const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-reader');
@@ -160,6 +162,8 @@ const MODELO_LEGAL = legalModelFor();
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_KEY || '';
+// Falha fechada no carregamento, antes de abrir a porta HTTP.
+require('./lib/reading-log-schema').resolveIntegrityKey();
 
 const {url:EVO_URL, key:EVO_KEY, instance:EVO_INST} = require('./lib/evolution-config').evolutionConfig();
 
@@ -767,6 +771,25 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
     return tg;
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
+function _djenOabsRuntime(){
+  if(process.env.DJEN_OABS) return undefined;
+  const raw=String(_configRuntime?.pje?.oab_numero||'').trim().toUpperCase();
+  const m=raw.match(/^(\d+)\/([A-Z]{2})$/);
+  return m?[{oab:m[1],uf:m[2]}]:[];
+}
+const deadlineScheduler=createDeadlineScheduler({
+  records:recordStore,
+  run:now=>runDailyOfficeJobs({
+    processStore,sbReq,now,
+    datajudOptions:{apiKey:process.env.DATAJUD_API_KEY,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,fetchImpl:globalThis.fetch},
+    djenOptions:{
+      oabs:_djenOabsRuntime(),oabsEnv:process.env.DJEN_OABS,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
+      clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY}
+    }
+  }),
+  notify:text=>notificationDigest.enqueue(text,CHAT_ID||'central'),
+  log:msg=>console.warn(msg)
+});
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
 let officeProfile={...ESCRITORIO};
 const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
@@ -12815,6 +12838,8 @@ setTimeout(() => {
 }, 60 * 1000);
 
 console.log('[LEX] Motor Proativo agendado — verificação a cada 6h, 7h-22h (economia API)');
+deadlineScheduler.start();
+console.log('[LEX] Vigia de prazos agendada — DJEN diário + alertas persistentes');
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -13576,6 +13601,7 @@ if(require.main !== module) {
 // ════════════════════════════════════════════════════════════════════════════
 async function _gracefulShutdown(signal) {
   console.log('[Lex] '+signal+' recebido. Drenando Telegram...');
+  deadlineScheduler.stop();
   await telegramPoller.stop();
   console.log('[Lex] Telegram drenado. Salvando dados...');
   const t = setTimeout(()=>{ console.error('[Lex] Timeout ao salvar dados no shutdown.'); process.exit(1); }, 10000);
