@@ -26,4 +26,10 @@ test('objeto forjado com shape de evidência é ignorado',async()=>{const now=ne
 test('evidência de outro processo não altera carimbo',()=>{const now=new Date('2026-09-20T18:05:00Z'),{e}=minted(now);const p={...caso,id:'c2'};assert.deepEqual(Watch.applySyncStamp(p,e),p)});
 test('retry do mesmo intent não duplica ledger',()=>{const event={event_type:'court_sync_attempted',intent_id:'same',result:'blocked',payload:{warning:'x'}};const a=Watch.recordWatch({},event),b=Watch.recordWatch(a,event);assert.equal(b.case_events.length,1);assert.equal(Ledger.verify(b.case_events),true)});
 
-test('timestamp de due_at é convertido para a data civil de São Paulo',()=>{const now=new Date('2026-09-30T00:30:00Z'),{t}=minted(new Date('2026-09-20T18:05:00Z'));const shifted={...t,due_at:'2026-10-01T00:30:00Z'};const f=Watch.freshnessOf(caso,now,null,shifted);assert.notEqual(f.prazo,'2026-10-01')});
+test('timestamp de due_at é convertido para a data civil de São Paulo',()=>{
+  const observed='2026-09-20T18:00:00.000Z';
+  const r=createReadingLogEntry({reading_id:'tz1',processo:'5000000-00.2026.8.13.0001',process_id:'c1',source:'pje',observed_at:observed,ok:true,status_code:200,proveniencia:{conector:'lib/pje-sync',endpoint:'https://pje.example',request_id:'tz-req',authenticated:true,timestamp_requisicao:observed,timestamp_resposta:observed},raw_receipt:'{"ok":true}',sincronizado:true,explicit_no_change:true,due_at:'2026-10-01T00:30:00Z'},{integrityKey:KEY});
+  const t=mintDeadlineTruth({readingId:'tz1',authorizationId:'tza'},{readingLog:new Map([['tz1',r]]),authorizationLog:new Map([['tza',{id:'tza',reading_id:'tz1',process_id:'c1',human_id:'u1',authorized_at:'2026-09-20T18:01:00.000Z'}]]),integrityKey:KEY,now:Date.parse('2026-09-20T18:05:00Z')});
+  const f=Watch.freshnessOf(caso,new Date('2026-09-30T00:30:00Z'),null,t);
+  assert.equal(f.prazo,'2026-09-30');assert.equal(f.days_to_due,0);
+});
