@@ -47,3 +47,17 @@ test('secretaria não pode confirmar prazo jurídico',async()=>{
   await officeRoutes({url:'/api/escritorio/prazos/cunhar',method:'POST'},out.res,{headers:{},authenticate:()=> 'secretaria',records:{request:db.request}});
   assert.equal(out.get().status,403);
 });
+
+
+test('mesa de trabalho recebe a fila de cunhagem sem fabricar vencimento',async()=>{
+  const row=communication(),db=database(row),ps=store([{id:'p1',numero:'5000000-00.2026.8.13.0001',nome:'Caso',status:'ATIVO'}]),out=response();
+  const records={request:db.request,async read(){return null}};
+  const engine={async recoverStale(){return[]},async list(){return[]}};
+  await officeRoutes({url:'/api/trabalho',method:'GET'},out.res,{
+    headers:{},authenticate:()=> 'admin',records,engine,processStore:ps,aiAvailable:()=>true,courtReadingIntegrityKey:KEY
+  });
+  assert.equal(out.get().status,200);
+  assert.equal(out.get().body.prazos.cunhar.length,1);
+  assert.equal(out.get().body.prazos.correndo.length,0);
+  assert.equal(ps.snapshot()[0].prazoReal,undefined);
+});
