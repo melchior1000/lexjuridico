@@ -33,3 +33,12 @@ test('timestamp de due_at é convertido para a data civil de São Paulo',()=>{
   const f=Watch.freshnessOf(caso,new Date('2026-10-01T00:30:00Z'),null,t);
   assert.equal(f.prazo,'2026-09-30');assert.equal(f.days_to_due,0);
 });
+
+
+test('sync parcial não apaga verdade persistida de outro prazo',()=>{
+  const now=new Date('2026-09-20T18:05:00Z'),{t}=minted(now);
+  const p={...caso,deadline_truth:t};
+  const items=Watch.watchlist([p],now,[],[{legal_truth:true,process_id:'outro'}],{integrityKey:KEY});
+  assert.equal(items[0].deadline_legal_truth,true);
+  assert.equal(items[0].authorization_id,'a1');
+});
