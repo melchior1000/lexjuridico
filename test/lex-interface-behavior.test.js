@@ -60,3 +60,25 @@ test('resposta tardia da Home não atualiza tela abandonada',async()=>{
   const second=home(()=>deferred);const pending=second.window.lexHome();second.surface.isConnected=false;
   finish({tarefas:[],contatos:[]});await pending;assert.equal(second.nodes.h1.textContent,'');
 });
+
+
+test('Home mostra intimação DJEN sem prazo na fila Precisa de você',async()=>{
+  const h=home(async path=>path==='/api/trabalho'?{
+    tarefas:[],
+    prazos:{cunhar:[{djen_id:'dj1',processo_id:'p1',cnj:'5000000-00.2026.8.13.0001',data_disponibilizacao:'2026-09-20',tipo:'Intimação',texto:'Manifestar em prazo legal.'}],correndo:[]}
+  }:{contatos:[]});
+  await h.window.lexHome();
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/Intimação sem prazo confirmado/);
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/Ler e confirmar prazo/);
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/5000000-00\.2026\.8\.13\.0001/);
+});
+
+test('Home mostra somente prazo confirmado vindo da mesa do servidor',async()=>{
+  const h=home(async path=>path==='/api/trabalho'?{
+    tarefas:[],
+    prazos:{cunhar:[],correndo:[{case_id:'p1',prazo:'2026-09-21',days_to_due:1,titulo:'Caso prazo',djen_id_origem:'dj2'}]}
+  }:{contatos:[]});
+  await h.window.lexHome();
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/Prazo confirmado vence amanhã/);
+  assert.match(h.nodes['.lex-today-list'].innerHTML,/DJEN dj2/);
+});
