@@ -74,7 +74,7 @@ Esses exemplos são requisitos; sua presença aqui não declara implementação.
 
 ## Limites e próxima sequência
 
-1. Concluir testes completos, CI e revisão do PR desta correção.
+1. Confirmar o CI remoto e concluir a revisão do PR desta correção.
 2. Integrar os caminhos existentes ao Core comum. O handler do dono no WhatsApp
    ainda possui despacho próprio; corrigir a busca não unifica automaticamente
    o motor da Web (`/api/vivo/conversar`) e o adaptador Telegram.
