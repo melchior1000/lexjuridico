@@ -134,11 +134,40 @@ test('adaptador Telegram interrompe texto e documento de terceiro antes do downl
   assert.equal(calls,2);
 });
 
-test('webhook deixa conversa livre do dono seguir para o adaptador do LEX',()=>{
+test('webhook despacha conversa livre do dono para o adaptador do LEX',async()=>{
+  const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
+  const start=source.indexOf("if(url==='/api/webhook-whatsapp' && req.method==='POST')");
+  const end=source.indexOf('// GET /api/fila',start);
+  assert.ok(start>=0&&end>start,'rota webhook WhatsApp deve existir');
+
+  const payload=body('Vamos trabalhar?','556199171717');
+  const responses=[];
+  let adapterCalls=0;
+  let adapterBody=null;
+  const c=vm.createContext({
+    url:'/api/webhook-whatsapp',
+    req:{method:'POST'},
+    res:{
+      writeHead:(status,headers)=>responses.push({status,headers}),
+      end:text=>responses.push({body:text})
+    },
+    EVO_INST:'LEX',
+    lerBody:async()=>payload,
+    incomingWhatsappMessage,
+    adapterEvolution:async value=>{adapterCalls++;adapterBody=value;},
+    corsHeaders:()=>({}),
+    console
+  });
+
   const before=process.env.LEX_OPERATOR_WHATSAPP;
   process.env.LEX_OPERATOR_WHATSAPP=cfg.operator;
   try {
-    assert.equal(incomingWhatsappMessage(body('Vamos trabalhar?','556199171717'),'LEX'),true);
+    vm.runInContext('async function executarWebhook(){'+source.slice(start,end)+'}',c);
+    await c.executarWebhook();
+    assert.equal(adapterCalls,1);
+    assert.equal(adapterBody,payload);
+    assert.equal(responses[0].status,200);
+    assert.match(responses[1].body,/recebido/);
   } finally {
     if(before===undefined) delete process.env.LEX_OPERATOR_WHATSAPP;
     else process.env.LEX_OPERATOR_WHATSAPP=before;
