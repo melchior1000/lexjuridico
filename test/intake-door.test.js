@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {intakeDecision,INTRO}=require('../lib/intake-door');
-const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode}=require('../lib/integration-status');
+const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode,incomingWhatsappMessage}=require('../lib/integration-status');
 const {createTelegramReception,isTelegramOwner}=require('../lib/telegram-reception');
 const vm=require('node:vm');
 const fs=require('node:fs');
@@ -132,6 +132,17 @@ test('adaptador Telegram interrompe texto e documento de terceiro antes do downl
   await c.adapterTelegram(tg('123','Quem é vc?'));
   await c.adapterTelegram(tg('123','',2,{document:{file_id:'x',mime_type:'application/pdf'}}));
   assert.equal(calls,2);
+});
+
+test('webhook deixa conversa livre do dono seguir para o adaptador do LEX',()=>{
+  const before=process.env.LEX_OPERATOR_WHATSAPP;
+  process.env.LEX_OPERATOR_WHATSAPP=cfg.operator;
+  try {
+    assert.equal(incomingWhatsappMessage(body('Vamos trabalhar?','556199171717'),'LEX'),true);
+  } finally {
+    if(before===undefined) delete process.env.LEX_OPERATOR_WHATSAPP;
+    else process.env.LEX_OPERATOR_WHATSAPP=before;
+  }
 });
 
 test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()=>{
