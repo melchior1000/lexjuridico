@@ -771,6 +771,7 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
     return tg;
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
+const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
 function _djenOabsRuntime(){
   if(process.env.DJEN_OABS) return undefined;
   const raw=String(_configRuntime?.pje?.oab_numero||'').trim().toUpperCase();
@@ -808,7 +809,6 @@ const deadlineScheduler=createDeadlineScheduler({
 });
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
 let officeProfile={...ESCRITORIO};
-const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
 const taskEngine=new TaskEngine({store:recordStore,processes:async()=>(await processStore.read()).processes,
   ai:(messages,system,tokens)=>ia(messages,system,tokens,MODELO_TOP),available:aiAvailable,office:()=>officeProfile});
 
