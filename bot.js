@@ -10120,7 +10120,8 @@ const server = http.createServer(async (req, res) => {
   }
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
     await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,
-      engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,
+      engine:taskEngine,processStore,sbReq,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,
+      courtReadingIntegrityKey:process.env.COURT_READING_INTEGRITY_KEY,
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};},log:msg=>console.warn('[Tarefa]',msg)});
     return;
   }
