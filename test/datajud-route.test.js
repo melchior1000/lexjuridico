@@ -17,7 +17,7 @@ test('rota do escritório consulta Datajud do processo selecionado sem IA',async
   const db=store([{id:'p1',nome:'Caso',numero:cnj,andamentos:[]}]);
   const deps={
     headers:{'Content-Type':'application/json'},authenticate:()=> 'admin',body:async()=>({processo_id:'p1'}),processStore:db,
-    datajudApiKey:'public-key',datajudFetch:async()=>({ok:true,status:200,json:async()=>({hits:{hits:[{_source:{movimentos:[{dataHora:'2026-09-14T12:00:00Z',nome:'Juntada'}]}}]}})})
+    datajudApiKey:'public-key',courtReadingIntegrityKey:'0123456789abcdef0123456789abcdef',datajudFetch:async()=>({ok:true,status:200,json:async()=>({hits:{hits:[{_source:{movimentos:[{dataHora:'2026-09-14T12:00:00Z',nome:'Juntada'}]}}]}})})
   };
   const out=response();
   await officeRoutes({url:'/api/escritorio/datajud',method:'POST'},out.res,deps);
