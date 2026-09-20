@@ -160,6 +160,8 @@ const MODELO_LEGAL = legalModelFor();
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_KEY || '';
+// Falha fechada no carregamento, antes de abrir a porta HTTP.
+require('./lib/reading-log-schema').resolveIntegrityKey();
 
 const {url:EVO_URL, key:EVO_KEY, instance:EVO_INST} = require('./lib/evolution-config').evolutionConfig();
 
@@ -12507,10 +12509,6 @@ async function _flushNotificacoes() {
 }
 
 setInterval(_flushNotificacoes, 5 * 60 * 1000);
-
-// Falha fechada antes de abrir a porta: leituras judiciais auditáveis exigem
-// segredo HMAC válido já no boot, não somente no primeiro sync.
-require('./lib/reading-log-schema').resolveIntegrityKey();
 
 server.listen(process.env.PORT||3000, async () => {
   // VALIDACAO DE SEGURANCA NO STARTUP
