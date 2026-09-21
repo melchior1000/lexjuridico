@@ -1565,4 +1565,18 @@ async function tratarRota(req, res, url, deps) {
   return true;
 }
 
-module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaPJe };
+async function _capturarResultadoEspecialista(handler, body, deps) {
+  let status=500,payload=null;
+  const res={
+    writableEnded:false,
+    writeHead(code){status=code;},
+    end(raw){this.writableEnded=true;try{payload=JSON.parse(String(raw||'{}'));}catch{payload={error:String(raw||'Resposta inválida do especialista')}}}
+  };
+  await handler({method:'POST'},res,body,{...deps,CORS:deps.CORS||{}});
+  if(status>=400||payload?.error)throw Object.assign(new Error(payload?.error||'Falha no especialista.'),{status});
+  return payload||{};
+}
+async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
+async function executarPesquisaJulgador(body,deps){return _capturarResultadoEspecialista(handlerJuizConversar,body,deps)}
+
+module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };
