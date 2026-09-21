@@ -85,6 +85,7 @@ async function tratarRota(req, res, url, deps) {
         const execution=await executeNaturalOfficeCommand(nextDeps,{
           text:body.mensagem,processo_id:processoId,profile:nextDeps.perfil,
           request_id:body.request_id||req?.headers?.['x-request-id']||undefined,
+          previous_text:[...(Array.isArray(body.historico)?body.historico:[])].reverse().find(m=>m?.role==='assistant'&&typeof m.content==='string')?.content||null,
           defer_task:true
         });
         if(execution?.handled){
