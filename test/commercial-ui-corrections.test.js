@@ -36,15 +36,19 @@ test('chat do LEX envia contexto do processo selecionado',()=>{
 });
 
 
-test('filtros de prazo distinguem vencidos, hoje, próximos 7 dias e todos',()=>{
-  assert.match(js,/function deadlineBuckets\(all=deadlineItems\(\)\)/);
-  assert.match(js,/vencidos:all\.filter\(x=>x\.d<0\)/);
-  assert.match(js,/hoje:all\.filter\(x=>x\.d===0\)/);
-  assert.match(js,/dias7:all\.filter\(x=>x\.d>0&&x\.d<=7\)/);
+test('filtros de prazo separam legado de prazo confirmado',()=>{
+  assert.match(js,/function deadlineConfirmed\(p\)/);
+  assert.match(js,/revisar:all\.filter\(x=>!x\.confirmed\)/);
+  assert.match(js,/vencidos:all\.filter\(x=>x\.confirmed&&x\.d<0\)/);
+  assert.match(js,/hoje:all\.filter\(x=>x\.confirmed&&x\.d===0\)/);
+  assert.match(js,/dias7:all\.filter\(x=>x\.confirmed&&x\.d>0&&x\.d<=7\)/);
+  assert.match(js,/Revisar <b>/);
   assert.match(js,/Vencidos <b>/);
   assert.match(js,/Todos <b>/);
-  assert.match(js,/Nenhum prazo vence hoje/);
-  assert.match(js,/Nenhum prazo vence nos próximos 7 dias/);
+  assert.match(js,/Nenhum prazo confirmado vence hoje/);
+  assert.match(js,/Nenhum prazo confirmado vence nos próximos 7 dias/);
+  assert.match(js,/Prazo legado sem confirmação auditável/);
+  assert.match(js,/PRAZO LEGADO A CONFERIR/);
 });
 
 test('Organizar com o LEX envia contexto real de prazos ao Core em vez de abrir chat vazio',()=>{
