@@ -89,8 +89,8 @@ const Workflow = require('./lib/workflow');
 const {ProcessStore} = require('./lib/process-store');
 const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
-const {TaskEngine,legalCommand} = require('./lib/task-engine');
-const {officeRoutes} = require('./lib/office-routes');
+const {TaskEngine} = require('./lib/task-engine');
+const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
 const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-quality');
@@ -5902,20 +5902,26 @@ async function processarMensagem(ctx, dados) {
   const txt = (dados.texto||'').trim();
   const low = txt.toLowerCase();
   const modo = getModoAgente(chatId);
-  const requestedTask=legalCommand(txt);
-  if(requestedTask && !mem.aguardando && (isAdvogado(chatId) || (ctx.canal==='whatsapp' && ['admin','advogado'].includes(_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId))?.perfil)))) {
+  const operatorProfile=isAdvogado(chatId)?'admin':(ctx.canal==='whatsapp'?_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId))?.perfil:null);
+  if(!mem.aguardando && ['admin','advogado','secretaria'].includes(operatorProfile)) {
     try {
-      const task=await taskEngine.submit({tipo:requestedTask,instrucao:txt,
-        request_id:ctx.eventId||CRYPTO.randomUUID()},ctx.canal+':'+chatId);
-      const result=await taskEngine.run(task.id);
-      if(result?.resultado) {
-        const doc=_gerarDocxBufferPeca(result.processo_nome||result.tipo,result.resultado,'Minuta para revisão');
-        const delivered=await envArq(doc,'LEX_'+result.tipo+'_'+result.id.slice(0,8)+'.docx',ctx,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        if(delivered===false) throw new Error('Documento salvo na Central de trabalho; o canal não confirmou a entrega.');
-        await env('Minuta para revisão: '+(result.processo_nome||result.tipo)+'. '+result.pendencia,ctx);
-      } else await env('Tarefa '+task.id.slice(0,8)+': '+(result?.pendencia||'Em execução. Acompanhe na Central de trabalho.'),ctx);
-    }catch(e){await env('Não concluí a tarefa: '+e.message,ctx);}
-    return;
+      const execution=await executeNaturalOfficeCommand({
+        records:recordStore,engine:taskEngine,processStore,
+        log:msg=>console.warn('[LEX Core]',msg)
+      },{
+        text:txt,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID()
+      });
+      if(execution?.handled) {
+        const result=execution.result;
+        if(result?.resultado) {
+          const doc=_gerarDocxBufferPeca(result.processo_nome||result.tipo,result.resultado,'Minuta para revisão');
+          const delivered=await envArq(doc,'LEX_'+result.tipo+'_'+result.id.slice(0,8)+'.docx',ctx,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+          if(delivered===false) throw new Error('Documento salvo na Central de trabalho; o canal não confirmou a entrega.');
+        }
+        await env(execution.message||'Ordem executada pelo LEX.',ctx);
+        return;
+      }
+    }catch(e){await env('Não concluí a ordem: '+e.message,ctx);return;}
   }
   if(ctx.canal === 'whatsapp') {
     _estadoWhatsApp.ultima_mensagem = new Date().toISOString();
@@ -10719,7 +10725,8 @@ const server = http.createServer(async (req, res) => {
       const vivoUrl = url === '/api/agente-vivo' ? '/api/vivo/conversar' : url;
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
         req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
-        ANTHROPIC_KEY: AK, https, lerBody,
+        ANTHROPIC_KEY: AK, https, lerBody,records:recordStore,engine:taskEngine,processStore,
+        log:msg=>console.warn('[LEX Core]',msg),
         sbGet: (t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))),
         sbReq,
         sbUpsert: async (tabela, dados, conflito) => {
