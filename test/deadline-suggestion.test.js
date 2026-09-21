@@ -35,10 +35,25 @@ test('prazo corrido não é passado ao calendário de dias úteis',async()=>{
   assert.equal(out.modo,'corridos');assert.equal(out.due_at_proposto,null);assert.equal(out.legal_truth,false);
 });
 
-test('múltiplos prazos sem escolha segura permanecem ambíguos',async()=>{
+test('múltiplos prazos nominais e genéricos permanecem ambíguos sem escolha segura',async()=>{
+  const texto='Contestação em 15 dias. Documento complementar no prazo de 5 dias.';
+  const candidates=S.explicitDeadlineCandidates(texto);
+  assert.equal(candidates.length,2);
+  assert.deepEqual(candidates.map(x=>x.dias).sort((a,b)=>a-b),[5,15]);
   const out=await S.buildDeadlineSuggestion({
-    communication:{texto:'Contestação em 15 dias. Documento complementar no prazo de 5 dias.'},
+    communication:{texto},
     aiAnalyze:async()=>({candidate_index:null,regime:'cpc',confidence:.4})
   });
   assert.equal(out.status,'ambigua');assert.equal(out.legal_truth,false);
+});
+
+test('falha do provedor de IA cai para sugestão conservadora e registra diagnóstico',async()=>{
+  const out=await S.buildDeadlineSuggestion({
+    communication:{texto:'Manifeste-se no prazo de 5 dias úteis.',tribunal:'TJMG',data_disponibilizacao:'2026-09-21'},
+    aiAnalyze:async()=>{throw new Error('provider timeout')}
+  });
+  assert.equal(out.status,'candidato_sem_ia');
+  assert.equal(out.dias,5);
+  assert.equal(out.legal_truth,false);
+  assert.match(out.ai_error,/provider timeout/);
 });
