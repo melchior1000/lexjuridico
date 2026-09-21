@@ -114,3 +114,10 @@ test('/api/vivo/conversar executa ordem operacional antes de chamar Gestor textu
   assert.equal(out.body.execucao.status,'aguardando_revisao');
   assert.equal(engine.submitted.length,1);
 });
+
+test('LEX delega pesquisa de jurisprudencia e analise de julgador aos especialistas certos',()=>{
+  assert.equal(agent.specializedIntent('Pesquise jurisprudência sobre fraude à execução'),'jurisprudencia');
+  assert.equal(agent.specializedIntent('Analise o juiz relator deste processo'),'julgador');
+  assert.equal(agent.specializedIntent('Faça a contestação deste processo'),null);
+  assert.deepEqual(agent.namedJudgeFromMessage('Analise o juiz João da Silva do TJMG'),{nome:'João da Silva',tribunal:'TJMG'});
+});
