@@ -111,7 +111,7 @@ test('/api/vivo/conversar executa ordem operacional antes de chamar Gestor textu
   assert.equal(out.status,200);
   assert.equal(out.body.execucao.action,'task');
   assert.equal(out.body.execucao.tipo,'contestacao');
-  assert.equal(out.body.execucao.status,'aguardando_revisao');
+  assert.equal(out.body.execucao.status,'na_fila');
   assert.equal(engine.submitted.length,1);
 });
 
