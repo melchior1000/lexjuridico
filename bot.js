@@ -1317,7 +1317,7 @@ async function envArq(buf, nome, ctx, mimetype) {
 // ── Anthropic ──
 async function _iaAnthropic(messages, system, maxTok, modelo) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada. Defina a variável de ambiente.');
-  const pay={model: MODELOS_POR_PROVIDER.anthropic.top, max_tokens:maxTok||2000, messages};
+  const pay={model: modelo || MODELOS_POR_PROVIDER.anthropic.top, max_tokens:maxTok||2000, messages};
   if(system) pay.system=system;
   try {
     const r=await httpsPost('api.anthropic.com','/v1/messages',pay,
