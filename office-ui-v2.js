@@ -10,7 +10,7 @@ const openProc=id=>{if(typeof abrirProc==='function')abrirProc(id)};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000)};
 const active=p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''));
 const CHAT_HISTORY_LIMIT=20;
-let procTab='todos',procQuery='',prazoTab='hoje';
+let procTab='todos',procQuery='',prazoTab='todos';
 
 function chatHistoryKey(id){return 'lex_chat_history_'+(id?'process_'+String(id):'general')}
 function loadChatHistory(id){try{const raw=sessionStorage.getItem(chatHistoryKey(id));const items=raw?JSON.parse(raw):[];if(!Array.isArray(items))return[];return items.filter(m=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string'&&m.content.trim()).slice(-CHAT_HISTORY_LIMIT)}catch{return[]}}
@@ -47,7 +47,30 @@ function badge(d){if(d===9999)return '';if(d<0)return '<em class="late">Vencido<
 function procRows(list){return list.slice(0,30).map(p=>'<button class="lex-proc-row" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><span class="bar"></span><span><code>'+esc(p.numero||'sem número')+'</code><strong>'+esc(p.nome||p.partes||'Processo')+'</strong><small>'+esc(p.tribunal||p.area||p.assunto||'')+'</small><span class="chips">'+badge(days(p))+'</span></span><b>›</b></button>').join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>'}
 function filteredProcesses(){let list=procs();if(procTab==='ativos')list=list.filter(active);else if(procTab==='prazos')list=list.filter(p=>days(p)<=7);if(procQuery)list=list.filter(p=>[p.nome,p.numero,p.partes,p.assunto,p.area,p.tribunal,p.status].join(' ').toLowerCase().includes(procQuery));return list}
 function deadlineItems(){return procs().map(p=>({p,d:days(p)})).filter(x=>x.d<9999).sort((a,b)=>a.d-b.d)}
-function deadlineRows(list){return list.slice(0,30).map(x=>'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><i class="'+(x.d<=0?'red':x.d<=2?'amber':'blue')+'"></i><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(x.p.numero||x.p.tribunal||'')+'</small></span><em>'+(x.d<0?'vencido '+Math.abs(x.d)+'d':x.d===0?'hoje':x.d+'d')+'</em></button>').join('')||'<div class="lex-empty">Nenhum prazo cadastrado.</div>'}
+function deadlineBuckets(all=deadlineItems()){return{vencidos:all.filter(x=>x.d<0),hoje:all.filter(x=>x.d===0),dias7:all.filter(x=>x.d>0&&x.d<=7),todos:all}}
+function deadlineVisible(all=deadlineItems()){const b=deadlineBuckets(all);return prazoTab==='vencidos'?b.vencidos:prazoTab==='hoje'?b.hoje:prazoTab==='7dias'?b.dias7:b.todos}
+function deadlineEmptyMessage(){return prazoTab==='vencidos'?'Nenhum prazo vencido.':prazoTab==='hoje'?'Nenhum prazo vence hoje.':prazoTab==='7dias'?'Nenhum prazo vence nos próximos 7 dias.':'Nenhum prazo cadastrado.'}
+function deadlineRows(list,emptyMessage=deadlineEmptyMessage()){return list.slice(0,30).map(x=>'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><i class="'+(x.d<=0?'red':x.d<=2?'amber':'blue')+'"></i><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(x.p.numero||x.p.tribunal||'')+'</small></span><em>'+(x.d<0?'vencido '+Math.abs(x.d)+'d':x.d===0?'hoje':x.d+'d')+'</em></button>').join('')||'<div class="lex-empty">'+esc(emptyMessage)+'</div>'}
+function deadlineOrganizeCommand(){
+  const critical=deadlineItems().filter(x=>x.d<=7).slice(0,30);
+  if(!critical.length)return'Confira a controladoria de prazos e diga se existe alguma pendência que exige ação. Não invente prazo nem vencimento.';
+  const rows=critical.map(x=>'- '+(x.p.numero||'sem número')+' · '+(x.p.nome||x.p.partes||'Processo')+' · '+(x.d<0?'VENCIDO HÁ '+Math.abs(x.d)+' DIAS':x.d===0?'VENCE HOJE':'VENCE EM '+x.d+' DIAS')).join('\n');
+  return'Organize estes prazos da controladoria por urgência e diga qual ação exige minha atenção agora. Não altere datas e não trate prazo legado como verdade jurídica sem conferência.\n\n'+rows;
+}
+window.lexOrganizeDeadlines=function(){
+  const command=deadlineOrganizeCommand();
+  try{window.lexSelectChatProcess?.('')}catch{}
+  if(typeof window.lexChat!=='function')return;
+  window.lexChat('');
+  setTimeout(()=>{
+    const input=document.getElementById('lex-chat-input');
+    if(!input){if(typeof window.toast==='function')window.toast('Não consegui abrir o LEX com os prazos.','erro');return}
+    input.value=command;
+    const form=input.closest('form');
+    if(form&&typeof form.requestSubmit==='function')form.requestSubmit();
+    else if(typeof window.lexSendChat==='function')window.lexSendChat({preventDefault(){}});
+  },100);
+}
 window.lexOpenProc=id=>openProc(id);
 
 async function home(){
@@ -75,8 +98,8 @@ window.lexHome=home;
 window.lexProcessos=function(){const all=procs();const body='<div class="lex-page-head"><div><small>Carteira jurídica</small><h1>Processos</h1></div><button onclick="goLex(\'autuacao\')">＋</button></div><div class="lex-search"><span>⌕</span><input id="lex-q" value="'+esc(procQuery)+'" placeholder="Buscar processo, cliente, assunto..." oninput="lexFilterProc(this.value)"></div><div class="lex-tabs"><button class="'+(procTab==='todos'?'on':'')+'" onclick="lexSetProcFilter(\'todos\')">Todos <b>'+all.length+'</b></button><button class="'+(procTab==='ativos'?'on':'')+'" onclick="lexSetProcFilter(\'ativos\')">Ativos <b>'+all.filter(active).length+'</b></button><button class="'+(procTab==='prazos'?'on':'')+'" onclick="lexSetProcFilter(\'prazos\')">Prazos <b>'+all.filter(x=>days(x)<=7).length+'</b></button></div><div id="lex-proc-list">'+procRows(filteredProcesses())+'</div>';shell('Processos',body,'processos')};
 window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos'].includes(tab)?tab:'todos';window.lexProcessos()};
 window.lexFilterProc=q=>{procQuery=String(q||'').toLowerCase();const h=$('#lex-proc-list');if(h)h.innerHTML=procRows(filteredProcesses())};
-window.lexPrazos=function(){const all=deadlineItems();const visible=prazoTab==='hoje'?all.filter(x=>x.d===0):prazoTab==='7dias'?all.filter(x=>x.d>=0&&x.d<=7):all;const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')">▣</button></div><div class="lex-tabs"><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+all.filter(x=>x.d===0).length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+all.filter(x=>x.d>=0&&x.d<=7).length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos</button></div><div class="lex-timeline">'+deadlineRows(visible)+'</div><div class="lex-recommend"><b>💡 LEX recomenda</b><p>Priorize prazos de hoje e dos próximos 2 dias.</p><button onclick="lexChat()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
-window.lexSetPrazoTab=tab=>{prazoTab=['hoje','7dias','todos'].includes(tab)?tab:'hoje';window.lexPrazos()};
+window.lexPrazos=function(){const all=deadlineItems(),b=deadlineBuckets(all),visible=deadlineVisible(all);const recommendation=b.vencidos.length?'Há '+b.vencidos.length+' prazo(s) vencido(s). Confira primeiro a situação jurídica e a ação pendente.':b.hoje.length?'Há '+b.hoje.length+' prazo(s) vencendo hoje. Priorize a conferência agora.':b.dias7.length?'Há '+b.dias7.length+' prazo(s) nos próximos 7 dias. Organize a ordem de trabalho.':'Nenhum prazo crítico nos próximos 7 dias.';const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')">▣</button></div><div class="lex-tabs"><button class="'+(prazoTab==='vencidos'?'on':'')+'" onclick="lexSetPrazoTab(\'vencidos\')">Vencidos <b>'+b.vencidos.length+'</b></button><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+b.hoje.length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+b.dias7.length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos <b>'+b.todos.length+'</b></button></div><div class="lex-timeline">'+deadlineRows(visible)+'</div><div class="lex-recommend"><b>💡 LEX recomenda</b><p>'+esc(recommendation)+'</p><button onclick="lexOrganizeDeadlines()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
+window.lexSetPrazoTab=tab=>{prazoTab=['vencidos','hoje','7dias','todos'].includes(tab)?tab:'todos';window.lexPrazos()};
 window.lexTarefas=async function(selectedId){
   shell('Tarefas','<div class="lex-page-head"><div><small>Entregas do escritório</small><h1>Tarefas</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-task-detail" class="lex-panel" role="status">Consultando tarefas…</div>','home');
   const detail=$('#lex-task-detail');
