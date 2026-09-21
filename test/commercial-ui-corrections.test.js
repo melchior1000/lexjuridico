@@ -34,3 +34,25 @@ test('chat do LEX envia contexto do processo selecionado',()=>{
   assert.match(js,/payload\.setor/);
   assert.match(js,/\/api\/vivo\/conversar/);
 });
+
+
+test('filtros de prazo distinguem vencidos, hoje, próximos 7 dias e todos',()=>{
+  assert.match(js,/function deadlineBuckets\(all=deadlineItems\(\)\)/);
+  assert.match(js,/vencidos:all\.filter\(x=>x\.d<0\)/);
+  assert.match(js,/hoje:all\.filter\(x=>x\.d===0\)/);
+  assert.match(js,/dias7:all\.filter\(x=>x\.d>0&&x\.d<=7\)/);
+  assert.match(js,/Vencidos <b>/);
+  assert.match(js,/Todos <b>/);
+  assert.match(js,/Nenhum prazo vence hoje/);
+  assert.match(js,/Nenhum prazo vence nos próximos 7 dias/);
+});
+
+test('Organizar com o LEX envia contexto real de prazos ao Core em vez de abrir chat vazio',()=>{
+  assert.match(js,/window\.lexOrganizeDeadlines=function/);
+  assert.match(js,/deadlineOrganizeCommand\(\)/);
+  assert.match(js,/window\.lexChat\(''\)/);
+  assert.match(js,/input\.value=command/);
+  assert.match(js,/form\.requestSubmit\(\)/);
+  assert.match(js,/onclick="lexOrganizeDeadlines\(\)">Organizar com o LEX/);
+  assert.doesNotMatch(js,/onclick="lexChat\(\)">Organizar com o LEX/);
+});
