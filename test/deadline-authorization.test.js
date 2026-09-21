@@ -80,3 +80,30 @@ test('repetir a mesma confirmação devolve a verdade persistida, não artefato 
   assert.equal(second.authorization.id,first.authorization.id);
   assert.equal(ps.snapshot()[0].deadline_history.length,1);
 });
+
+
+test('sugestão persistida exige o hash de revisão para virar prazo verdadeiro',async()=>{
+  const base=row({texto:'Manifeste-se no prazo de 5 dias úteis.'});
+  const DeadlineSuggestion=require('../lib/deadline-suggestion');
+  base.prazo_sugestao={source_hash:DeadlineSuggestion.sourceHash(base),status:'proposta_calculada',due_at_proposto:'2026-09-25'};
+  const database=db(base),ps=store([{id:'p1',numero:'5000000-00.2026.8.13.0001',status:'ATIVO'}]);
+  await assert.rejects(
+    ()=>confirmDjenDeadline({processStore:ps,sbReq:database.req,djenId:'dj1',dueAt:'2026-09-25',humanId:'admin',integrityKey:KEY,now:new Date('2026-09-20T18:00:00Z')}),
+    e=>e.status===409&&/recarregada/.test(e.message)
+  );
+  assert.equal(ps.snapshot()[0].deadline_truth,undefined);
+});
+
+test('hash de sugestão obsoleto é recusado se o teor mudou',async()=>{
+  const DeadlineSuggestion=require('../lib/deadline-suggestion');
+  const base=row({texto:'Manifeste-se no prazo de 5 dias úteis.'});
+  const oldHash=DeadlineSuggestion.sourceHash(base);
+  base.prazo_sugestao={source_hash:oldHash,status:'proposta_calculada',due_at_proposto:'2026-09-25'};
+  base.texto='Manifeste-se no prazo de 10 dias úteis.';
+  const database=db(base),ps=store([{id:'p1',numero:'5000000-00.2026.8.13.0001',status:'ATIVO'}]);
+  await assert.rejects(
+    ()=>confirmDjenDeadline({processStore:ps,sbReq:database.req,djenId:'dj1',dueAt:'2026-09-25',humanId:'admin',suggestionSourceHash:oldHash,integrityKey:KEY,now:new Date('2026-09-20T18:00:00Z')}),
+    e=>e.status===409&&/teor da intimação mudou/.test(e.message)
+  );
+  assert.equal(ps.snapshot()[0].deadline_truth,undefined);
+});

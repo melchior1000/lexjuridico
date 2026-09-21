@@ -16,17 +16,42 @@ function deadlineTitle(days){
  if(days===1)return'Prazo confirmado vence amanhã';
  return'Prazo confirmado em '+days+' dias';
 }
-async function mintDjenDeadline(row){
- const ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
- const resumo=[p?.nome||p?.numero||row.cnj||'Processo',row.tipo||'Intimação DJEN',String(row.texto||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,1200)].filter(Boolean).join('\n\n');
- if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfirme somente depois de ler o teor da intimação. Continuar para informar o vencimento?'))return;
- const due=typeof prompt==='function'?prompt('Informe o vencimento CONFIRMADO pelo responsável (AAAA-MM-DD). O LEX não calcula nem adivinha esta data:'):null;
- if(due==null)return;
- const clean=String(due).trim();
+function djenSuggestion(row){return row?.prazo_sugestao&&typeof row.prazo_sugestao==='object'?row.prazo_sugestao:null}
+function prazoLabel(s){
+ if(!s?.dias)return'';
+ return s.dias+' dia'+(s.dias===1?'':'s')+(s.modo==='uteis'?' úteis':s.modo==='corridos'?' corridos':'');
+}
+async function postDjenDeadline(row,due,regime,note,suggestionSourceHash=null){
+ const clean=String(due||'').trim();
  if(!/^\d{4}-\d{2}-\d{2}$/.test(clean))throw new Error('Informe a data confirmada no formato AAAA-MM-DD.');
- const regime=typeof prompt==='function'?(prompt('Regime do prazo (ex.: cpc, clt ou manual):','manual')||'manual'):'manual';
- await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:row.djen_id,due_at:clean,regime:String(regime).trim()||'manual'})});
+ await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:row.djen_id,due_at:clean,regime:String(regime||'manual').trim()||'manual',observacao:String(note||''),suggestion_source_hash:suggestionSourceHash||null})});
  await today();
+}
+async function confirmDjenSuggestion(row){
+ const s=djenSuggestion(row);
+ if(!s?.due_at_proposto)return correctDjenDeadline(row);
+ const ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
+ const resumo=[
+   p?.nome||p?.numero||row.cnj||'Processo',
+   row.tipo||'Intimação DJEN',
+   s.trecho?'Trecho identificado: '+s.trecho:null,
+   prazoLabel(s)?'Prazo identificado: '+prazoLabel(s):null,
+   'Vencimento PROPOSTO pelo LEX: '+s.due_at_proposto,
+   s.calendario_verificado===true?'Calendário marcado como verificado.':'Calendário local NÃO verificado: confira feriados/suspensões.',
+   '',
+   'Esta data ainda NÃO é prazo jurídico do LEX. Ela só vira prazo após sua confirmação.'
+ ].filter(x=>x!==null).join('\n');
+ if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfirmar este vencimento?'))return;
+ await postDjenDeadline(row,s.due_at_proposto,s.regime||'manual','Confirmado a partir da sugestão assistiva do DJEN.',s.source_hash||null);
+}
+async function correctDjenDeadline(row){
+ const s=djenSuggestion(row),ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
+ const resumo=[p?.nome||p?.numero||row.cnj||'Processo',row.tipo||'Intimação DJEN',s?.trecho?'Trecho identificado: '+s.trecho:String(row.texto||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,900)].filter(Boolean).join('\n\n');
+ if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfira o teor antes de informar o vencimento confirmado.'))return;
+ const due=typeof prompt==='function'?prompt('Informe/corrija o vencimento CONFIRMADO (AAAA-MM-DD):',s?.due_at_proposto||''):null;
+ if(due==null)return;
+ const regime=typeof prompt==='function'?(prompt('Regime do prazo (cpc, clt ou manual):',s?.regime||'manual')||'manual'):(s?.regime||'manual');
+ await postDjenDeadline(row,due,regime,'Vencimento informado/corrigido manualmente após leitura da intimação.',s?.source_hash||null);
 }
 async function today(){
  const host=document.getElementById('content');if(!host)return;
@@ -41,7 +66,13 @@ async function today(){
  if(tasks.status==='fulfilled'&&Array.isArray(tasks.value?.tarefas)){
   for(const t of tasks.value.tarefas){const state=taskStates[t.status];if(!state)continue;const p=ps.find(x=>String(x.id)===String(t.processo_id));items.push({rank:1,tone:'blocked',who:t.processo_nome||p?.nome||p?.partes||'Tarefa do escritório',meta:[t.tipo,p?.numero].filter(Boolean).join(' · '),title:state[0],detail:t.pendencia||t.motivo||state[1],label:t.status==='aguardando_revisao'?'Revisar entrega':'Ver tarefa e corrigir',action:()=>window.lexTarefas(String(t.id))})}
   const desk=tasks.value.prazos||{};
-  for(const d of list(desk.cunhar)){const p=ps.find(x=>String(x.id)===String(d.processo_id));items.push({rank:0,tone:'critical',who:p?.nome||p?.partes||d.cnj||'Processo',meta:[d.cnj,'DJEN',d.data_disponibilizacao].filter(Boolean).join(' · '),title:'Intimação sem prazo confirmado',detail:String(d.texto||'Leia o teor da comunicação e informe o vencimento confirmado pelo responsável.').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,420),label:'Ler e confirmar prazo',action:()=>mintDjenDeadline(d)})}
+  for(const d of list(desk.cunhar)){
+   const p=ps.find(x=>String(x.id)===String(d.processo_id)),s=djenSuggestion(d),hasProposal=!!s?.due_at_proposto;
+   const detail=hasProposal
+     ?['Texto indica '+prazoLabel(s)+'.','Vencimento sugerido: '+s.due_at_proposto+'.',s.calendario_verificado===true?'Calendário verificado.':'Confira feriados e suspensões locais.',s.trecho?'Trecho: '+s.trecho:''].filter(Boolean).join(' ')
+     :String(d.texto||'Nenhum prazo foi identificado automaticamente. Leia o teor e informe o vencimento confirmado.').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,420);
+   items.push({rank:0,tone:'critical',who:p?.nome||p?.partes||d.cnj||'Processo',meta:[d.cnj,'DJEN',d.data_disponibilizacao].filter(Boolean).join(' · '),title:hasProposal?'Prazo sugerido — falta sua confirmação':'Intimação sem prazo confirmado',detail,label:hasProposal?'Confirmar '+s.due_at_proposto:'Ler e confirmar prazo',action:()=>hasProposal?confirmDjenSuggestion(d):correctDjenDeadline(d),secondaryLabel:hasProposal?'Corrigir':null,secondaryAction:hasProposal?()=>correctDjenDeadline(d):null})
+  }
   for(const d of list(desk.correndo)){const p=ps.find(x=>String(x.id)===String(d.case_id));items.push({rank:d.days_to_due<=1?0:1,tone:d.days_to_due<=1?'critical':'waiting',who:p?.nome||p?.partes||d.titulo||'Processo',meta:[p?.numero,d.djen_id_origem?'DJEN '+d.djen_id_origem:'Prazo confirmado'].filter(Boolean).join(' · '),title:deadlineTitle(Number(d.days_to_due)),detail:'Vencimento confirmado: '+String(d.prazo||'')+'. O LEX está monitorando este prazo.',label:'Abrir processo',action:openProcess(String(d.case_id))})}
   if(desk.erro)failures.push('prazos');
   if(desk.vigia&&(desk.vigia.status==='retry'||desk.vigia.status==='blocked'||desk.vigia.djen_status==='failed'||desk.vigia.djen_status==='not_configured')){
@@ -56,8 +87,8 @@ async function today(){
  items.sort((a,b)=>a.rank-b.rank);
  const head=surface.querySelector('.lex-today-head');head.querySelector('h1').textContent=items.length?items.length+(items.length===1?' pendência precisa':' pendências precisam')+' de você.':failures.length?'Não foi possível conferir tudo.':'Nenhuma pendência encontrada.';head.querySelector('p').textContent='Só mostramos decisões e exceções reais. Confira a pessoa, o motivo e a próxima ação.';
  const feedback=surface.querySelector('.lex-today-feedback');if(failures.length){feedback.textContent='Não consegui consultar '+failures.join(' e ')+'. A lista pode estar incompleta. ';const retry=document.createElement('button');retry.textContent='Tentar novamente';retry.onclick=today;feedback.appendChild(retry)}
- const target=surface.querySelector('.lex-today-list');target.innerHTML=items.length?items.map((x,i)=>'<article class="lex-today-item '+x.tone+'"><div><small>'+esc(x.meta)+'</small><h2>'+esc(x.who)+'</h2><strong>'+esc(x.title)+'</strong><p>'+esc(x.detail)+'</p></div><button data-today-action="'+i+'">'+esc(x.label)+'</button></article>').join(''):'<div class="lex-today-clear"><strong>'+(failures.length?'Consulta incompleta':'Você está em dia com a lista consultada.')+'</strong><span>'+(failures.length?'Tente novamente para conferir as pendências.':'Abra o LEX para iniciar uma nova tarefa.')+'</span></div>';
- target.addEventListener('click',event=>{const button=event.target.closest('[data-today-action]');if(!button)return;const item=items[Number(button.dataset.todayAction)];if(item)Promise.resolve().then(item.action).catch(()=>{if(surface.isConnected)feedback.textContent='Não consegui abrir esta pendência. Tente novamente.'})});
+ const target=surface.querySelector('.lex-today-list');target.innerHTML=items.length?items.map((x,i)=>'<article class="lex-today-item '+x.tone+'"><div><small>'+esc(x.meta)+'</small><h2>'+esc(x.who)+'</h2><strong>'+esc(x.title)+'</strong><p>'+esc(x.detail)+'</p></div><div class="lex-today-actions"><button data-today-action="'+i+'">'+esc(x.label)+'</button>'+(x.secondaryLabel?'<button data-today-secondary="'+i+'">'+esc(x.secondaryLabel)+'</button>':'')+'</div></article>').join(''):'<div class="lex-today-clear"><strong>'+(failures.length?'Consulta incompleta':'Você está em dia com a lista consultada.')+'</strong><span>'+(failures.length?'Tente novamente para conferir as pendências.':'Abra o LEX para iniciar uma nova tarefa.')+'</span></div>';
+ target.addEventListener('click',event=>{const secondaryCandidate=event.target.closest('[data-today-secondary]'),primaryCandidate=event.target.closest('[data-today-action]');const secondary=secondaryCandidate?.dataset?.todaySecondary!==undefined?secondaryCandidate:null,primary=primaryCandidate?.dataset?.todayAction!==undefined?primaryCandidate:null,button=secondary||primary;if(!button)return;const index=Number(secondary?button.dataset.todaySecondary:button.dataset.todayAction),item=items[index],action=secondary?item?.secondaryAction:item?.action;if(action)Promise.resolve().then(action).catch(()=>{if(surface.isConnected)feedback.textContent='Não consegui abrir esta pendência. Tente novamente.'})});
 }
 function patch(){window.lexHome=today;window.renderPainel=today;const previous=window.ir;if(typeof previous==='function'&&!previous.__lexToday){const route=function(page){if(page==='painel')return today();return previous.apply(this,arguments)};route.__lexToday=true;window.ir=route}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(patch,0),{once:true});else setTimeout(patch,0);

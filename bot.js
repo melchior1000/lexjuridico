@@ -771,11 +771,26 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
     return tg;
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
+const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
 function _djenOabsRuntime(){
   if(process.env.DJEN_OABS) return undefined;
   const raw=String(_configRuntime?.pje?.oab_numero||'').trim().toUpperCase();
   const m=raw.match(/^(\d+)\/([A-Z]{2})$/);
   return m?[{oab:m[1],uf:m[2]}]:[];
+}
+
+async function _analisarPrazoDjen(input){
+  const system=[
+    'Você é um extrator conservador de prazo processual brasileiro.',
+    'Receba o texto e uma lista de candidatos que JÁ foram encontrados literalmente no documento.',
+    'Você NÃO pode criar número de dias, prazo ou trecho novo.',
+    'Escolha candidate_index somente se aquele candidato corresponder ao prazo processual da intimação dirigida à parte.',
+    'Se houver dúvida, múltiplos prazos independentes ou não for prazo processual, use candidate_index null.',
+    'regime pode ser cpc, clt ou unknown. Não calcule vencimento.',
+    'trecho deve copiar literalmente um trecho recebido no texto.',
+    'Responda SOMENTE JSON: {"candidate_index":0|null,"regime":"cpc|clt|unknown","confidence":0..1,"trecho":"...","justificativa":"curta"}.'
+  ].join('\n');
+  return ia([{role:'user',content:JSON.stringify(input)}],system,500,MODELO_ECO);
 }
 const deadlineScheduler=createDeadlineScheduler({
   records:recordStore,
@@ -784,6 +799,8 @@ const deadlineScheduler=createDeadlineScheduler({
     datajudOptions:{apiKey:process.env.DATAJUD_API_KEY,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,fetchImpl:globalThis.fetch},
     djenOptions:{
       oabs:_djenOabsRuntime(),oabsEnv:process.env.DJEN_OABS,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
+      aiAnalyze:aiAvailable()?input=>_analisarPrazoDjen(input):null,
+      calendarioVerificado:false,
       clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY}
     }
   }),
@@ -792,7 +809,6 @@ const deadlineScheduler=createDeadlineScheduler({
 });
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
 let officeProfile={...ESCRITORIO};
-const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
 const taskEngine=new TaskEngine({store:recordStore,processes:async()=>(await processStore.read()).processes,
   ai:(messages,system,tokens)=>ia(messages,system,tokens,MODELO_TOP),available:aiAvailable,office:()=>officeProfile});
 
@@ -1301,7 +1317,7 @@ async function envArq(buf, nome, ctx, mimetype) {
 // ── Anthropic ──
 async function _iaAnthropic(messages, system, maxTok, modelo) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada. Defina a variável de ambiente.');
-  const pay={model: MODELOS_POR_PROVIDER.anthropic.top, max_tokens:maxTok||2000, messages};
+  const pay={model: modelo || MODELOS_POR_PROVIDER.anthropic.top, max_tokens:maxTok||2000, messages};
   if(system) pay.system=system;
   try {
     const r=await httpsPost('api.anthropic.com','/v1/messages',pay,
