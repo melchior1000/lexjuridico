@@ -21,10 +21,10 @@ function prazoLabel(s){
  if(!s?.dias)return'';
  return s.dias+' dia'+(s.dias===1?'':'s')+(s.modo==='uteis'?' úteis':s.modo==='corridos'?' corridos':'');
 }
-async function postDjenDeadline(row,due,regime,note){
+async function postDjenDeadline(row,due,regime,note,suggestionSourceHash=null){
  const clean=String(due||'').trim();
  if(!/^\d{4}-\d{2}-\d{2}$/.test(clean))throw new Error('Informe a data confirmada no formato AAAA-MM-DD.');
- await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:row.djen_id,due_at:clean,regime:String(regime||'manual').trim()||'manual',observacao:String(note||'')})});
+ await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:row.djen_id,due_at:clean,regime:String(regime||'manual').trim()||'manual',observacao:String(note||''),suggestion_source_hash:suggestionSourceHash||null})});
  await today();
 }
 async function confirmDjenSuggestion(row){
@@ -42,7 +42,7 @@ async function confirmDjenSuggestion(row){
    'Esta data ainda NÃO é prazo jurídico do LEX. Ela só vira prazo após sua confirmação.'
  ].filter(x=>x!==null).join('\n');
  if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfirmar este vencimento?'))return;
- await postDjenDeadline(row,s.due_at_proposto,s.regime||'manual','Confirmado a partir da sugestão assistiva do DJEN.');
+ await postDjenDeadline(row,s.due_at_proposto,s.regime||'manual','Confirmado a partir da sugestão assistiva do DJEN.',s.source_hash||null);
 }
 async function correctDjenDeadline(row){
  const s=djenSuggestion(row),ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
@@ -51,7 +51,7 @@ async function correctDjenDeadline(row){
  const due=typeof prompt==='function'?prompt('Informe/corrija o vencimento CONFIRMADO (AAAA-MM-DD):',s?.due_at_proposto||''):null;
  if(due==null)return;
  const regime=typeof prompt==='function'?(prompt('Regime do prazo (cpc, clt ou manual):',s?.regime||'manual')||'manual'):(s?.regime||'manual');
- await postDjenDeadline(row,due,regime,'Vencimento informado/corrigido manualmente após leitura da intimação.');
+ await postDjenDeadline(row,due,regime,'Vencimento informado/corrigido manualmente após leitura da intimação.',s?.source_hash||null);
 }
 async function today(){
  const host=document.getElementById('content');if(!host)return;
