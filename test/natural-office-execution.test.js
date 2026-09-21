@@ -185,3 +185,21 @@ test('mande isso sem texto anterior não inventa conteúdo',async()=>{
   assert.equal(sent,0);
   assert.match(out.message,/texto anterior/i);
 });
+
+test('pesquisador de julgador pode ser chamado pelo coordenador sem rota HTTP externa',async()=>{
+  const out=await agent.executarPesquisaJulgador({nome:'Juiz Teste',tribunal:'TJMG'},{
+    analisarPerfilJuiz:async()=>({achados:[],advertencia:'Amostra insuficiente; não inferir perfil pessoal.'}),CORS:{}
+  });
+  assert.equal(out.ok,true);
+  assert.match(out.texto,/Não há material suficiente/);
+  assert.match(out.texto,/Amostra insuficiente/);
+});
+
+test('canais do bot chamam os mesmos pesquisadores do LEX vivo',()=>{
+  const fs=require('node:fs');
+  const src=fs.readFileSync('bot.js','utf8');
+  assert.match(src,/specializedIntent\?\.\(txt\)/);
+  assert.match(src,/executarPesquisaJuris/);
+  assert.match(src,/executarPesquisaJulgador/);
+  assert.match(src,/resolveCase\(processos,\{instrucao:txt\}\)/);
+});
