@@ -203,3 +203,19 @@ test('canais do bot chamam os mesmos pesquisadores do LEX vivo',()=>{
   assert.match(src,/executarPesquisaJulgador/);
   assert.match(src,/resolveCase\(processos,\{instrucao:txt\}\)/);
 });
+
+test('executor natural falha fechado quando perfil autenticado não é informado',async()=>{
+  await assert.rejects(
+    ()=>executeNaturalOfficeCommand({processStore:processStore([]),engine:fakeEngine()},{text:'Veja o que precisa de mim'}),
+    err=>err?.status===401&&/Perfil não informado/.test(err.message)
+  );
+});
+
+test('pesquisador não expõe detalhe interno do provedor ao operador',async()=>{
+  await assert.rejects(
+    ()=>agent.executarPesquisaJulgador({nome:'Juiz Teste',tribunal:'TJMG'},{
+      analisarPerfilJuiz:async()=>{throw new Error('segredo-interno-do-provedor')},CORS:{}
+    }),
+    err=>/Não foi possível concluir a pesquisa especializada agora/.test(err.message)&&!/segredo-interno/.test(err.message)
+  );
+});
