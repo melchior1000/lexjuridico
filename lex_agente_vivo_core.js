@@ -1570,10 +1570,13 @@ async function _capturarResultadoEspecialista(handler, body, deps) {
   const res={
     writableEnded:false,
     writeHead(code){status=code;},
-    end(raw){this.writableEnded=true;try{payload=JSON.parse(String(raw||'{}'));}catch{payload={error:String(raw||'Resposta inválida do especialista')}}}
+    end(raw){this.writableEnded=true;try{payload=JSON.parse(String(raw||'{}'));}catch{payload={error:'Resposta inválida do especialista'}}}
   };
   await handler({method:'POST'},res,body,{...deps,CORS:deps.CORS||{}});
-  if(status>=400||payload?.error)throw Object.assign(new Error(payload?.error||'Falha no especialista.'),{status});
+  if(status>=400||payload?.error){
+    console.error('[VIVO especialista] falha', {status, detalhe:String(payload?.error||'sem detalhe').slice(0,500)});
+    throw Object.assign(new Error('Não foi possível concluir a pesquisa especializada agora.'),{status});
+  }
   return payload||{};
 }
 async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
