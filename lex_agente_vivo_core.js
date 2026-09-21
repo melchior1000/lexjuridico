@@ -1219,7 +1219,10 @@ async function handlerJuizConversar(req, res, body, deps) {
       ? perfil.achados.map(a=>`${a.observacao} [${a.fonte_id}]\nTrecho: ${a.trecho}\nHipótese a revisar: ${a.implicacao}`).join('\n\n')
       : 'Não há material suficiente para caracterizar o padrão decisório. Forneça o texto de decisões assinadas pelo magistrado.';
     return jsonResponse(res,200,{ok:true,texto:texto+'\n\n'+perfil.advertencia,perfil_consolidado:perfil,cache_hit:false},deps.CORS);
-  } catch(e) { return jsonResponse(res,500,{error:erroSeguro(e.message)},deps.CORS); }
+  } catch(e) {
+    console.error('[VIVO] juiz/conversar erro:', e?.message||e);
+    return jsonResponse(res,500,{error:'Não foi possível concluir a pesquisa do julgador agora.'},deps.CORS);
+  }
 }
 
 // =====================================================================
@@ -1300,8 +1303,8 @@ async function handlerJurisConversar(req, res, body, deps) {
     }, deps.CORS);
 
   } catch (e) {
-    console.error('[VIVO] juris/conversar erro:', e.message);
-    return jsonResponse(res, 500, { error: erroSeguro(e.message) }, deps.CORS);
+    console.error('[VIVO] juris/conversar erro:', e?.message||e);
+    return jsonResponse(res, 500, { error: 'Não foi possível concluir a pesquisa jurisprudencial agora.' }, deps.CORS);
   }
 }
 
