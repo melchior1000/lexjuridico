@@ -1,6 +1,7 @@
 'use strict';
 
 const core = require('./lex_agente_vivo_core');
+const {executeNaturalOfficeCommand}=require('./lib/office-routes');
 
 function jsonResponse(res, status, obj, CORS) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, CORS || {
@@ -34,6 +35,26 @@ async function tratarRota(req, res, url, deps) {
         codigo: 'PROCESSO_CONTEXTO_INVALIDO'
       }, nextDeps.CORS);
       return true;
+    }
+
+    if (nextDeps.engine && nextDeps.processStore) {
+      try {
+        const execution=await executeNaturalOfficeCommand(nextDeps,{
+          text:body.mensagem,processo_id:processoId,profile:nextDeps.perfil,
+          request_id:body.request_id||req?.headers?.['x-request-id']||undefined
+        });
+        if(execution?.handled){
+          jsonResponse(res,200,{ok:true,texto:execution.message,execucao:{
+            action:execution.command?.action||null,tipo:execution.command?.tipo||null,
+            task_id:execution.task?.id||null,status:execution.result?.status||null,
+            needs_input:!!execution.needs_input,candidates:execution.candidates||null
+          },processo_id:execution.result?.processo_id||execution.command?.processo_id||processoId||null},nextDeps.CORS);
+          return true;
+        }
+      } catch(e) {
+        jsonResponse(res,e.status||422,{error:e.message,codigo:'LEX_EXECUCAO_FALHOU'},nextDeps.CORS);
+        return true;
+      }
     }
   }
 
