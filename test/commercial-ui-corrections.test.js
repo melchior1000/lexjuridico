@@ -60,3 +60,36 @@ test('Organizar com o LEX envia contexto real de prazos ao Core em vez de abrir 
   assert.match(js,/onclick="lexOrganizeDeadlines\(\)">Organizar com o LEX/);
   assert.doesNotMatch(js,/onclick="lexChat\(\)">Organizar com o LEX/);
 });
+
+
+test('navegação comercial possui voltar contextual em vez de forçar início',()=>{
+  assert.match(js,/let navCurrent=null,navTrail=\[\],navRestoring=false/);
+  assert.match(js,/window\.lexBack=function/);
+  assert.match(js,/const target=navTrail\.pop\(\)\|\|'home'/);
+  assert.match(js,/class="lex-shell-back" onclick="lexBack\(\)"/);
+});
+
+test('carteira grande usa paginação explícita e não corta silenciosamente em 30',()=>{
+  assert.match(js,/const PROC_PAGE_SIZE=40,DEADLINE_PAGE_SIZE=40/);
+  assert.match(js,/function pageSlice\(list,page,size\)/);
+  assert.match(js,/function pagerHtml\(meta,kind\)/);
+  assert.match(js,/lexSetProcPage/);
+  assert.match(js,/Página /);
+  assert.doesNotMatch(js,/function procRows\(list\)\{return list\.slice\(0,30\)/);
+});
+
+test('processos possuem busca global, encerrados e ordenação',()=>{
+  assert.match(js,/procTab==='arquivados'/);
+  assert.match(js,/lexSetProcSort/);
+  assert.match(js,/Atualizados/);
+  assert.match(js,/Buscar número, cliente, parte, assunto/);
+  assert.match(js,/cliente/);
+  assert.match(js,/responsavel/);
+});
+
+test('prazos também paginam e avisam quando servidor auditável falha',()=>{
+  assert.match(js,/lexSetPrazoPage/);
+  assert.match(js,/DEADLINE_PAGE_SIZE/);
+  assert.match(js,/Não consegui confirmar os prazos auditáveis no servidor/);
+  assert.doesNotMatch(js,/function deadlineRows\(list,emptyMessage=deadlineEmptyMessage\(\)\)\{return list\.slice\(0,30\)/);
+});
