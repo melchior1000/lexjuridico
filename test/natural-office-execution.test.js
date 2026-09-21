@@ -121,3 +121,67 @@ test('LEX delega pesquisa de jurisprudencia e analise de julgador aos especialis
   assert.equal(agent.specializedIntent('Faça a contestação deste processo'),null);
   assert.deepEqual(agent.namedJudgeFromMessage('Analise o juiz João da Silva do TJMG'),{nome:'João da Silva',tribunal:'TJMG'});
 });
+
+test('LEX cadastra contato nomeado na Recepção sem liberar produção jurídica',async()=>{
+  const db=processStore([]);
+  const deps={
+    processStore:db,engine:fakeEngine(),
+    receptionStore:{async list(){return[{numero:'5561999999999',nome:'Leidyanny',status:'aguardando_advogado',ultima_mensagem:'Preciso falar sobre meu processo'}]},async appendEvent(){}},
+    records:{async list(){return[]}}
+  };
+  const out=await executeNaturalOfficeCommand(deps,{text:'Cadastre o cliente Leidyanny',profile:'admin'});
+  assert.equal(out.handled,true);
+  assert.equal(out.result.setor,'cadastro');
+  const created=db.snapshot()[0];
+  assert.equal(created.nome,'Leidyanny');
+  assert.equal(created.status,'EM_PREP');
+  assert.equal(created.cadastro_conferido,false);
+  assert.equal(created.bloqueio_peca,true);
+  assert.equal(created.origem_recepcao.origem,'whatsapp');
+});
+
+test('LEX não escolhe cliente aleatório em cadastre esse cliente',async()=>{
+  const db=processStore([]);
+  const deps={
+    processStore:db,engine:fakeEngine(),
+    receptionStore:{async list(){return[
+      {numero:'1',nome:'Cliente A',status:'aguardando_advogado'},
+      {numero:'2',nome:'Cliente B',status:'aguardando_advogado'}
+    ]},async appendEvent(){}},
+    records:{async list(){return[]}}
+  };
+  const out=await executeNaturalOfficeCommand(deps,{text:'Cadastre esse cliente',profile:'admin'});
+  assert.equal(out.handled,true);
+  assert.equal(out.needs_input,true);
+  assert.equal(db.snapshot().length,0);
+  assert.match(out.message,/não vou escolher/i);
+});
+
+test('mande isso usa apenas texto anterior confirmado e respeita o canal pedido',async()=>{
+  const sent=[];
+  const deps={
+    processStore:processStore([]),engine:fakeEngine(),
+    receptionStore:{async list(){return[{numero:'5561999999999',nome:'Leidyanny',status:'aguardando_advogado'}]},async appendEvent(){}},
+    records:{async list(){return[]}},
+    channelDelivery:async payload=>{sent.push(payload);return true}
+  };
+  const out=await executeNaturalOfficeCommand(deps,{
+    text:'Mande isso no WhatsApp para Leidyanny',profile:'admin',previous_text:'Texto aprovado pelo titular.'
+  });
+  assert.equal(out.handled,true);
+  assert.equal(out.result.enviado,true);
+  assert.deepEqual(sent,[{origem:'whatsapp',id:'5561999999999',texto:'Texto aprovado pelo titular.'}]);
+});
+
+test('mande isso sem texto anterior não inventa conteúdo',async()=>{
+  let sent=0;
+  const deps={
+    processStore:processStore([]),engine:fakeEngine(),
+    receptionStore:{async list(){return[{numero:'5561999999999',nome:'Leidyanny',status:'aguardando_advogado'}]},async appendEvent(){}},
+    records:{async list(){return[]}},channelDelivery:async()=>{sent++;return true}
+  };
+  const out=await executeNaturalOfficeCommand(deps,{text:'Mande isso no WhatsApp para Leidyanny',profile:'admin'});
+  assert.equal(out.needs_input,true);
+  assert.equal(sent,0);
+  assert.match(out.message,/texto anterior/i);
+});
