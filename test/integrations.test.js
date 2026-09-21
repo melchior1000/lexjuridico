@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const {EventEmitter} = require('node:events');
 const {setup,source} = require('./runtime');
-const {brazilMobile,requestJson,evolutionEndpoint,whatsappStatus,telegramStatus} = require('../lib/integration-status');
+const {brazilMobile,requestJson,evolutionEndpoint,waitForEvolutionOpen,whatsappStatus,telegramStatus} = require('../lib/integration-status');
 const cfg = {url:'https://evolution.example.test/api',key:'fake',instance:'lex',number:'5511987654321'};
 const connected = {instance:{instanceName:'lex',state:'open'}};
 
@@ -45,6 +45,31 @@ test('WhatsApp exige instancia exata e trata erro sem vazar chave', async () => 
   assert.equal((await whatsappStatus(cfg,async()=>({instance:{instanceName:'outro',state:'open'}}))).estado,'instancia_nao_confirmada');
   const r=await whatsappStatus(cfg,async()=>{throw new Error('token-secreto');});
   assert.equal(r.conectado,false); assert.ok(!JSON.stringify(r).includes('token-secreto'));
+});
+test('Evolution aguarda cold start e confirma sessao antes de liberar envio', async () => {
+  let calls=0;
+  const result=await waitForEvolutionOpen({
+    url:cfg.url,key:cfg.key,instance:'lex',sleepFn:async()=>{},
+    request:async()=>{
+      calls++;
+      if(calls===1) throw new Error('cold start');
+      if(calls===2) return {instance:{instanceName:'lex',state:'connecting'}};
+      return connected;
+    }
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.estado,'open');
+  assert.equal(calls,3);
+});
+test('Evolution nao insiste quando autenticacao falha', async () => {
+  let calls=0;
+  const result=await waitForEvolutionOpen({
+    url:cfg.url,key:cfg.key,instance:'lex',sleepFn:async()=>{},
+    request:async()=>{calls++;const e=new Error('401');e.status=401;throw e;}
+  });
+  assert.equal(result.ok,false);
+  assert.equal(result.estado,'falha_autenticacao');
+  assert.equal(calls,1);
 });
 test('Telegram detecta webhook que impede polling, sem apagar configuracao', async () => {
   const calls=[];
