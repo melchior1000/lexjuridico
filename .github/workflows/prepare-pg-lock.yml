@@ -1,0 +1,36 @@
+name: Prepare pg lockfile
+
+on:
+  push:
+    branches:
+      - feat/saas-runtime-db-adapter
+    paths:
+      - .github/workflows/prepare-pg-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/saas-runtime-db-adapter
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Update dependency lock
+        run: npm install pg@8.23.0 --save --package-lock-only --ignore-scripts
+      - name: Commit lockfile
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No lockfile changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "build(saas): adicionar pg 8.23.0"
+          git push origin HEAD:feat/saas-runtime-db-adapter
