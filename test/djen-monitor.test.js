@@ -92,3 +92,15 @@ test('sugestão criada sem IA é enriquecida quando a IA volta',async()=>{
   assert.equal(out.rows[0].prazo_sugestao.status,'proposta_calculada');
   assert.equal(out.rows[0].prazo_sugestao.due_at_proposto,'2026-09-29');
 });
+
+
+test('PATCH vazio entra como falha de persistência e não retorna sugestão fantasma',async()=>{
+  const row={djen_id:'dj-empty',texto:'Manifeste-se no prazo de 5 dias úteis.',data_disponibilizacao:'2026-09-21',tribunal:'TJMG',status:'casada'};
+  const out=await suggestPendingDeadlines(async()=>({ok:true,status:200,body:[]}),[row],{
+    calendarioVerificado:true,
+    aiAnalyze:async()=>({candidate_index:0,regime:'cpc',confidence:.9,trecho:'Manifeste-se no prazo de 5 dias úteis.'})
+  });
+  assert.equal(out.failures.length,1);
+  assert.equal(out.rows[0],row);
+  assert.match(out.failures[0].error,/nenhuma comunicação foi atualizada/);
+});
