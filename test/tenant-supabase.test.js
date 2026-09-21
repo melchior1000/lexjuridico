@@ -101,13 +101,24 @@ test('DELETE continua exigindo filtro de negocio alem do tenant', async () => {
   assert.equal(calls.length,0);
 });
 
-test('tabela global nao recebe escritorio_id', async () => {
+test('config legado agora recebe escritorio_id', async () => {
   const {https,calls} = transport([]);
   const request = createSupabaseRequest({
     url:'https://database.invalid', key:'test', https,
     tenantId:TENANT_A, tenancyRequired:true
   });
   const result = await request('GET','config',null,{chave:'eq.SENHA_ADMIN'});
+  assert.equal(result.ok,true);
+  assert.match(calls[0].options.path,new RegExp('escritorio_id=eq\\.'+TENANT_A));
+});
+
+test('tabela de plataforma fora da lista tenant nao recebe filtro automatico', async () => {
+  const {https,calls} = transport([]);
+  const request = createSupabaseRequest({
+    url:'https://database.invalid', key:'test', https,
+    tenantId:TENANT_A, tenancyRequired:true
+  });
+  const result = await request('GET','escritorios',null,{slug:'eq.lex-atual'});
   assert.equal(result.ok,true);
   assert.doesNotMatch(calls[0].options.path,/escritorio_id/);
 });
