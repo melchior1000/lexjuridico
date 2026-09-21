@@ -89,7 +89,7 @@ const Workflow = require('./lib/workflow');
 const {ProcessStore} = require('./lib/process-store');
 const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
-const {TaskEngine} = require('./lib/task-engine');
+const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
@@ -5919,10 +5919,46 @@ async function processarMensagem(ctx, dados) {
           const delivered=await envArq(doc,'LEX_'+result.tipo+'_'+result.id.slice(0,8)+'.docx',ctx,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
           if(delivered===false) throw new Error('Documento salvo na Central de trabalho; o canal não confirmou a entrega.');
         }
-        await env(execution.message||'Ordem executada pelo LEX.',ctx);
+        const executionMessage=execution.message||'Ordem executada pelo LEX.';
+        mem.hist.push({role:'user',content:txt},{role:'assistant',content:executionMessage});
+        if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
+        salvarMemoria(ctx.chatId,ctx.threadId);
+        await env(executionMessage,ctx);
         return;
       }
     }catch(e){await env('Não concluí a ordem: '+e.message,ctx);return;}
+
+    const specialist=lex_agente_vivo.specializedIntent?.(txt);
+    if(specialist){
+      try{
+        let process=processos.find(p=>String(p.id)===String(mem.casoAtual)||String(p.nome||'').toLowerCase()===String(mem.casoAtual||'').toLowerCase())||null;
+        if(!process){const selection=resolveCase(processos,{instrucao:txt});process=selection.process||null;}
+        const specialistDeps={
+          processos,ANTHROPIC_KEY:AK,https,
+          sbGet:(t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))),
+          sbReq,analisarPerfilJuiz:_analisarPerfilJuiz,CORS:{}
+        };
+        let specialistResult;
+        if(specialist==='jurisprudencia'){
+          specialistResult=await lex_agente_vivo.executarPesquisaJuris({
+            mensagem:txt,historico:mem.hist,processo_id:process?.id||null,
+            tema:txt,tribunal_alvo:process?.tribunal||null
+          },specialistDeps);
+        }else{
+          const explicit=lex_agente_vivo.namedJudgeFromMessage?.(txt);
+          const nome=process?.juiz||process?.relator||explicit?.nome;
+          const tribunal=process?.tribunal||explicit?.tribunal;
+          if(!nome||!tribunal){await env('Informe o julgador e o tribunal, ou mencione/selecione um processo que tenha juiz ou relator identificado.',ctx);return;}
+          specialistResult=await lex_agente_vivo.executarPesquisaJulgador({nome,tribunal,processo_id:process?.id||null,mensagem:txt},specialistDeps);
+        }
+        const answer=String(specialistResult?.texto||'Pesquisa concluída sem texto de resposta.');
+        mem.hist.push({role:'user',content:txt},{role:'assistant',content:answer});
+        if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
+        salvarMemoria(ctx.chatId,ctx.threadId);
+        await env(answer,ctx);
+        return;
+      }catch(e){await env('Não concluí a pesquisa especializada: '+e.message,ctx);return;}
+    }
   }
   if(ctx.canal === 'whatsapp') {
     _estadoWhatsApp.ultima_mensagem = new Date().toISOString();
