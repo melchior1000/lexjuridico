@@ -5928,7 +5928,7 @@ async function processarMensagem(ctx, dados) {
       }
     }catch(e){await env('Não concluí a ordem: '+e.message,ctx);return;}
 
-    const specialist=lex_agente_vivo.specializedIntent?.(txt);
+    const specialist=lex_agente_vivo?.specializedIntent?.(txt);
     if(specialist){
       try{
         let process=processos.find(p=>String(p.id)===String(mem.casoAtual)||String(p.nome||'').toLowerCase()===String(mem.casoAtual||'').toLowerCase())||null;
@@ -5945,7 +5945,7 @@ async function processarMensagem(ctx, dados) {
             tema:txt,tribunal_alvo:process?.tribunal||null
           },specialistDeps);
         }else{
-          const explicit=lex_agente_vivo.namedJudgeFromMessage?.(txt);
+          const explicit=lex_agente_vivo?.namedJudgeFromMessage?.(txt);
           const nome=process?.juiz||process?.relator||explicit?.nome;
           const tribunal=process?.tribunal||explicit?.tribunal;
           if(!nome||!tribunal){await env('Informe o julgador e o tribunal, ou mencione/selecione um processo que tenha juiz ou relator identificado.',ctx);return;}
