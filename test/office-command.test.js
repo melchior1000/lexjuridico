@@ -31,14 +31,15 @@ test('pergunta jurídica comum não vira movimento administrativo',()=>{
   assert.equal(parseOfficeCommand('Explique o princípio da causalidade',{processo_id:2}),null);
 });
 
-test('casca comercial carrega parser e executor depois do fluxo',()=>{
+test('casca comercial envia linguagem natural ao Core do servidor',()=>{
   const loader=fs.readFileSync('office-ui.js','utf8');
   const ui=fs.readFileSync('office-command-ui.js','utf8');
-  assert.match(loader,/lib\/office-command\.js/);
+  const chat=fs.readFileSync('office-ui-v2.js','utf8');
+  const routes=fs.readFileSync('lib/office-routes.js','utf8');
   assert.match(loader,/office-command-ui\.js/);
   assert.ok(loader.indexOf('office-flow-ui.js')<loader.indexOf('office-command-ui.js'));
-  assert.match(ui,/LexOfficeCommand\?\.parseOfficeCommand/);
-  assert.match(ui,/\/api\/escritorio\/mover/);
-  assert.match(ui,/\/api\/escritorio\/distribuir/);
-  assert.match(ui,/\/api\/tarefas/);
+  assert.doesNotMatch(ui,/\/api\/tarefas|\/api\/escritorio\/mover|\/api\/escritorio\/distribuir/);
+  assert.match(chat,/\/api\/vivo\/conversar/);
+  assert.match(routes,/executeNaturalOfficeCommand/);
+  assert.match(routes,/deps\.engine\.submit/);
 });

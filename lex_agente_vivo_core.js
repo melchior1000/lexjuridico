@@ -1219,7 +1219,10 @@ async function handlerJuizConversar(req, res, body, deps) {
       ? perfil.achados.map(a=>`${a.observacao} [${a.fonte_id}]\nTrecho: ${a.trecho}\nHipótese a revisar: ${a.implicacao}`).join('\n\n')
       : 'Não há material suficiente para caracterizar o padrão decisório. Forneça o texto de decisões assinadas pelo magistrado.';
     return jsonResponse(res,200,{ok:true,texto:texto+'\n\n'+perfil.advertencia,perfil_consolidado:perfil,cache_hit:false},deps.CORS);
-  } catch(e) { return jsonResponse(res,500,{error:erroSeguro(e.message)},deps.CORS); }
+  } catch(e) {
+    console.error('[VIVO] juiz/conversar erro:', e?.message||e);
+    return jsonResponse(res,500,{error:'Não foi possível concluir a pesquisa do julgador agora.'},deps.CORS);
+  }
 }
 
 // =====================================================================
@@ -1300,8 +1303,8 @@ async function handlerJurisConversar(req, res, body, deps) {
     }, deps.CORS);
 
   } catch (e) {
-    console.error('[VIVO] juris/conversar erro:', e.message);
-    return jsonResponse(res, 500, { error: erroSeguro(e.message) }, deps.CORS);
+    console.error('[VIVO] juris/conversar erro:', e?.message||e);
+    return jsonResponse(res, 500, { error: 'Não foi possível concluir a pesquisa jurisprudencial agora.' }, deps.CORS);
   }
 }
 
@@ -1565,4 +1568,21 @@ async function tratarRota(req, res, url, deps) {
   return true;
 }
 
-module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaPJe };
+async function _capturarResultadoEspecialista(handler, body, deps) {
+  let status=500,payload=null;
+  const res={
+    writableEnded:false,
+    writeHead(code){status=code;},
+    end(raw){this.writableEnded=true;try{payload=JSON.parse(String(raw||'{}'));}catch{payload={error:'Resposta inválida do especialista'}}}
+  };
+  await handler({method:'POST'},res,body,{...deps,CORS:deps.CORS||{}});
+  if(status>=400||payload?.error){
+    console.error('[VIVO especialista] falha', {status, detalhe:String(payload?.error||'sem detalhe').slice(0,500)});
+    throw Object.assign(new Error('Não foi possível concluir a pesquisa especializada agora.'),{status});
+  }
+  return payload||{};
+}
+async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
+async function executarPesquisaJulgador(body,deps){return _capturarResultadoEspecialista(handlerJuizConversar,body,deps)}
+
+module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };

@@ -11,9 +11,13 @@ test('atalhos comerciais de peça e perícia não reabrem geradores legados',()=
   assert.match(src,/window\.lexPrefill/);
 });
 
-test('ordem jurídica continua criando tarefa no motor oficial',()=>{
+test('ordem jurídica sai da Web e cria tarefa apenas no Core oficial',()=>{
   const src=fs.readFileSync('office-command-ui.js','utf8');
-  assert.match(src,/command\.action==='task'/);
-  assert.match(src,/lexApi\('\/api\/tarefas'/);
-  assert.match(src,/processo_id/);
+  const chat=fs.readFileSync('office-ui-v2.js','utf8');
+  const routes=fs.readFileSync('lib/office-routes.js','utf8');
+  assert.doesNotMatch(src,/\/api\/tarefas/);
+  assert.match(chat,/\/api\/vivo\/conversar/);
+  assert.match(routes,/parseOfficeCommand/);
+  assert.match(routes,/deps\.engine\.submit/);
+  assert.match(routes,/runTaskThroughOffice/);
 });
