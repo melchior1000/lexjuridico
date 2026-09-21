@@ -5909,7 +5909,8 @@ async function processarMensagem(ctx, dados) {
         records:recordStore,engine:taskEngine,processStore,
         log:msg=>console.warn('[LEX Core]',msg)
       },{
-        text:txt,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID()
+        text:txt,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
+        previous_text:[...(Array.isArray(mem.hist)?mem.hist:[])].reverse().find(m=>m?.role==='assistant'&&typeof m.content==='string')?.content||null
       });
       if(execution?.handled) {
         const result=execution.result;
