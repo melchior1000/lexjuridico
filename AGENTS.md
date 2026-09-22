@@ -42,6 +42,125 @@ Resposta textual do LEX ≠ ação executada.
 
 Relatório histórico não prevalece sobre evidência atual. Não marcar pendência como resolvida sem verificar código/ambiente; não reabrir pendência antiga sem confirmar que ainda existe.
 
+## 1A. DISCIPLINA DE ENGENHARIA DO LEX
+
+Estas regras complementam a missão acima. Não substituem a lista-mestra nem autorizam redesenhar o produto.
+
+### Determinístico primeiro; IA somente onde há julgamento
+
+Antes de implementar, separar o problema em duas partes:
+
+- **determinística:** identidade, tenant, autorização, RLS, seleção de processo por ID/número, datas, prazos calculáveis, cálculos, hashes, idempotência, estados, roteamento, persistência, auditoria e contratos;
+- **IA:** interpretação de linguagem natural, análise jurídica, redação, síntese e outras tarefas que exijam julgamento.
+
+Se a mesma entrada deve produzir a mesma resposta correta por definição, implementar em código determinístico e cobrir com teste. A IA não pode ser fonte de verdade para prazo, permissão, tenant, saldo, hash, estado de tarefa, entrega de canal ou existência de documento.
+
+Quando o fluxo tiver as duas partes, a IA propõe/interpreta e o código valida/executa.
+
+### Dimensionar antes de alterar
+
+Classificar mentalmente cada mudança pelo raio de impacto:
+
+- **pequena:** ajuste mecânico/local, sem mudança de comportamento;
+- **média:** correção ou comportamento localizado;
+- **grande:** contrato, Core, autenticação, tenant/RLS, billing, PJe, migração, arquitetura, múltiplos módulos ou UX crítica.
+
+Pequena: testes diretamente afetados.
+Média: teste de regressão + testes do módulo/fluxo.
+Grande: suíte relevante completa + avaliação do comportamento + revisão adversarial.
+
+Se o raio crescer durante a execução, elevar a classificação e os testes. Não transformar correção pequena em refatoração ampla sem necessidade.
+
+### Todo bug comportamental deixa uma trava permanente
+
+Correção de bug não termina na edição. Deve existir um teste que falharia antes da correção e passe depois.
+
+Falhas recorrentes deixam de depender de memória humana: na segunda ocorrência, transformar a prevenção em teste, validação, guard, script ou regra do Core. Não manter conhecimento crítico apenas em conversa, relatório ou comentário.
+
+### Testes e avaliações têm papéis diferentes
+
+- **teste:** prova comportamento determinístico, contrato, segurança e regressão;
+- **eval:** prova qualidade/comportamento do LEX em linguagem natural e fluxos com IA.
+
+Feature comportamental do Core deve ter cenários de aceite reproduzíveis. A etapa 6 deve manter matriz de ordens naturais com variações de linguagem, ambiguidade, falta de contexto, permissão e efeito real.
+
+Eval não substitui teste. Teste não substitui homologação real.
+
+### Evidência mensurável por mudança
+
+Antes de declarar uma frente concluída, dizer qual comportamento observável mudou e guardar evidência que prove isso.
+
+Exemplos:
+
+- canal: entrada real -> Core -> ação/resposta -> confirmação do provedor -> histórico;
+- Task Engine: ordem -> fila -> execução -> revisão, sem duplicidade;
+- RLS: A tenta IDs válidos de B e recebe bloqueio;
+- prazo: fonte oficial + timestamp + frescor + cálculo + autorização;
+- migração: contagens e hashes/relatório antes/depois.
+
+"Funcionou" sem rastro verificável não fecha etapa.
+
+### Revisão adversarial para mudanças de alto risco
+
+Quem implementa não é a única fonte de validação em mudanças grandes.
+
+Para autenticação, RLS, billing, PJe, prazos, documentos, migrações e Core:
+- revisar como atacante;
+- tentar IDs de outro tenant;
+- repetir/reordenar webhooks;
+- simular restart;
+- testar timeout, fonte indisponível e resposta ambígua;
+- tentar duplicidade, corrida e replay;
+- verificar que falha é fechada e não fabrica sucesso.
+
+A revisão deve partir do artefato e dos critérios de aceite, não da justificativa de quem implementou.
+
+### Isolamento de trabalho no Git
+
+Nunca desenvolver diretamente na `main`.
+
+Cada frente usa branch própria a partir da base remota atual. Sessões/agentes que escrevem em paralelo não compartilham a mesma branch nem o mesmo worktree/checkout gravável.
+
+Antes de editar:
+- confirmar repo, branch e base;
+- verificar PR concorrente do mesmo problema;
+- não carregar commits históricos não relacionados.
+
+Depois:
+- testes verdes;
+- diff revisado;
+- PR;
+- revisão;
+- merge autorizado;
+- deploy;
+- homologação.
+
+### Migrações e backfills são reversíveis
+
+Antes de migração estrutural ou alteração em massa:
+- snapshot/backup;
+- escopo e contagem afetada;
+- procedimento de rollback;
+- execução idempotente quando possível.
+
+Depois:
+- comparar antes/depois;
+- verificar perdas, duplicidades e vínculos;
+- registrar evidência.
+
+Migração de tenant, documentos, tarefas, históricos e billing nunca é validada apenas porque o SQL terminou sem erro.
+
+### Status de conclusão
+
+Usar estados objetivos nas frentes de engenharia:
+
+- **DONE:** implementação + testes + evidência + homologação exigida concluídos;
+- **DONE_WITH_CONCERNS:** concluído, mas há risco conhecido explicitamente registrado;
+- **BLOCKED:** não é possível continuar sem dependência externa/humana;
+- **NEEDS_CONTEXT:** falta informação essencial que não pode ser inferida com segurança.
+
+Não usar "parcialmente concluído" para maquiar pendência. Na lista-mestra, os estados oficiais e critérios de ✅ continuam prevalecendo.
+
 ## 2. NÃO RECONSTRUIR O QUE JÁ EXISTE
 
 Preservar e terminar:
