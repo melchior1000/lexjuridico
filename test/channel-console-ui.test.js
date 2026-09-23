@@ -11,7 +11,7 @@ test('console comercial usa a Recepção unificada para WhatsApp e Telegram',()=
   assert.match(ui,/window\.lexChannel=async function/);
   assert.match(ui,/\/api\/escritorio\/recepcao\?status=/);
   assert.match(ui,/\/api\/escritorio\/recepcao\/historico/);
-  assert.match(ui,/\/api\/escritorio\/recepcao\/responder/);
+  assert.match(ui,/\/api\/escritorio\/recepcao\/comando/);
   assert.match(ui,/A resposta sai pelo mesmo canal/);
   assert.match(ui,/Confirmar envio/);
   assert.match(ui,/Dê uma ordem ao LEX/);
@@ -57,7 +57,7 @@ test('retorno atrasado do mesmo contato não substitui histórico mais novo',asy
     renderChannelList(){},
     channelKey:r=>String(r.origem)+':'+String(r.id),
     $:sel=>sel==='#lex-channel-chat'?chat:sel==='#lex-channel-console'?consoleEl:sel==='#lex-channel-messages'?messages:sel==='#lex-channel-compose-text'?compose:null,
-    lexApi:()=>{calls++;return calls===1?first:second},
+    lexApi:path=>{if(String(path).includes('/comandos?'))return Promise.resolve({jobs:[]});calls++;return calls===1?first:second},
     esc:v=>String(v??''),
     channelIcon:()=>'*',
     channelWhen:()=> '',
