@@ -18,8 +18,8 @@ test('recepcao publica nunca fornece andamento ou dado processual',()=>{
 
 test('recepcao publica identifica o canal para pessoa comum',()=>{
   const text=publicWhatsappReply('De quem e esse numero?');
-  assert.match(text,/Lex Jur[ií]dico/i);
-  assert.match(text,/nome|empresa/i);
+  assert.match(text,/meu nome é LEX|Sou o LEX/i);
+  assert.match(text,/escritório|assistente virtual/i);
 });
 
 test('toda mensagem publica gera ciencia e mostra a resposta do LEX ao operador',async()=>{
