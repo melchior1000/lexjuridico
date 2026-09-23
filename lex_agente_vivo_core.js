@@ -416,7 +416,7 @@ function montarContextoProcesso(p) {
     || '?';
   const tags = Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags || '—');
 
-  // Movimentos PJe se disponíveis
+  // Andamentos importados, se disponíveis (campo legado movimentos_pje).
   const movPje = Array.isArray(p.movimentos_pje) ? p.movimentos_pje : [];
   const ultimosPje = movPje.slice(-5).map((m, i) => {
     if (!m) return `  ${i + 1}. [?] (movimento vazio)`;
@@ -509,7 +509,7 @@ function montarContextoProcesso(p) {
 
   if (movPje.length > 0) {
     linhas.push('');
-    linhas.push('- Últimos movimentos PJe importados (mais recentes no fim):');
+    linhas.push('- Últimos andamentos importados (mais recentes no fim; conferir a fonte de cada leitura):');
     linhas.push(ultimosPje);
   }
   return linhas.join('\n');
@@ -825,7 +825,7 @@ async function handlerConversar(req, res, body, deps) {
       ? montarContextoProcesso(processoComPje)
       : 'Conversa geral — nenhum processo selecionado.';
 
-    // Se vieram movimentos PJe novos, adiciona instrução explícita ao Gestor
+    // Se vieram andamentos importados novos, adiciona instrução explícita ao Gestor
     const instrucaoPje = (Array.isArray(movimentos_pje) && movimentos_pje.length > 0)
       ? '\n\nATENÇÃO — ANDAMENTOS IMPORTADOS PARA ESTE TURNO (fonte deve ser identificada; analise cada um e oriente o próximo passo):\n' +
         movimentos_pje.map((m, i) => {
@@ -1286,7 +1286,7 @@ async function handlerJurisConversar(req, res, body, deps) {
 
     const processo = processo_id != null ? acharProcesso(deps.processos, processo_id) : null;
 
-    // Injeta movimentos PJe temporariamente para enriquecer o contexto
+    // Injeta andamentos importados temporariamente para enriquecer o contexto
     let processoParaCtx = processo;
     if (processo && Array.isArray(movimentos_pje) && movimentos_pje.length > 0) {
       processoParaCtx = Object.assign({}, processo, {
@@ -1298,9 +1298,9 @@ async function handlerJurisConversar(req, res, body, deps) {
       ? '\n\nCONTEXTO DO PROCESSO EM ANÁLISE:\n' + montarContextoProcesso(processoParaCtx)
       : '';
 
-    // Instrução de cruzamento PJe x jurisprudência
+    // Instrução de cruzamento de andamentos importados x jurisprudência
     const instrucaoPje = (Array.isArray(movimentos_pje) && movimentos_pje.length > 0)
-      ? '\n\nMOVIMENTOS PJe PARA CRUZAR COM JURISPRUDÊNCIA:\n' +
+      ? '\n\nANDAMENTOS IMPORTADOS PARA CRUZAR COM JURISPRUDÊNCIA (confira a fonte):\n' +
         movimentos_pje.map((m, i) => {
           if (!m) return '';
           const dt   = m.dataHora || m.data || '?';
