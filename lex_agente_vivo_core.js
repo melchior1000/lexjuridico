@@ -577,6 +577,18 @@ function acharProcesso(processos, processo_id) {
   return processos.find(p => String(p.id) === String(processo_id));
 }
 
+function requiresProcessContext(message) {
+  const text=String(message||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if(!text.trim()) return false;
+  return (
+    /\b(faca|fazer|elabore|elaborar|redija|redigir|prepare|preparar|gere|gerar|crie|criar)\b.{0,80}\b(peticao|contestacao|recurso|pericia|quesitos?|manifestacao|minuta)\b/.test(text)
+    || /\b(atualize|atualizar|mude|mudar|mova|mover|mande|mandar|coloque|colocar|altere|alterar|registre|registrar|lance|lancar)\b.{0,80}\b(processo|status|setor|andamento|prazo)\b/.test(text)
+    || /\b(protocolei|protocolamos|protocolou|protocole|protocolar|distribui|distribuido|distribuida|distribuir)\b/.test(text)
+    || /\b(confirme|confirmar|fixe|fixar|lance|lancar|registre|registrar|altere|alterar)\b.{0,50}\bprazo\b/.test(text)
+    || /\b(junte|juntar|vincule|vincular)\b.{0,60}\b(processo|autos)\b/.test(text)
+  );
+}
+
 async function buscarDocumentosIndexados(processoId, nomeProcesso, deps) {
   const pid=String(processoId||'').trim();
   if(!pid) throw new Error('Selecione um processo antes de buscar documentos.');
@@ -623,9 +635,10 @@ async function persistirProcesso(deps, processo_atualizado) {
 }
 
 function jsonResponse(res, status, obj, CORS) {
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, CORS || {
-    'Access-Control-Allow-Origin': '*'
-  });
+  const headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    CORS && typeof CORS === 'object' ? CORS : {}
+  );
   res.writeHead(status, headers);
   res.end(JSON.stringify(obj));
 }
@@ -788,8 +801,19 @@ async function handlerConversar(req, res, body, deps) {
     }
 
     const processo = processo_id != null ? acharProcesso(deps.processos, processo_id) : null;
+    if (processo_id != null && String(processo_id).trim() && !processo) {
+      return jsonResponse(res, 404, {error:'Processo não encontrado.',codigo:'PROCESSO_CONTEXTO_INVALIDO'}, deps.CORS);
+    }
+    if (!processo && requiresProcessContext(mensagem)) {
+      return jsonResponse(res, 422, {
+        ok:false,
+        error:'Selecione o processo antes de executar esse ato. O LEX não escolhe processo por aproximação.',
+        codigo:'PROCESSO_CONTEXTO_NECESSARIO',
+        needs_input:true
+      }, deps.CORS);
+    }
 
-    // Injeta movimentos PJe no processo para este turno (sem persistir)
+    // Injeta andamentos importados no processo para este turno (sem persistir)
     let processoComPje = processo;
     if (processo && Array.isArray(movimentos_pje) && movimentos_pje.length > 0) {
       processoComPje = Object.assign({}, processo, {
@@ -803,7 +827,7 @@ async function handlerConversar(req, res, body, deps) {
 
     // Se vieram movimentos PJe novos, adiciona instrução explícita ao Gestor
     const instrucaoPje = (Array.isArray(movimentos_pje) && movimentos_pje.length > 0)
-      ? '\n\nATENÇÃO — MOVIMENTOS PJe RECÉM IMPORTADOS (analise cada um e oriente o próximo passo):\n' +
+      ? '\n\nATENÇÃO — ANDAMENTOS IMPORTADOS PARA ESTE TURNO (fonte deve ser identificada; analise cada um e oriente o próximo passo):\n' +
         movimentos_pje.map((m, i) => {
           if (!m) return '';
           const dt   = m.dataHora || m.data || '?';
@@ -851,7 +875,7 @@ async function handlerConversar(req, res, body, deps) {
     if(msgErro.includes('model') || msgErro.includes('not_found') || msgErro.includes('404')) {
       console.error('[VIVO] Modelo inválido detectado, verifique MODELO_GESTOR:', MODELO_GESTOR);
     }
-    return jsonResponse(res, 500, { error: 'Erro no Gestor IA: ' + msgErro.substring(0, 300) }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Não foi possível concluir a conversa com o LEX agora.', codigo:'LEX_GESTOR_FALHOU' }, deps.CORS);
   }
 }
 
@@ -880,7 +904,7 @@ async function handlerAplicarSerial(req, res, body, deps) {
     // Status considerados "finais" — não voltam para ATIVO sozinhos
     const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
     // Detecta "houve trabalho" — qualquer campo substantivo preenchido conta
-    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer || proposta.lembretes_concluidos?.length);
+    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.setor || proposta.integrar_parecer || proposta.lembretes_concluidos?.length);
 
     if (proposta.andamento) {
       processo.andamentos = processo.andamentos || [];
@@ -929,12 +953,13 @@ async function handlerAplicarSerial(req, res, body, deps) {
       processo.proxima_acao = proposta.proxima_acao;
     }
     if (proposta.prazo) {
-      const pr = String(proposta.prazo).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(pr) && Number.isFinite(Date.parse(pr)) && new Date(pr).toISOString().slice(0,10) === pr) {
-        processo.prazo = pr;
-      } else {
-        return jsonResponse(res, 400, {error:'Prazo invalido. Informe uma data existente em YYYY-MM-DD.'}, deps.CORS);
-      }
+      return jsonResponse(res, 409, {
+        ok:false,
+        error:'Prazo jurídico não é gravado pelo Gestor. Confirme-o no fluxo oficial de prazos.',
+        codigo:'PRAZO_EXIGE_FLUXO_OFICIAL',
+        prazo_sugerido:String(proposta.prazo).trim(),
+        fluxo:'/api/escritorio/prazos/cunhar'
+      }, deps.CORS);
     }
     if (proposta.setor) {
       const setorNovo = String(proposta.setor).toLowerCase().trim();
@@ -978,7 +1003,6 @@ async function handlerAplicarSerial(req, res, body, deps) {
       let resumo = '✅ *Processo atualizado via Gestor IA*\n📁 '+nomeProc+'\n';
       if(proposta.novo_andamento) resumo += '📝 '+proposta.novo_andamento+'\n';
       if(proposta.status) resumo += '🔄 Status: '+proposta.status+'\n';
-      if(proposta.prazo) resumo += '📅 Prazo: '+proposta.prazo+'\n';
       if(proposta.proxima_acao) resumo += '▶️ Próxima: '+proposta.proxima_acao+'\n';
       deps._notificarEquipe(resumo).catch(()=>{});
     }
@@ -1004,7 +1028,7 @@ async function handlerAplicarSerial(req, res, body, deps) {
 
   } catch (e) {
     console.error('[VIVO] aplicar erro:', e.message);
-    return jsonResponse(res, 500, { error: e.message }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Não foi possível aplicar a atualização agora.', codigo:'LEX_APLICAR_FALHOU' }, deps.CORS);
   }
 }
 
@@ -1018,8 +1042,12 @@ async function handlerPecaConversar(req, res, body, deps) {
     const { processo_id, mensagem, historico, decisao_anexada } = body || {};
     if (!mensagem) return jsonResponse(res, 400, { error: 'mensagem obrigatória' }, deps.CORS);
 
-    const processo = processo_id ? acharProcesso(deps.processos, processo_id) : null;
-    const contexto = processo ? montarContextoProcesso(processo) : 'Processo não selecionado.';
+    if (!processo_id || !String(processo_id).trim()) {
+      return jsonResponse(res, 422, {error:'Selecione o processo antes de conversar com o redator.',codigo:'PROCESSO_CONTEXTO_NECESSARIO',needs_input:true}, deps.CORS);
+    }
+    const processo = acharProcesso(deps.processos, processo_id);
+    if (!processo) return jsonResponse(res, 404, {error:'Processo não encontrado.',codigo:'PROCESSO_CONTEXTO_INVALIDO'}, deps.CORS);
+    const contexto = montarContextoProcesso(processo);
 
     // Se tem perfil de juiz cacheado, inclui
     let perfilJuiz = '';
@@ -1084,8 +1112,12 @@ async function handlerPecaGerar(req, res, body, deps) {
       return jsonResponse(res, 400, { error: 'briefing com tipo_peca obrigatório' }, deps.CORS);
     }
 
-    const processo = processo_id ? acharProcesso(deps.processos, processo_id) : null;
-    const contexto = processo ? montarContextoProcesso(processo) : 'Processo não informado.';
+    if (!processo_id || !String(processo_id).trim()) {
+      return jsonResponse(res, 422, {error:'Selecione o processo antes de gerar a minuta.',codigo:'PROCESSO_CONTEXTO_NECESSARIO',needs_input:true}, deps.CORS);
+    }
+    const processo = acharProcesso(deps.processos, processo_id);
+    if (!processo) return jsonResponse(res, 404, {error:'Processo não encontrado.',codigo:'PROCESSO_CONTEXTO_INVALIDO'}, deps.CORS);
+    const contexto = montarContextoProcesso(processo);
 
     let perfilJuiz = '';
     if (processo && (processo.juiz || processo.relator) && deps.sbGet) {
@@ -1216,7 +1248,7 @@ Redija a peça completa agora.`;
 
   } catch (e) {
     console.error('[VIVO] peca/gerar erro:', e.message);
-    return jsonResponse(res, 500, { error: e.message }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Não foi possível gerar a minuta agora.', codigo:'LEX_REDACAO_FALHOU' }, deps.CORS);
   }
 }
 
