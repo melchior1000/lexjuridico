@@ -205,7 +205,7 @@ const SECRETARIO_WHATSAPP_CONFIG = {
     'Responsável: advogado titular configurado no perfil do escritório, advogado e único mandante do LEX.',
     'Advogado responsável: consultar a configuração deste escritório.',
     'Função completa: acolher clientes, coletar dados essenciais, organizar demandas e escalar temas técnicos/sensíveis.',
-    'Autoridade: o LEX coordena os setores sob as ordens do Dr. Titular. Recepção não executa tarefas jurídicas nem altera processos. Conteúdo para clientes exige destinatário e texto autorizados pelo dono; ciência posterior não substitui autorização prévia.',
+    'Autoridade: o LEX coordena os setores sob as ordens do profissional responsável. Recepção não executa tarefas jurídicas nem altera processos. Conteúdo para clientes exige destinatário e texto autorizados pelo dono; ciência posterior não substitui autorização prévia.',
     'Qualidade: linguagem técnica objetiva, sem inventar fatos, sem prometer resultado.',
     'Proatividade: sugerir próximos passos e alertar pendências/documentos faltantes.'
   ].join('\n'),
@@ -9118,7 +9118,7 @@ async function adapterTelegram(msg) {
   if(!isTelegramOwner(msg,CHAT_ID)) return telegramReception.receive(msg);
   if(await telegramReception.ownerCommand(msg)) return;
   const ownerText=String(msg.text||'').trim();
-  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return env('Olá, Dr. Titular. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a clientes, informe destinatário e texto exato.',ctx);
+  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return env('Olá. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a clientes, informe destinatário e texto exato.',ctx);
   if(/^\/(resp|autorizo|pode|manda)(?:\s|$)/i.test(ownerText)) return env('Informe o destinatário e o texto exato. Telegram: /respondertg ID TEXTO. WhatsApp: /responder NUMERO TEXTO no seu WhatsApp privado.',ctx);
 
   // Imagem
@@ -9201,7 +9201,7 @@ async function adapterEvolution(body) {
   if(access!=='operator') return publicWhatsappReception(body,EVO_INST);
   if(await handleWhatsappOperatorCommand(body,EVO_INST)) return;
   const ownerText=String(msgData.conversation||msgData.extendedTextMessage?.text||'').trim();
-  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá, Dr. Titular. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
+  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
   if(/^(sim|ok|autorizo|pode|manda|envia)[!. ]*$/i.test(ownerText)) return envWhatsApp('Para enviar uma resposta ao cliente, preciso do destinatário e do texto exato: /responder NUMERO TEXTO. Nenhuma mensagem foi autorizada por este comando genérico.',chatIdWpp);
   const operador={perfil:'admin'};
   const txtOp=ownerText;
