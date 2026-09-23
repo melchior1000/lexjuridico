@@ -23,7 +23,9 @@ function database(row){
   return{request,patches};
 }
 function communication(){
-  return{djen_id:'dj1',numero_oab:'123456',uf_oab:'MG',cnj:'50000000020268130001',tribunal:'TJMG',tipo:'Intimação',data_disponibilizacao:'2026-09-20',texto:'Manifestar',payload:{id:'dj1'},status:'casada',processo_id:'p1',prazo_cunhado:false,requisitado_em:'2026-09-20T08:00:00Z',observado_em:'2026-09-20T08:00:01Z',endpoint:'https://gateway.example/api/djen/comunicacao',request_id:'req1',raw_receipt:'{"count":1,"items":[{"id":"dj1"}]}',receipt_item_key:'dj1',receipt_page:1};
+  const observado=new Date(Date.now()-60*60*1000);
+  const requisitado=new Date(observado.getTime()-1000);
+  return{djen_id:'dj1',numero_oab:'123456',uf_oab:'MG',cnj:'50000000020268130001',tribunal:'TJMG',tipo:'Intimação',data_disponibilizacao:'2026-09-20',texto:'Manifestar',payload:{id:'dj1'},status:'casada',processo_id:'p1',prazo_cunhado:false,requisitado_em:requisitado.toISOString(),observado_em:observado.toISOString(),endpoint:'https://gateway.example/api/djen/comunicacao',request_id:'req1',raw_receipt:'{"count":1,"items":[{"id":"dj1"}]}',receipt_item_key:'dj1',receipt_page:1};
 }
 
 test('fila de cunhagem é consultável sem criar prazo',async()=>{

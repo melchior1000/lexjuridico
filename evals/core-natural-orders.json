@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "purpose": "Gate determinístico das ordens naturais essenciais do LEX Core. Não substitui E2E nem homologação real.",
+  "cases": [
+    {
+      "id": "contestacao-cnj",
+      "input": "Faça a contestação do processo 5001234-56.2026.8.13.0704",
+      "expect": {
+        "action": "task",
+        "tipo": "contestacao",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "contestacao-direta",
+      "input": "Quero uma contestação desse processo",
+      "expect": {
+        "action": "task",
+        "tipo": "contestacao",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "analise",
+      "input": "Analise esse processo",
+      "expect": {
+        "action": "task",
+        "tipo": "analise",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "peticao",
+      "input": "Prepare a petição inicial desse caso",
+      "expect": {
+        "action": "task",
+        "tipo": "peticao",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "pericia",
+      "input": "Faça a perícia desse processo",
+      "expect": {
+        "action": "task",
+        "tipo": "pericia",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "quesitos",
+      "input": "Prepare os quesitos desse processo",
+      "expect": {
+        "action": "task",
+        "tipo": "quesitos",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "precisa-de-mim",
+      "input": "Veja o que precisa de mim",
+      "expect": {
+        "action": "work_queue",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "resposta-com-texto",
+      "input": "Responda a Leidyanny: Amanhã eu te retorno.",
+      "expect": {
+        "action": "reply_contact",
+        "contato": "Leidyanny",
+        "texto": "Amanhã eu te retorno.",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "resposta-dizendo",
+      "input": "Avise Leidyanny dizendo que retorno amanhã",
+      "expect": {
+        "action": "reply_contact",
+        "contato": "Leidyanny",
+        "texto": "retorno amanhã",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "cadastro-nomeado",
+      "input": "Cadastre o cliente Leidyanny",
+      "expect": {
+        "action": "register_contact",
+        "contato": "Leidyanny",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "cadastro-contextual",
+      "input": "Cadastre esse cliente",
+      "expect": {
+        "action": "register_contact",
+        "contato": "",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "envio-whatsapp",
+      "input": "Mande isso no WhatsApp para Leidyanny",
+      "expect": {
+        "action": "send_previous",
+        "canal": "whatsapp",
+        "contato": "Leidyanny",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "envio-telegram",
+      "input": "Envie esse texto via Telegram para Leidyanny",
+      "expect": {
+        "action": "send_previous",
+        "canal": "telegram",
+        "contato": "Leidyanny",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "datajud",
+      "input": "Consultar andamentos desse processo no Datajud",
+      "expect": {
+        "action": "datajud",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "vigia-prazos",
+      "input": "Vigiar prazos",
+      "expect": {
+        "action": "court_watch",
+        "requires_process": false
+      }
+    },
+    {
+      "id": "revisar-minuta",
+      "input": "Revisar a minuta desse processo",
+      "expect": {
+        "action": "lex_review",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "cadastro-completo",
+      "input": "Cadastro completo",
+      "expect": {
+        "action": "confirm_registration",
+        "requires_process": true
+      }
+    },
+    {
+      "id": "mover-revisao",
+      "input": "Mover para revisão",
+      "expect": {
+        "action": "move",
+        "target": "revisao",
+        "requires_process": true
+      }
+    }
+  ]
+}
