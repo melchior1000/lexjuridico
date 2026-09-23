@@ -1169,8 +1169,9 @@ Redija a peça completa agora.`;
     }
 
     let persistencia = {ok:false, via:null};
-    // AUTO-GRAVAR no processo: peça elaborada = atualiza andamento + ATIVO
-    if (processo && deps.sbReq) {
+    // Fail-closed: quando existe processo vinculado, a operação só é concluída
+    // se o banco confirmar a gravação. Minuta sem persistência não é sucesso.
+    if (processo) {
       try {
         const hoje = new Date().toISOString().slice(0, 10);
         const atualizado = JSON.parse(JSON.stringify(processo));
@@ -1180,13 +1181,28 @@ Redija a peça completa agora.`;
           texto: `Peça jurídica elaborada: ${briefing.tipo_peca}. Minuta gerada para revisao do advogado.`,
           origem: 'redator_ia'
         });
-        // Minuta gerada não muda o estado processual nem a prioridade.
         atualizado.atualizado_em = hoje;
         atualizado.ultima_atualizacao = hoje;
         atualizado.dias_parado = 0;
         persistencia = await persistirProcesso(deps, atualizado);
         console.log('[VIVO] Processo atualizado automaticamente após geração de peça:', processo_id);
-      } catch (e) { console.warn('[VIVO] falha ao auto-atualizar processo após peça:', e?.message || e); }
+      } catch (e) {
+        console.warn('[VIVO] falha ao auto-atualizar processo após peça:', e?.message || e);
+        return jsonResponse(res, 503, {
+          ok:false,
+          error:'A minuta foi gerada, mas a persistência no processo não foi confirmada. A operação não foi concluída.',
+          codigo:'PERSISTENCIA_NAO_CONFIRMADA',
+          tipo_peca:briefing.tipo_peca
+        }, deps.CORS);
+      }
+      if(persistencia?.ok!==true) {
+        return jsonResponse(res, 503, {
+          ok:false,
+          error:'A persistência da minuta não foi confirmada. A operação não foi concluída.',
+          codigo:'PERSISTENCIA_NAO_CONFIRMADA',
+          tipo_peca:briefing.tipo_peca
+        }, deps.CORS);
+      }
     }
 
     return jsonResponse(res, 200, {
