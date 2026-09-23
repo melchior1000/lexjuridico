@@ -4,9 +4,10 @@ const core = require('./lex_agente_vivo_core');
 const {executeNaturalOfficeCommand}=require('./lib/office-routes');
 
 function jsonResponse(res, status, obj, CORS) {
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, CORS || {
-    'Access-Control-Allow-Origin': '*'
-  });
+  const headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    CORS && typeof CORS === 'object' ? CORS : {}
+  );
   res.writeHead(status, headers);
   res.end(JSON.stringify(obj));
 }
@@ -89,7 +90,7 @@ async function tratarRota(req, res, url, deps) {
           defer_task:true
         });
         if(execution?.handled){
-          jsonResponse(res,200,{ok:true,texto:execution.message,execucao:{
+          jsonResponse(res,execution.needs_input?422:200,{ok:!execution.needs_input,texto:execution.message,execucao:{
             action:execution.command?.action||null,tipo:execution.command?.tipo||null,
             task_id:execution.task?.id||null,status:execution.result?.status||null,
             needs_input:!!execution.needs_input,candidates:execution.candidates||null
@@ -100,6 +101,20 @@ async function tratarRota(req, res, url, deps) {
         jsonResponse(res,e.status||422,{error:e.message,codigo:'LEX_EXECUCAO_FALHOU'},nextDeps.CORS);
         return true;
       }
+    }
+  }
+
+  if (cleanUrl === '/api/vivo/conversar' && req && req.method === 'POST') {
+    const body = nextDeps.body && typeof nextDeps.body === 'object' ? nextDeps.body : {};
+    const processoId = body.processo_id;
+    if ((!processoId || !String(processoId).trim()) && core.requiresProcessContext(body.mensagem)) {
+      jsonResponse(res, 422, {
+        ok:false,
+        error:'Selecione o processo antes de executar esse ato. O LEX não escolhe processo por aproximação.',
+        codigo:'PROCESSO_CONTEXTO_NECESSARIO',
+        needs_input:true
+      }, nextDeps.CORS);
+      return true;
     }
   }
 
