@@ -30,4 +30,4 @@ test('reading persistido adulterado não revalida',async()=>{
   const r=db.snapshot()[0].court_readings[0];r.observed_at='2099-01-01T00:00:00.000Z';assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false);
 });
 test('CNJ duplicado bloqueia a consulta',async()=>{const db=store([{id:'a',numero:GO},{id:'b',numero:GO}]);await assert.rejects(()=>Datajud.syncProcess(db,'a',{apiKey:'public-key',integrityKey:KEY,fetchImpl:async()=>({ok:true,json:async()=>({})})}),/CNJ duplicado/)});
-test('chat reconhece ordem de atualizar andamentos',()=>{const cmd=parseOfficeCommand('busca andamentos deste processo',{processo_id:'p1'});assert.equal(cmd.action,'datajud');assert.equal(cmd.processo_id,'p1');assert.equal(cmd.requires_process,true)});
+test('chat só reconhece Datajud quando a fonte judicial está explícita',()=>{assert.equal(parseOfficeCommand('busca andamentos deste processo',{processo_id:'p1'}),null);const cmd=parseOfficeCommand('busque os andamentos do tribunal deste processo',{processo_id:'p1'});assert.equal(cmd.action,'datajud');assert.equal(cmd.processo_id,'p1');assert.equal(cmd.requires_process,true)});

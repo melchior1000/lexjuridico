@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
-const {parseOfficeCommand,extractNumber}=require('../lib/office-command');
+const {parseOfficeCommand,commandResponse,extractNumber}=require('../lib/office-command');
 
 test('LEX reconhece devolução para Cadastro com motivo',()=>{
   const c=parseOfficeCommand('Volta pro cadastro, falta procuração',{processo_id:7});
@@ -24,7 +24,8 @@ test('LEX reconhece cadastro pronto e distribuição com número',()=>{
   const c=parseOfficeCommand('Distribuído protocolo 0000001-00.2026.8.13.0001',{processo_id:2});
   assert.equal(c.action,'distribute');
   assert.equal(c.numero,'0000001-00.2026.8.13.0001');
-  assert.equal(extractNumber('protocolo ABC-12345'),'ABC-12345');
+  assert.equal(extractNumber('protocolo ABC-12345'),'');
+  assert.equal(extractNumber('processo nº ABC-12345'),'ABC-12345');
 });
 
 test('pergunta jurídica comum não vira movimento administrativo',()=>{
@@ -42,4 +43,23 @@ test('casca comercial envia linguagem natural ao Core do servidor',()=>{
   assert.match(chat,/\/api\/vivo\/conversar/);
   assert.match(routes,/executeNaturalOfficeCommand/);
   assert.match(routes,/deps\.engine\.submit/);
+});
+
+
+test('parser nao transforma consulta solta, atualizacao interna ou protocolo vago em ordem errada',()=>{
+  assert.equal(parseOfficeCommand('Analisa se o prazo do art. 183 cabe'),null);
+  assert.equal(parseOfficeCommand('Atualiza o processo: cliente trouxe RG',{processo_id:2}),null);
+  assert.equal(parseOfficeCommand('O protocolo da inicial foi juntado',{processo_id:2}),null);
+  assert.equal(parseOfficeCommand('Protocolei no PJe',{processo_id:2}),null);
+  assert.equal(parseOfficeCommand('Analise os riscos deste processo',{processo_id:2}).tipo,'analise');
+  assert.equal(parseOfficeCommand('Consulte os andamentos do tribunal',{processo_id:2}).action,'datajud');
+  const d=parseOfficeCommand('Protocolei no PJe o processo nº 0000001-00.2026.8.13.0001',{processo_id:2});
+  assert.equal(d.action,'distribute');
+  assert.equal(d.numero,'0000001-00.2026.8.13.0001');
+});
+
+test('commandResponse nunca anuncia sucesso quando o executor falha',()=>{
+  const c={action:'move',target:'judicial'};
+  assert.equal(commandResponse(c,{ok:false,error:'Banco recusou'}),'Banco recusou');
+  assert.equal(commandResponse(c,{status:'falhou',pendencia:'Persistência indisponível'}),'Persistência indisponível');
 });
