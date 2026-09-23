@@ -3,6 +3,7 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const {requireSuccess, rowsFromResult} = require('../lib/supabase');
+const {enforceHttpBoundary}=require('../lib/http-boundary');
 const source = fs.readFileSync(path.join(__dirname, '..', 'bot.js'), 'utf8');
 const auth = source.slice(source.indexOf('function gerarToken('), source.indexOf('// PATCH BOT FINAL: helpers faltantes'));
 const docs = source.slice(source.indexOf('function _escapeXmlPeca('), source.indexOf('const USUARIOS ='));
@@ -11,7 +12,7 @@ function setup(extra = {}) {
   let callback;
   const context = vm.createContext({
     console: {log() {}, warn() {}, error() {}},
-    requireSuccess, rowsFromResult, incomingWhatsappMessage:require("../lib/integration-status").incomingWhatsappMessage, EVO_INST:"LEX-JURIDICO",
+    requireSuccess, rowsFromResult, enforceHttpBoundary, incomingWhatsappMessage:require("../lib/integration-status").incomingWhatsappMessage, EVO_INST:"LEX-JURIDICO",
     Buffer, URL, CRYPTO: crypto, AUTH_SECRET: 'isolated-test-secret', AUTH_IDLE_MS: 1800000,
     PERMS: {admin: {}, secretaria: {}}, SENHAS_WEB: {admin: '', secretaria: ''},
     global: {_tokensRevogados: new Set(), _sessaoAtividade: new Map()},
