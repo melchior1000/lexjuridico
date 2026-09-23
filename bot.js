@@ -91,6 +91,7 @@ const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
 const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
+const {enforceHttpBoundary} = require('./lib/http-boundary');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
 const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-quality');
@@ -10302,6 +10303,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Fronteira HTTP: rotas legadas que duplicavam produção/escrita ficam
+  // fail-closed antes de alcançar os handlers antigos. Rotas oficiais do
+  // Office Core e escritas transitórias em ProcessStore continuam intactas.
+  if(enforceHttpBoundary(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r))})) return;
+
   // ════════════════════════════════════════════════════════════════════════
   // SYNC POR VERSÃO (corrige iPhone/notebook desatualizados)
   // ════════════════════════════════════════════════════════════════════════
@@ -10588,8 +10594,9 @@ const server = http.createServer(async (req, res) => {
       if(!b.messages) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'messages obrigatório'})); return; }
     const sysPrompt = b.system || sysAssessor(null, null);
     const txt = await ia(b.messages, sysPrompt, b.maxTokens||4096, MODELO_MID); // Chat API → Sonnet (economia)
-      // Pós-processamento: marcadores de atualização de processo
-      const acoes = await _processarMarcadoresChat(txt, validarToken(tk));
+      // Compatibilidade somente leitura: /api/chat não executa mais marcadores.
+      // Escritas operacionais passam por /api/vivo/conversar -> Office Core.
+      const acoes = [];
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
