@@ -928,11 +928,9 @@ async function enviar() {
         .slice(-20)
         .map(m => ({ role: m.role, content: m.content }));
 
-      const usarCadastrador = usarRotaCadastrador();
-      const endpoint = usarCadastrador ? '/api/vivo/conversar' : '/api/chat';
-      const body = usarCadastrador
-        ? { pergunta: texto, messages: msgs, maxTokens: 1500 }
-        : { messages: msgs, maxTokens: 1500 };
+      // UI paralela, Core único: toda conversa passa pela mesma porta oficial.
+      const endpoint = '/api/vivo/conversar';
+      const body = { mensagem: texto, historico: msgs };
       const r = await fetch(`${SERVER_URL}${endpoint}`, { method:'POST', headers, body: JSON.stringify(body) });
       if(r.status===401){ _authToken=null; localStorage.removeItem('lex_sessao_v2'); mostrarTyping(false); adicionarBubble('in','🔒 Sessão expirada. Faça login novamente.'); document.getElementById('setup-overlay').classList.remove('hidden'); enviando=false; return; }
       const d = await r.json();
