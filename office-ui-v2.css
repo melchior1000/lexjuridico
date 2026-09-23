@@ -106,3 +106,22 @@ body.lex-commercial .lex2-lex .lex-conversation{min-height:0;max-height:none;ove
 @media(max-height:620px){.lex2-lex-head p,.lex2-command-note{display:none}.lex2-lex-head{padding:8px 12px}.lex2-lex-head h1{font-size:18px}.lex2-lex-head small{margin-bottom:3px}.lex2-command>label{display:none}.lex2-command-row textarea{min-height:44px;height:44px}.lex2-lex{gap:5px}.lex2-lex .lex-top{padding:0}.lex2-lex .lex-top-actions button{height:36px}.lex2-lex .lex-dock{display:none}body.lex-commercial #content .lex-screen.lex2-lex{padding-bottom:calc(8px + env(safe-area-inset-bottom))!important}}
 
 @media(max-width:720px){.lex-process-toolbar{display:block}.lex-sort{justify-content:space-between;margin:-2px 0 12px}.lex-sort select{flex:1;max-width:220px}.lex-pager{align-items:flex-start;flex-direction:column}.lex-pager>div{width:100%;justify-content:space-between}.lex-brand{min-width:0}.lex-brand>div small{display:none}}
+
+/* Comandos do LEX na conversa: ordem -> prévia -> confirmação -> envio. */
+.lex-channel-command-status:empty{display:none}
+.lex-channel-command-status{padding:8px 12px 0}
+.lex-command-card{display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);font-size:13px}
+.lex-command-card strong{font-size:13px}
+.lex-command-card small{color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+.lex-command-card textarea{width:100%;min-height:84px;resize:vertical;padding:10px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--text);font:inherit;line-height:1.45}
+.lex-command-card.working{border-style:dashed}
+.lex-command-card.success{border-color:var(--green)}
+.lex-command-card.error{border-color:var(--red)}
+.lex-command-actions{display:flex;gap:8px;flex-wrap:wrap}
+.lex-command-actions button{min-height:42px;padding:9px 12px;border-radius:9px}
+@media(max-width:620px){
+  .lex-channel-command-status{padding:8px 8px 0}
+  .lex-command-card{padding:10px}
+  .lex-command-card textarea{font-size:16px;min-height:96px}
+  .lex-command-actions button{flex:1 1 135px}
+}
