@@ -1369,7 +1369,8 @@ async function exportarDadosAgente(processo_id, deps) {
     processo: null,
     perfil_juiz: null,
     acoes: [],
-    pronto_para_pje: false,
+    pronto_para_consulta_publica: false,
+    consulta_publica: null,
     fonte: {}
   };
   if (!processo_id) return out;
@@ -1414,43 +1415,41 @@ async function exportarDadosAgente(processo_id, deps) {
     }
   } catch (e) { /* opcional */ }
 
-  // Flag de prontidao pra PJe (correcao #8)
-  out.pje = prepararParaPJe(out.processo);
-  out.pronto_para_pje = !!(out.pje && out.pje.pronto);
+  // Prontidão técnica apenas para consulta pública/assistida.
+  out.consulta_publica = prepararParaConsultaPublica(out.processo);
+  out.pronto_para_consulta_publica = !!(out.consulta_publica && out.consulta_publica.pronto);
 
   return out;
 }
 
 // =====================================================================
-// INTEGRACAO PJe - PREPARACAO (correcao #8)
-// Monta o payload base que sera consumido futuramente pelo conector PJe
-// (REST/CNJ/PDPJ-br). Aqui NAO chamamos o PJe ainda - so deixamos os
-// dados normalizados e os hooks prontos para quando o conector existir.
+// PRONTIDAO PARA CONSULTA PUBLICA / CAPTURA ASSISTIDA
+// Isto NAO autentica no PJe, NAO baixa autos e NAO protocola documentos.
+// Apenas normaliza CNJ e tribunal para os fluxos que realmente existem.
 // =====================================================================
-function prepararParaPJe(processo) {
+function prepararParaConsultaPublica(processo) {
   if (!processo) return { pronto: false, motivo: 'processo ausente' };
   const cnj = processo.cnj || processo.numero || '';
   const cnjLimpo = String(cnj).replace(/\D/g, '');
-  // Formato CNJ valido tem 20 digitos: NNNNNNN-DD.AAAA.J.TR.OOOO
   const cnjValido = cnjLimpo.length === 20;
   const tribunal = (processo.tribunal || '').trim();
   const pronto = cnjValido && !!tribunal;
 
   return {
     pronto,
-    motivo: pronto ? 'pronto para consulta PJe' : (!cnjValido ? 'CNJ invalido/incompleto' : 'tribunal ausente'),
+    motivo: pronto ? 'CNJ e tribunal presentes para consulta publica/assistida' : (!cnjValido ? 'CNJ invalido/incompleto' : 'tribunal ausente'),
     cnj,
     cnj_limpo: cnjLimpo,
     tribunal,
     instancia: processo.instancia || null,
     vara: processo.vara || null,
     partes: processo.partes || null,
-    // Hooks a serem implementados pelo conector PJe:
-    hooks: {
-      consultar_processo: 'pje.consultarProcesso(cnj_limpo, tribunal)',
-      baixar_andamentos:  'pje.baixarAndamentos(cnj_limpo, tribunal)',
-      protocolar_peca:    'pje.protocolarPeca(cnj_limpo, peca, assinador)',
-      baixar_decisao:     'pje.baixarUltimaDecisao(cnj_limpo, tribunal)'
+    capacidades: {
+      consulta_publica: pronto,
+      captura_assistida: pronto,
+      autenticacao_pje: false,
+      baixar_autos: false,
+      protocolar_peca: false
     }
   };
 }
@@ -1515,8 +1514,7 @@ async function tratarRota(req, res, url, deps) {
   if (!urlLimpa || !urlLimpa.startsWith('/api/vivo')) return false;
   url = urlLimpa;
 
-  const CORS = deps.CORS || {
-    'Access-Control-Allow-Origin': '*',
+  const CORS = deps.CORS && typeof deps.CORS === 'object' ? deps.CORS : {
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Aparelho-Id'
   };
@@ -1534,8 +1532,8 @@ async function tratarRota(req, res, url, deps) {
       jsonResponse(res, 400, { error: 'Informe o ID do processo: /api/vivo/exportar/{id}' }, CORS);
       return true;
     }
-    const exportado = exportarDadosAgente(procId, deps);
-    jsonResponse(res, exportado.ok ? 200 : 404, exportado, CORS);
+    const exportado = await exportarDadosAgente(procId, deps);
+    jsonResponse(res, exportado.processo ? 200 : 404, exportado, CORS);
     return true;
   }
 
@@ -1551,7 +1549,6 @@ async function tratarRota(req, res, url, deps) {
         juiz:          { modelo: deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR, endpoint: '/api/vivo/juiz/conversar' },
         jurisprudencia:{ modelo: deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR, endpoint: '/api/vivo/juris/conversar' }
       },
-      processos_em_memoria: (deps.processos || []).length,
       supabase_conectado: null,
       supabase_adapter_disponivel: typeof deps.sbGet === 'function',
       integracoes_verificadas: false,
@@ -1632,4 +1629,4 @@ async function _capturarResultadoEspecialista(handler, body, deps) {
 async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
 async function executarPesquisaJulgador(body,deps){return _capturarResultadoEspecialista(handlerJuizConversar,body,deps)}
 
-module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };
+module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaConsultaPublica, requiresProcessContext, executarPesquisaJuris, executarPesquisaJulgador };
