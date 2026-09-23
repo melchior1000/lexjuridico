@@ -183,7 +183,7 @@ test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()
   const end=source.indexOf('async function ',start+30);
   vm.runInContext(source.slice(start,end),c);
   await c.adapterEvolution(body('Oi','556199171717'));
-  assert.match(sent[0],/advogado responsável/i);assert.equal(calls,0);
+  assert.match(sent[0],/Sou o LEX/i);assert.equal(calls,0);
   await c.adapterEvolution(body('Prepare uma tarefa','556199171717'));assert.equal(calls,1);
 });
 
