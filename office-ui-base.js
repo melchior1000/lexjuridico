@@ -175,13 +175,10 @@ async function lexArchiveReception(origem,id){
 }
 async function lexOpenReceptionConversation(origem,id){
   try{
-    const d=await lexApi('/api/escritorio/recepcao/historico?origem='+encodeURIComponent(origem)+'&id='+encodeURIComponent(id));
-    const lines=(d.historico||[]).map(x=>(x.direcao==='entrada'?'Contato':x.direcao==='saida_operador'?'Você':'LEX')+': '+String(x.texto||'')).join('\n\n');
-    const reply=prompt((lines||'Sem histórico registrado.')+'\n\nResposta exata pelo '+(origem==='telegram'?'Telegram':'WhatsApp')+':');
-    if(reply==null||!reply.trim())return;
-    await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:reply.trim()})});
-    toast('Resposta confirmada pelo canal.','ok');await renderRecepcaoLex();
-  }catch(e){toast(e.message,'erro');}
+    if(typeof window.lexChannel!=='function'||typeof window.lexSelectChannelContact!=='function')throw new Error('Central de atendimento indisponível nesta versão.');
+    await window.lexChannel(origem==='telegram'?'telegram':'whatsapp');
+    await window.lexSelectChannelContact(origem,id);
+  }catch(e){toast(e.message||'Não foi possível abrir a conversa.','erro');}
 }
 function lexOpenReception(btn){
   if(typeof pag!=='undefined')pag='recepcao';
