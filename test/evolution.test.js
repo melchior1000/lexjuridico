@@ -161,10 +161,13 @@ test('gestor: novo andamento mantém prazo próximo e só confirma após gravaç
   assert.equal(result.body.persistencia.via,'supabase');
   assert.equal(sincronizacoes,1);
 });
-test('gestor: data inexistente não altera processo', async () => {
+test('gestor: prazo juridico nao e gravado pela proposta', async () => {
   const processos=[{id:1,status:'URGENTE'}];
   const result=await requestAgent('/api/vivo/aplicar',{processo_id:1,proposta:{prazo:'2026-02-31'}},{processos});
-  assert.equal(result.status,400); assert.equal(processos[0].status,'URGENTE');
+  assert.equal(result.status,409);
+  assert.equal(result.body.codigo,'PRAZO_EXIGE_FLUXO_OFICIAL');
+  assert.equal(processos[0].status,'URGENTE');
+  assert.equal(processos[0].prazo,undefined);
 });
 test('gestor: secretaria não aplica alterações', async () => {
   const result=await requestAgent('/api/vivo/aplicar',{processo_id:1,proposta:{status:'ATIVO'}},{perfil:'secretaria'});
@@ -174,7 +177,9 @@ test('ferramenta de proposta não informa uma gravação inexistente à IA', asy
   const {https,calls}=transport((call,n) => n===1
     ? {stop_reason:'tool_use',content:[{type:'tool_use',id:'proposal',name:'propor_atualizacao',input:{status:'ATIVO'}}]}
     : {stop_reason:'end_turn',content:[{type:'text',text:'Proposta preparada.'}]});
-  const result=await requestAgent('/api/vivo/conversar',{mensagem:'Atualize o processo'}, {https,ANTHROPIC_KEY:'test-key'});
+  const result=await requestAgent('/api/vivo/conversar',{mensagem:'Atualize o processo',processo_id:1}, {
+    https,ANTHROPIC_KEY:'test-key',processos:[{id:1,nome:'Caso Alfa',numero:'5001234-56.2026.8.13.0704'}]
+  });
   assert.equal(result.status,200);
   const returned=JSON.parse(calls[1].body.messages.at(-1).content[0].content);
   assert.equal(returned.executado,false); assert.equal(returned.estado,'proposta_preparada');
