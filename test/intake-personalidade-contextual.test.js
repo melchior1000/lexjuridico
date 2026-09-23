@@ -18,12 +18,12 @@ test('Oi -> Quem é vc? não repete o INTRO completo',()=>{
   assert.match(second.reply,/Sou o LEX/i);
 });
 
-test('Oi -> Quem é vc? -> Quero falar com Kleuber progride sem voltar ao início',()=>{
+test('Oi -> Quem é vc? -> Quero falar com o advogado responsável progride sem voltar ao início',()=>{
   const h=[];
   next(h,'Oi');
   next(h,'Quem é vc?');
-  const third=next(h,'Quero falar com Kleuber');
+  const third=next(h,'Quero falar com o advogado responsável');
   assert.equal(third.kind,'lawyer');
-  assert.match(third.reply,/Dr\. Kleuber/i);
+  assert.match(third.reply,/advogado responsável/i);
   assert.doesNotMatch(third.reply,/assistente virtual do escritório/i);
 });
