@@ -1,6 +1,6 @@
 # Auditoria do LEX — 13/09/2026
 
-Base: `df2dc4c` de `melchior1000/lexjuridico`. Branch: `fix/full-audit-20260913`.
+Base: `df2dc4c` de `repositório privado do projeto`. Branch: `fix/full-audit-20260913`.
 
 ## Resultado verificável
 
