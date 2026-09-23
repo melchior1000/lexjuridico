@@ -12,7 +12,7 @@ test('console comercial usa a Recepção unificada para WhatsApp e Telegram',()=
   assert.match(ui,/\/api\/escritorio\/recepcao\?status=/);
   assert.match(ui,/\/api\/escritorio\/recepcao\/historico/);
   assert.match(ui,/\/api\/escritorio\/recepcao\/responder/);
-  assert.match(ui,/A resposta sai pelo mesmo canal/);
+  assert.match(ui,/A resposta sai pelo mesmo canal/);\n  assert.match(ui,/Confirmar envio/);\n  assert.match(ui,/Dê uma ordem ao LEX/);
   assert.doesNotMatch(ui,/goLex\(\\'whatsapp\\'\)/);
   assert.doesNotMatch(ui,/goLex\(\\'telegram\\'\)/);
 });
