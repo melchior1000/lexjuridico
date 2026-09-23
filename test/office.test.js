@@ -139,6 +139,25 @@ test('processos ambíguos ou CNJ incompatível não chamam IA',async()=>{
   let t=await engine.submit({tipo:'contestacao',instrucao:'Faça contestação do Caso bancário Alfa'});t=await engine.run(t.id);assert.equal(t.status,'aguardando_dados');assert.equal(calls,0);
   assert.ok(resolveCase(cases,{processo_id:1,instrucao:'Faça contestação de 0000002-00.2026.8.13.0001'}).reason);
 });
+test('identidade fraca ou nome generico nunca escolhe processo automaticamente',()=>{
+  const cases=[
+    {id:1,nome:'Ação',cliente:'João Silva',partes:'João Silva x Banco A',numero:'0000001-00.2026.8.13.0001'},
+    {id:2,nome:'Inventário',cliente:'Maria Souza',partes:'Maria Souza',numero:'0000002-00.2026.8.13.0001'},
+    {id:3,nome:'Varejão Madeira',cliente:'Wanderson Farias',partes:'Wanderson Farias x Varejão',numero:'0000003-00.2026.8.13.0001'}
+  ];
+  assert.equal(resolveCase(cases,{instrucao:'Faça petição da ação'}).process,undefined);
+  assert.equal(resolveCase(cases,{instrucao:'Faça análise do Silva'}).process,undefined);
+  assert.equal(resolveCase(cases,{instrucao:'Faça análise do Souza'}).process,undefined);
+  assert.equal(resolveCase(cases,{instrucao:'Faça análise do Varejão Madeira'}).process.id,3);
+});
+
+test('deiticos nao contam como identidade do processo',()=>{
+  const cases=[{id:1,nome:'Caso Alfa',cliente:'Cliente Um'},{id:2,nome:'Caso Beta',cliente:'Cliente Dois'}];
+  const r=resolveCase(cases,{instrucao:'Faça a petição desse caso nos autos'});
+  assert.equal(r.process,undefined);
+  assert.match(r.reason,/Informe|referência|compatível/i);
+});
+
 test('peça incompatível e falta de credencial não são declaradas concluídas',async()=>{
   const db=database(),records=new RecordStore(db.request);let calls=0;
   const engine=new TaskEngine({store:records,processes:async()=>[caseA],ai:async()=>{calls++;return JSON.stringify({cabivel:false,motivos:'Fase incompatível',faltantes:['decisão']});}});
