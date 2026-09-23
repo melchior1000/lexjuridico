@@ -113,7 +113,7 @@ test('atendimento usa identidade da sessão no cadastro sem ReferenceError',asyn
 
 test('cadastro pelo canal usa IA existente e confirma registro retornado',async()=>{
   const messages=[];let saved,model;
-  const ctx=vm.createContext({console,global:{_intakeSessoes:{}},MODELO_TOP:'test-model',
+  const ctx=vm.createContext({console,global:{_intakeSessoes:{}},MODELO_TOP:'test-model',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>{const id=require('../lib/office-identity').getIdentity();return id.titular?id.titularTratado:'titular';},
     env:async m=>messages.push(m),ia:async(m,s,t,mod)=>{model=mod;return JSON.stringify({nome_cliente:'Teste',docs_recebidos:[],docs_faltantes:[]});},
     isAdvogado:()=>true,_normalizarTipoProcesso:()=> 'judicial',sbReq:async(m,t,d)=>{if(t==='processos')saved=d;return {ok:true,body:[{id:123}]};},
     _agoraBrasilia:()=>'',_agoraIso:()=>'',logAtividade:async()=>{}});

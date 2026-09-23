@@ -4,7 +4,7 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const prep=()=>{try{return typeof getPrep==='function'?(getPrep()||[]):[]}catch{return[]}};
-const first=()=>{try{return String(typeof getResponsavel==='function'?getResponsavel():'Kleuber').replace(/^dr\.?\s*/i,'').trim().split(/\s+/)[0]||'Kleuber'}catch{return'Kleuber'}};
+const first=()=>{try{return String(typeof getResponsavel==='function'?getResponsavel():'').replace(/^dr\.?\s*/i,'').trim().split(/\s+/)[0]||'titular'}catch{return'titular'}};
 const go=p=>{if(typeof ir==='function')ir(p,null)};
 const openProc=id=>{if(typeof abrirProc==='function')abrirProc(id)};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,day]=raw.split('-');d=new Date(+y,+m-1,+day)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000)};
@@ -88,6 +88,8 @@ function renderProcessList(){
 }
 function setDeadlineServerState(work){deadlineServerState=Array.isArray(work?.prazos?.todos)?work.prazos.todos.filter(x=>x?.deadline_legal_truth===true&&x?.case_id!=null):[]}
 function deadlineTruthMap(){return new Map(deadlineServerState.map(x=>[String(x.case_id),x]))}
+// Mantida pelo contrato de prazos (test/commercial-ui-corrections).
+// eslint-disable-next-line no-unused-vars
 function deadlineConfirmed(p){return deadlineTruthMap().has(String(p?.id))}
 function deadlineItems(){const trusted=deadlineTruthMap();return procs().map(p=>{const t=trusted.get(String(p.id));if(t){const d=Number(t.days_to_due);return{p,d:Number.isFinite(d)?d:9999,confirmed:true,due:t.prazo||null}}return{p,d:days(p),confirmed:false,due:null}}).filter(x=>x.d<9999).sort((a,b)=>a.d-b.d)}
 function deadlineBuckets(all=deadlineItems()){return{revisar:all.filter(x=>!x.confirmed),vencidos:all.filter(x=>x.confirmed&&x.d<0),hoje:all.filter(x=>x.confirmed&&x.d===0),dias7:all.filter(x=>x.confirmed&&x.d>0&&x.d<=7),todos:all}}
@@ -248,7 +250,7 @@ window.lexCloseChannelContact=function(){channelDesk.historyGeneration++;channel
 window.lexSendChannelMessage=async function(e){
   e?.preventDefault();const input=$('#lex-channel-compose-text');const text=String(input?.value||'').trim();if(!text||!channelDesk.selected)return;
   const selected=channelDesk.selected;const [origem,id]=selected.split(':');const button=e?.submitter||e?.target?.querySelector('button[type=submit]');if(button)button.disabled=true;
-  try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text})});if(input)input.value='';if(channelDesk.selected===selected&&input?.isConnected)await lexSelectChannelContact(origem,id)}
+  try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text}),timeoutMs:180000});if(input)input.value='';if(channelDesk.selected===selected&&input?.isConnected)await lexSelectChannelContact(origem,id)}
   catch(err){if(typeof window.toast==='function')window.toast(err.message||'Envio não confirmado','erro')}
   finally{if(button)button.disabled=false}
 };
@@ -261,6 +263,6 @@ window.lexArchiveChannelContact=async function(origem,id){
 window.lexMais=function(){navMark('mais');const body='<div class="lex-page-head"><div><small>Funções complementares</small><h1>Mais</h1></div><button onclick="lexToggleTheme()">◐</button></div><div class="lex-menu"><button onclick="goLex(\'agenda\')">👥<span>Clientes / Contatos</span><b>›</b></button><button onclick="goLex(\'calendario\')">📅<span>Agenda</span><b>›</b></button><button onclick="goLex(\'autuacao\')">📄<span>Documentos / Autuação</span><b>›</b></button><button disabled title="Módulo financeiro ainda não possui rota comercial própria">＄<span>Financeiro · em breve</span><b>·</b></button><button onclick="goLex(\'estatisticas\')">▥<span>Relatórios / Estatísticas</span><b>›</b></button><button onclick="lexEscritorio()">▦<span>Escritório / Setores</span><b>›</b></button><button onclick="goLex(\'escritorio\')">⚙<span>Configurações do escritório</span><b>›</b></button></div><h2 class="lex-channel-title">Canais de comunicação</h2><div class="lex-channels"><button onclick="lexChannel(\'whatsapp\')">🟢<span>WhatsApp</span></button><button onclick="lexChannel(\'telegram\')">🔵<span>Telegram</span></button><button onclick="lexChannel(\'all\')">✉️<span>Mensagens</span></button><button onclick="goLex(\'pje\')">Pe<span>PJe</span></button></div>';shell('Mais',body,'mais')};
 window.goLex=p=>go(p);
 window.renderPainel=home;window.renderTrabalho=window.lexTarefas;window.renderProcessos=window.lexProcessos;window.renderPrazos=window.lexPrazos;window.lexFocusV2=window.lexChat;
-function hook(){themeInit();disableLegacySweep();syncLegacyThemeButton();if(typeof window.ir==='function'&&!window.ir.__commercial){const old=window.ir;window.ir=function(page,button){if(page==='painel'){home();return}if(page==='trabalho'){window.lexTarefas();return}if(page==='processos'){window.lexProcessos();return}if(page==='prazos'){window.lexPrazos();return}return old.apply(this,arguments)};window.ir.__commercial=true}setTimeout(()=>{disableLegacySweep();syncLegacyThemeButton();const c=$('#content');if(c&&c.offsetParent!==null&&!$('.lex-screen',c))window.lexHome()},120)}
+function hook(){themeInit();disableLegacySweep();syncLegacyThemeButton();if(typeof window.ir==='function'&&!window.ir.__commercial){const old=window.ir;window.ir=function(page){if(page==='painel'){home();return}if(page==='trabalho'){window.lexTarefas();return}if(page==='processos'){window.lexProcessos();return}if(page==='prazos'){window.lexPrazos();return}return old.apply(this,arguments)};window.ir.__commercial=true}setTimeout(()=>{disableLegacySweep();syncLegacyThemeButton();const c=$('#content');if(c&&c.offsetParent!==null&&!$('.lex-screen',c))window.lexHome()},120)}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
 })();

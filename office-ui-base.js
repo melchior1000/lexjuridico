@@ -2,10 +2,19 @@
 let lexWorkTimer=null;
 const lexTaskStatus={na_fila:'Na fila',executando:'Em execução',aguardando_dados:'Precisa de informação',aguardando_documento_nitido:'Documento legível necessário',aguardando_configuracao:'Configuração pendente',aguardando_revisao:'Revisar entrega',concluida:'Concluída',falhou:'Falhou'};
 async function lexApi(path,options={}) {
-  const response=await fetchComTimeout(SERVIDOR+path,{...options,headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken(),...(options.headers||{})}},30000);
-  const data=await response.json();
-  if(!response.ok || data.ok===false) throw new Error(data.error||'Não foi possível confirmar a operação.');
-  return data;
+  const timeoutMs=Number(options.timeoutMs)||30000;
+  const requestOptions={...options};delete requestOptions.timeoutMs;
+  try{
+    const response=await fetchComTimeout(SERVIDOR+path,{...requestOptions,headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken(),...(requestOptions.headers||{})}},timeoutMs);
+    const data=await response.json();
+    if(!response.ok || data.ok===false) throw new Error(data.error||'Não foi possível confirmar a operação.');
+    return data;
+  }catch(error){
+    if(error?.name==='AbortError'||/aborted|abort/i.test(String(error?.message||''))){
+      throw new Error('O servidor demorou para confirmar a operação. Não repita o envio até conferir se a mensagem chegou.');
+    }
+    throw error;
+  }
 }
 function lexRefreshCurrent() {
   atualizarUrgentes();

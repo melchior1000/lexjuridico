@@ -10,7 +10,7 @@ test('canais comerciais mostram WhatsApp e Telegram sem abrir em token',()=>{
   assert.match(js,/📱<\/span> WhatsApp/);
   assert.match(js,/✈️<\/span> Telegram/);
   assert.match(js,/WhatsApp do escritório/);
-  assert.match(js,/Sua mesa privada/);
+  assert.match(js,/Canal privado do titular/);
   assert.match(js,/\/responder NUMERO TEXTO EXATO/);
   assert.match(js,/Ajustes avançados do Telegram/);
   assert.match(js,/<details class="lex-canal-advanced/);

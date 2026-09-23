@@ -160,3 +160,68 @@ e autenticação das duas entradas WhatsApp. Os tiers Anthropic passam a usar Op
 bloqueio 403 descrito acima é histórico. Produção ainda não recebeu este conjunto.
 O relatório identifica expressamente as limitações restantes do motor proativo,
 armazenamento, PJe, isolamento e alternância integral de APIs.
+
+## Pacote de endurecimento comercial — 23/09/2026
+
+596 testes passam (584 anteriores + 12 novos em test/commercial-hardening.test.js).
+
+- Senhas com hash scrypt e comparação em tempo constante; valor legado em texto é
+  convertido para hash no primeiro login bem-sucedido.
+- Rate limit do login usa o IP gravado pelo proxy confiável (LEX_TRUSTED_PROXY_HOPS);
+  x-forwarded-for forjado não burla mais o limite.
+- Negação por padrão: toda rota /api/* exige sessão, salvo login, ping, webhooks e conector.
+- Logout encerra na hora os streams SSE do token; heartbeat não renova sessão.
+- Corpo acima do limite → 413 sem acumular em RAM; JSON inválido → 400 (antes virava {}).
+- White-label: lib/office-identity.js. Removidos do backend e da recepção nome do titular,
+  escritório, OAB, cidade, Chat ID e telefone pessoais. Configurar ESCRITORIO_* no ambiente.
+
+Pendente: index.html e lex_agente_vivo_core.js ainda citam o escritório-piloto; billing
+Asaas/licença; teste A/B de isolamento em banco real; homologação de canais e PJe.
+
+## White-label da interface e dos agentes — 23/09/2026 (continuação)
+
+Removidos os dados do escritório-piloto de index.html, office-ui-v2.js, lex-whatsapp.html
+e lex_agente_vivo_core.js:
+- index.html: mensagem de cobrança ao cliente e prompt do gestor passam a usar
+  getNomeEscritorio() (configuração do escritório); placeholders regionais neutros.
+- office-ui-v2.js: nome padrão do responsável deixa de ser fixo.
+- lex_agente_vivo_core.js: prompts dos quatro agentes usam OPERADOR/ESCRITORIO_LABEL,
+  vindos de LEX_OPERADOR_LABEL e ESCRITORIO_NOME. Sem nome pessoal no código.
+
+CORREÇÃO: a afirmação original desta seção ("nenhuma ocorrência do escritório-piloto
+no código de produção") estava ERRADA. A varredura usada diferenciava maiúsculas e
+acentos e deixou passar 9 referências (KLEUBER/CAMARGOS/Unai) apontadas em auditoria
+externa, além de uma lista fixa de cidades da carteira do piloto em _scoreVara.
+Corrigido na seção seguinte.
+
+## Fechamento do white-label — 23/09/2026
+
+Corrigidas as referências apontadas pela auditoria externa:
+- lex_agente_vivo_core.js:1154, index.html:11349, bot.js:3939, 4058, 4792, 6306 —
+  rótulos de prompt passam a "TITULAR"/"OPERADOR" (configurável).
+- bot.js:9826 — cabeçalho do relatório de atendimento usa o nome configurado.
+- bot.js:36 e 1701/1703 — comentário e exemplos regionais neutralizados.
+- bot.js:8264 — DEFEITO FUNCIONAL: a identificação de processo só reconhecia cidades
+  da carteira do piloto (unai, silves, bonfinopolis…). Substituída por extração
+  genérica (_extrairCidadeTribunal) com comparação tolerante de comarca.
+
+Trava permanente: test/white-label-guard.test.js varre todo o código de produção
+sem diferenciar maiúsculas e acentos e falha se os termos do piloto reaparecerem.
+Evidência: o mesmo teste, executado contra o ZIP anterior, reprova e lista as 10
+ocorrências; contra este pacote, passa.
+
+Estado: white-label concluído no código. Não concluídos: billing Asaas/licença
+(não implementado — /api/webhook-asaas e /api/billing/licenca são só entradas de
+rota/teste de negação) e o gate de isolamento A/B em banco real.
+
+## Interface — roteador único e menu por tarefa — 23/09/2026
+
+- lex-nav.js: tabela única de rotas e roteador único; substitui a cadeia de 3
+  embrulhos de ir() com instalação por tempo (corrida). Endereço #/tela, voltar do
+  navegador, tela "não encontrada"/"acesso restrito", erro de tela sem travar.
+- Menu reorganizado (Dia a dia, Produção jurídica, Mais telas, Configuração só admin);
+  duplicatas removidas do menu; nomes antigos preservados como apelidos.
+- Bug: fecharPlanilhaDividaModal definida duas vezes; modal não reabria. Unificada.
+- 34 interpolações de nome/partes/tribunal em HTML passaram a usar lexEscape.
+- test/lex-nav.test.js (12 testes). Total: 611 testes passando; lint 0 avisos.
+- NÃO verificado em navegador real. Repasse e pendências: docs/REPASSE_GPT_INTERFACE.md.
