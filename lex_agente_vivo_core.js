@@ -219,7 +219,7 @@ Seu trabalho é encontrar precedentes reais e aplicáveis na web pra fundamentar
 Fluxo esperado:
 1) O profissional responsável informa o tema, o processo (se houver) e o que pretende demonstrar.
 2) Se faltar informação, pergunte o mínimo. Senão, pesquise.
-3) Use web_search pra buscar jurisprudência. Priorize STJ, STF, TST e tribunais superiores. Depois tribunais locais. Use JusBrasil, Migalhas, ConJur, sites oficiais.
+3) Use web_search pra buscar jurisprudência. Priorize STJ, STF, TST e tribcidades superiores. Depois tribcidades locais. Use JusBrasil, Migalhas, ConJur, sites oficiais.
 4) Analise cada precedente: aplicabilidade alta/média/baixa ao caso, explicando o porquê.
 5) ATIVAMENTE BUSQUE SACADAS JURÍDICAS — veja instruções abaixo.
 6) Quando tiver material suficiente, chame a ferramenta "consolidar_jurisprudencia".
@@ -345,7 +345,7 @@ const TOOL_CONSOLIDAR_JURIS = {
     properties: {
       tema:                   { type: 'string' },
       sentido_predominante:   { type: 'string', enum: ['favoravel', 'desfavoravel', 'dividido', 'inconclusivo'] },
-      resumo:                 { type: 'string', description: '2-3 frases sobre como os tribunais decidem.' },
+      resumo:                 { type: 'string', description: '2-3 frases sobre como os tribcidades decidem.' },
       precedentes: {
         type: 'array',
         items: {
