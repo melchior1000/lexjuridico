@@ -250,7 +250,7 @@ window.lexCloseChannelContact=function(){channelDesk.historyGeneration++;channel
 window.lexSendChannelMessage=async function(e){
   e?.preventDefault();const input=$('#lex-channel-compose-text');const text=String(input?.value||'').trim();if(!text||!channelDesk.selected)return;
   const selected=channelDesk.selected;const [origem,id]=selected.split(':');const button=e?.submitter||e?.target?.querySelector('button[type=submit]');if(button)button.disabled=true;
-  try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text})});if(input)input.value='';if(channelDesk.selected===selected&&input?.isConnected)await lexSelectChannelContact(origem,id)}
+  try{await lexApi('/api/escritorio/recepcao/responder',{method:'POST',body:JSON.stringify({origem,id,texto:text}),timeoutMs:180000});if(input)input.value='';if(channelDesk.selected===selected&&input?.isConnected)await lexSelectChannelContact(origem,id)}
   catch(err){if(typeof window.toast==='function')window.toast(err.message||'Envio não confirmado','erro')}
   finally{if(button)button.disabled=false}
 };
