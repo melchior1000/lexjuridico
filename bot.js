@@ -91,6 +91,7 @@ const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
 const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
+const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
 const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-quality');
@@ -819,6 +820,52 @@ const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapte
 let officeProfile={...ESCRITORIO};
 const taskEngine=new TaskEngine({store:recordStore,processes:async()=>(await processStore.read()).processes,
   ai:(messages,system,tokens)=>ia(messages,system,tokens,MODELO_TOP),available:aiAvailable,office:()=>officeProfile});
+
+function _historicoCanalParaPrompt(rows){
+  return [...(Array.isArray(rows)?rows:[])]
+    .sort((a,b)=>String(a?.criado_em||'').localeCompare(String(b?.criado_em||'')))
+    .slice(-16)
+    .map(item=>{
+      const who=item?.direcao==='entrada'?'CONTATO':item?.direcao==='saida_operador'?'OPERADOR':'LEX';
+      return who+': '+String(item?.texto||'').replace(/[\r\n]+/g,' ').slice(0,1200);
+    }).join('\n');
+}
+async function _comporRespostaComandoCanal(job){
+  if(!aiAvailable()) throw new Error('IA do LEX não está configurada no servidor.');
+  const historico=_historicoCanalParaPrompt(job?.historico);
+  const system=[
+    'Você é o LEX, secretário operacional do escritório.',
+    'O operador deu uma ORDEM sobre a conversa que está aberta. A ordem não é texto para copiar; interprete a intenção.',
+    'Produza somente a mensagem final que será enviada ao contato. Não escreva explicações, rótulos, aspas, markdown ou observações internas.',
+    'Use o contexto da conversa para resolver referências como "ele", "ela", "diga a ele", "responda isso".',
+    'Não invente andamento processual, decisão, prazo, valor, compromisso, data ou fato que não esteja na ordem ou no histórico.',
+    'Se a ordem pedir informação jurídica/factual que não aparece no material disponível, responda exatamente: PRECISA_DADOS: seguido de uma frase curta dizendo o dado que falta.',
+    'Se a ordem for simples de comunicação, cumpra-a em português natural, profissional e conciso.'
+  ].join('\n');
+  const prompt=[
+    'DESTINATÁRIO: '+String(job?.contato_nome||'Contato'),
+    'CANAL: '+String(job?.origem||''),
+    'HISTÓRICO RECENTE:',
+    historico||'(sem histórico disponível)',
+    '',
+    'ORDEM DO OPERADOR:',
+    String(job?.comando||'')
+  ].join('\n');
+  const started=Date.now();
+  console.log('[LEX OUTBOX] '+job.id+' etapa=ia_inicio');
+  const raw=String(await ia([{role:'user',content:prompt}],system,500,MODELO_TOP)||'').trim();
+  console.log('[LEX OUTBOX] '+job.id+' etapa=ia_fim ms='+(Date.now()-started));
+  if(/^PRECISA_DADOS\s*:/i.test(raw)) throw new Error(raw.replace(/^PRECISA_DADOS\s*:\s*/i,'Preciso de mais informação: '));
+  const cleaned=raw.replace(/^["“]|["”]$/g,'').trim();
+  if(!cleaned) throw new Error('O LEX não conseguiu preparar a mensagem.');
+  return cleaned.slice(0,3500);
+}
+const channelOutbox=createChannelCommandOutbox({
+  records:recordStore,
+  compose:_comporRespostaComandoCanal,
+  log:msg=>console.log(msg)
+});
+channelOutbox.start();
 
 async function sbPost(tabela, dados) {
   return sbReq('POST', tabela, dados, null, {'Prefer':'return=minimal'});
@@ -10297,7 +10344,7 @@ const server = http.createServer(async (req, res) => {
   }
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
     await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,
-      engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,
+      engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox,
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
   }
