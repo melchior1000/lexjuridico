@@ -19,7 +19,7 @@ test('login light DOM está limpo e usa classes comerciais',()=>{
   for(const legacy of ['background:#07070f','background:#0d0d1a','color:#e8eaf6','color:#555878']) assert.doesNotMatch(block,new RegExp(legacy.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
   for(const id of ['login-bot-url','login-perfil','login-senha','olho-btn','btn-login']) assert.match(block,new RegExp(`id="${id}"`));
   assert.match(block,/onclick="fazerLogin\(\)"/);
-  assert.match(block,/resetSenhasPadrao\(\)/);
+  assert.doesNotMatch(block,/resetSenhasPadrao|Esqueceu a senha\?/);
 });
 
 test('varredura legada não é agendada diretamente no boot',()=>{
