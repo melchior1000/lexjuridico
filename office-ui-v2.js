@@ -4,7 +4,7 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const prep=()=>{try{return typeof getPrep==='function'?(getPrep()||[]):[]}catch{return[]}};
-const first=()=>{try{return String(typeof getResponsavel==='function'?getResponsavel():'Kleuber').replace(/^dr\.?\s*/i,'').trim().split(/\s+/)[0]||'Kleuber'}catch{return'Kleuber'}};
+const first=()=>{try{return String(typeof getResponsavel==='function'?getResponsavel():'').replace(/^dr\.?\s*/i,'').trim().split(/\s+/)[0]||'você'}catch{return'você'}};
 const go=p=>{if(typeof ir==='function')ir(p,null)};
 const openProc=id=>{if(typeof abrirProc==='function')abrirProc(id)};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,day]=raw.split('-');d=new Date(+y,+m-1,+day)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000)};
