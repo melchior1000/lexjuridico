@@ -4,11 +4,11 @@ Base revisada: `db2784b` (PR #24). O PR #23 de perícia permanece separado.
 
 ## Hierarquia
 
-Dr. Kleuber → LEX coordenador → agentes dos setores. WhatsApp, Telegram e a simulação de atendimento da interface compartilham `intakeDecision`.
+o profissional responsável → LEX coordenador → agentes dos setores. WhatsApp, Telegram e a simulação de atendimento da interface compartilham `intakeDecision`.
 
 Recepção apenas acolhe, identifica o assunto, mantém contexto e indica o setor. Não consulta processos, não calcula, não cria tarefa jurídica automaticamente e não transforma arquivo recebido em laudo. O despacho executável para os agentes será homologado na próxima etapa, com autorização do dono.
 
-Setores sugeridos: cadastro, instrução, andamento, perícia e recepção. Urgência e pedidos de contato com Kleuber são destacados para o dono.
+Setores sugeridos: cadastro, instrução, andamento, perícia e recepção. Urgência e pedidos de contato com titular são destacados para o dono.
 
 ## Autoridade efetiva nesta etapa
 
@@ -41,6 +41,6 @@ Atendimento comum gera um resumo ao dono contendo entrada, resultado do envio e 
 
 ## Verificação
 
-Testes de regressão cobrem a sequência do print, Kleuber → nome → assunto, identidade sem arquivamento, consentimento, sigilo, classificação por setor, autorização exata, comandos de terceiro, proprietário no JID legado, Telegram sem acesso ao cadastrador, histórico entre recriações do serviço e indisponibilidade do banco. A suíte completa e a verificação de sintaxe devem passar antes do merge.
+Testes de regressão cobrem a sequência do print, titular → nome → assunto, identidade sem arquivamento, consentimento, sigilo, classificação por setor, autorização exata, comandos de terceiro, proprietário no JID legado, Telegram sem acesso ao cadastrador, histórico entre recriações do serviço e indisponibilidade do banco. A suíte completa e a verificação de sintaxe devem passar antes do merge.
 
 Homologação seguinte: contato de teste → recepção → autorização do dono → tarefa do setor → evidência/documento → revisão → resposta aprovada. Cada setor deve ser testado isoladamente antes de ser declarado operacional.
