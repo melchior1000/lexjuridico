@@ -54,6 +54,35 @@ test('Core não escolhe processo quando a ordem é ambígua',async()=>{
   assert.match(out.message,/mais de um caso|número completo/i);
 });
 
+test('processo selecionado e CNJ escrito na ordem precisam ser o mesmo caso',async()=>{
+  const cnj1='5001111-11.2026.8.13.0704',cnj2='5002222-22.2026.8.13.0704';
+  const db=processStore([
+    {id:'p1',nome:'Caso Alfa',numero:cnj1,office_stage:'processos',status:'ATIVO'},
+    {id:'p2',nome:'Caso Beta',numero:cnj2,office_stage:'processos',status:'ATIVO'}
+  ]);
+  const before=db.snapshot();
+  const out=await executeNaturalOfficeCommand({processStore:db,engine:fakeEngine()},{
+    text:'Move para revisão o processo '+cnj2,processo_id:'p1',profile:'admin'
+  });
+  assert.equal(out.handled,true);
+  assert.equal(out.needs_input,true);
+  assert.match(out.message,/não corresponde ao processo selecionado/i);
+  assert.deepEqual(db.snapshot(),before);
+});
+
+test('processo_id inexistente vira needs_input antes de criar tarefa',async()=>{
+  const db=processStore([{id:'p1',nome:'Caso Alfa',numero:'5001111-11.2026.8.13.0704',office_stage:'processos'}]);
+  const engine=fakeEngine();
+  const out=await executeNaturalOfficeCommand({processStore:db,engine},{
+    text:'Faça a contestação desse processo',processo_id:'inexistente',profile:'admin',request_id:'ordem-id-invalido'
+  });
+  assert.equal(out.handled,true);
+  assert.equal(out.needs_input,true);
+  assert.match(out.message,/não existe/i);
+  assert.equal(engine.submitted.length,0);
+});
+
+
 test('LEX identifica contato único, usa canal correto e só registra saída confirmada',async()=>{
   const events=[],sent=[];
   const receptionStore={
