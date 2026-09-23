@@ -40,14 +40,14 @@ test('recepção responde no LID observado em vez de reconstruir número brasile
   const ok=await publicWhatsappReception(body,'LEX',{...cfg,store,request});
   assert.equal(ok,true);
   assert.equal(sent[0].number,'115375790358554@lid');
-  assert.match(sent[0].text,/LEX Jurídico/i);
+  assert.match(sent[0].text,/assistente virtual.*escritório/i);
 });
 
 test('mesa do dono responde pelo mesmo LID recebido',async()=>{
   const sent=[];
   const request=async(_,opts)=>{sent.push(opts.data);return {key:{id:'sent'}};};
   const store={list:async()=>[]};
-  const body=lidBody('/recepcao',{lid:'887766554433@lid',phone:'556199171717@s.whatsapp.net',name:'Kleuber'});
+  const body=lidBody('/recepcao',{lid:'887766554433@lid',phone:'556199171717@s.whatsapp.net',name:'Titular'});
   const handled=await handleWhatsappOperatorCommand(body,'LEX',{...cfg,store,request});
   assert.equal(handled,true);
   assert.equal(sent[0].number,'887766554433@lid');

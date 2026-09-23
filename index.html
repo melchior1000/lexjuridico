@@ -886,10 +886,10 @@ table{max-width:100%;}
   <div class="modal-box" id="modal">
     <div class="modal-title" id="modal-titulo">Cadastrar Processo</div>
     <div class="form-row">
-      <div class="fg"><label class="fl">Nome do caso</label><input class="fi" id="f-nome" placeholder="Ex: Varejão das Madeiras"></div>
-      <div class="fg"><label class="fl">Grupo / Cliente</label><input class="fi" id="f-grupo" placeholder="Ex: Varejão, COFCO, CEF..."></div>
+      <div class="fg"><label class="fl">Nome do caso</label><input class="fi" id="f-nome" placeholder="Ex: Ação de cobrança"></div>
+      <div class="fg"><label class="fl">Grupo / Cliente</label><input class="fi" id="f-grupo" placeholder="Ex: Cliente Alfa"></div>
     </div>
-    <div class="fg"><label class="fl">Número do processo</label><input class="fi" id="f-num" placeholder="Ex: 5009280-55.2024..."></div>
+    <div class="fg"><label class="fl">Número do processo</label><input class="fi" id="f-num" placeholder="Ex: 0000000-00.2026..."></div>
     <div class="fg"><label class="fl">Partes</label><input class="fi" id="f-partes" placeholder="Autor vs. Réu"></div>
     <div class="form-row">
       <div class="fg"><label class="fl">Área</label>
@@ -1379,8 +1379,8 @@ function mascararFoneBR(v){
 function getPjeAdvCfg(){
   try{
     const d = JSON.parse(localStorage.getItem(PJE_ADV_KEY)||'{}');
-    return {oab_numero:'',oab_nome:'',tribunais:['TJSP'],auto_consulta:true,ultimo_check:null,monitorados:0,...d};
-  }catch(e){ return {oab_numero:'',oab_nome:'',tribunais:['TJSP'],auto_consulta:true,ultimo_check:null,monitorados:0}; }
+    return {oab_numero:'',oab_nome:'',tribcidades:['TJSP'],auto_consulta:true,ultimo_check:null,monitorados:0,...d};
+  }catch(e){ return {oab_numero:'',oab_nome:'',tribcidades:['TJSP'],auto_consulta:true,ultimo_check:null,monitorados:0}; }
 }
 function savePjeAdvCfg(d){ localStorage.setItem(PJE_ADV_KEY, JSON.stringify({...getPjeAdvCfg(),...d})); }
 
@@ -2014,7 +2014,7 @@ var _TOUR_STEPS = [
 
   { sel: '.nav-btn[onclick*="juris"]',
     title: '⚖ Jurisprudencia',
-    desc: 'Pesquise jurisprudencia do STJ, STF e tribunais. O agente IA busca decisoes relevantes para seus casos, com trechos e argumentos estrategicos.' },
+    desc: 'Pesquise jurisprudencia do STJ, STF e tribcidades. O agente IA busca decisoes relevantes para seus casos, com trechos e argumentos estrategicos.' },
 
   { sel: '.nav-btn[onclick*="peticao"]',
     title: '✎ Gerador de Pecas',
@@ -3269,11 +3269,11 @@ function renderGestaoSenhas(){
         <div class="fg"><label class="fl">Nome do advogado</label><input class="fi" id="pje-oab-nome" value="${getPjeAdvCfg().oab_nome||''}" placeholder="Nome completo"></div>
       </div>
       <div class="fg">
-        <label class="fl">Tribunais favoritos</label>
+        <label class="fl">Tribcidades favoritos</label>
         <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text2)">
-          <label><input id="pje-trib-TJSP" type="checkbox" ${(getPjeAdvCfg().tribunais||[]).includes('TJSP')?'checked':''}> TJSP</label>
-          <label><input id="pje-trib-TRT-2" type="checkbox" ${(getPjeAdvCfg().tribunais||[]).includes('TRT-2')?'checked':''}> TRT-2</label>
-          <label><input id="pje-trib-TRF-3" type="checkbox" ${(getPjeAdvCfg().tribunais||[]).includes('TRF-3')?'checked':''}> TRF-3</label>
+          <label><input id="pje-trib-TJSP" type="checkbox" ${(getPjeAdvCfg().tribcidades||[]).includes('TJSP')?'checked':''}> TJSP</label>
+          <label><input id="pje-trib-TRT-2" type="checkbox" ${(getPjeAdvCfg().tribcidades||[]).includes('TRT-2')?'checked':''}> TRT-2</label>
+          <label><input id="pje-trib-TRF-3" type="checkbox" ${(getPjeAdvCfg().tribcidades||[]).includes('TRF-3')?'checked':''}> TRF-3</label>
         </div>
       </div>
       <div class="toggle-wrap" style="margin-bottom:10px">
@@ -3674,14 +3674,14 @@ async function salvarPjeAvancado(){
   const oab = (document.getElementById('pje-oab')?.value||'').trim().toUpperCase();
   const nome = (document.getElementById('pje-oab-nome')?.value||'').trim();
   const auto = !!document.getElementById('pje-auto-consulta')?.checked;
-  const tribunais = ['TJSP','TRT-2','TRF-3'].filter(t => !!document.getElementById('pje-trib-'+t)?.checked);
+  const tribcidades = ['TJSP','TRT-2','TRF-3'].filter(t => !!document.getElementById('pje-trib-'+t)?.checked);
   if(oab && !/^[0-9]{4,6}\/[A-Z]{2}$/.test(oab)){ toast('OAB inválida (XXXXXX/UF)','erro'); return; }
-  savePjeAdvCfg({oab_numero:oab,oab_nome:nome,tribunais,auto_consulta:auto});
+  savePjeAdvCfg({oab_numero:oab,oab_nome:nome,tribcidades,auto_consulta:auto});
   const tk = getAuthToken() || '';
   const r = await fetchComTimeout(SERVIDOR + '/api/pje/configurar', {
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},
-    body: JSON.stringify({oab_numero:oab,oab_nome:nome,tribunais,auto_consulta:auto})
+    body: JSON.stringify({oab_numero:oab,oab_nome:nome,tribcidades,auto_consulta:auto})
   }, 10000);
   if(!r.ok){ toast('Falha ao salvar PJe','erro'); return; }
   toast('Configuração PJe salva','ok');
@@ -4316,8 +4316,15 @@ function sair(){pararRastreamentoTempo("logout");
 
 // ═══════════════ PROCESSOS POR GRUPO ═══════════════
 let filtroAtivo='todos';
-const GRUPOS_LIST=['Varejão','COFCO','CEF','Trabalhista','Tributário','Família','Tocantins','INCRA','Banco do Brasil'];
-const COR_GRUPO={'Varejão':'var(--red)','COFCO':'var(--orange)','CEF':'var(--orange)','Trabalhista':'var(--accent)','Tributário':'var(--purple)','Família':'var(--cyan)','Tocantins':'var(--gold)','INCRA':'var(--green)','Banco do Brasil':'var(--purple)'};
+const CORES_GRUPO=['var(--accent)','var(--purple)','var(--cyan)','var(--gold)','var(--green)','var(--orange)','var(--red)','var(--text2)'];
+function gruposDaCarteira(lista=getProcs()){
+  return [...new Set((lista||[]).map(p=>String(p?.grupo||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+function corDoGrupo(nome){
+  const texto=String(nome||'');let hash=0;
+  for(let i=0;i<texto.length;i++) hash=(hash*31+texto.charCodeAt(i))>>>0;
+  return CORES_GRUPO[hash%CORES_GRUPO.length];
+}
 
 function renderProcessos(){ renderProcessosFiltrado(filtroAtivo); }
 
@@ -4384,7 +4391,7 @@ function _autuacaoCobrarWhatsapp(casoId){
   if(!c) return;
   const faltas = (c.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
   if(!faltas.length){ toast('Sem documentos faltantes','ok'); return; }
-  const msg = `Oi ${c.nome}, aqui é do escritório Camargos Advocacia.\n\nPara protocolar seu caso (${c.tipo||c.area}), ainda faltam os seguintes documentos:\n\n${faltas.map((d,i)=>`${i+1}. ${d}`).join('\n')}\n\nPode nos enviar por aqui? Obrigado!`;
+  const msg = `Oi ${c.nome}, aqui é do escritório ${getNomeEscritorio()}.\n\nPara protocolar seu caso (${c.tipo||c.area}), ainda faltam os seguintes documentos:\n\n${faltas.map((d,i)=>`${i+1}. ${d}`).join('\n')}\n\nPode nos enviar por aqui? Obrigado!`;
   try {
     navigator.clipboard.writeText(msg);
     toast('✓ Texto de cobrança copiado (cole no WhatsApp)','ok');
@@ -4492,13 +4499,13 @@ function renderProcessosFiltrado(filtro){
     <input placeholder="🔍 Buscar grupo..." oninput="filtrarGrupoInline(this.value)" style="background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 14px;color:var(--text);font-family:Arial,Helvetica,sans-serif;font-size:11px;outline:none;width:140px;">
   </div>`;
   let cardsHtml='';
-  GRUPOS_LIST.forEach(g=>{
-    const lista=psFiltrados.filter(p=>p.grupo===g);
+  gruposDaCarteira(psFiltrados).forEach(g=>{
+    const lista=psFiltrados.filter(p=>String(p.grupo||'').trim()===g);
     if(!lista.length) return;
-    const cor=COR_GRUPO[g]||'var(--text2)';
+    const cor=corDoGrupo(g);
     cardsHtml+=`<div style="margin-bottom:4px"><div class="secao-titulo" style="color:${cor}"><div style="width:8px;height:8px;border-radius:50%;background:${cor};flex-shrink:0"></div>${g.toUpperCase()}<div class="secao-linha"></div><div class="secao-count">${lista.length}</div></div>${lista.map(p=>cardProc(p)).join('')}</div>`;
   });
-  const semGrupo=psFiltrados.filter(p=>!p.grupo||!GRUPOS_LIST.includes(p.grupo));
+  const semGrupo=psFiltrados.filter(p=>!String(p.grupo||'').trim());
   if(semGrupo.length) cardsHtml+=secao('Outros','var(--text2)',semGrupo);
   document.getElementById('content').innerHTML=filtrosHtml+(cardsHtml||'<div style="font-size:13px;color:var(--text3);padding:20px">Nenhum processo encontrado.</div>');
 }
@@ -4539,10 +4546,10 @@ function filtrarGrupoInline(q){
   const ql=q.toLowerCase();
   const psFiltrados=q.length<2?ps:ps.filter(p=>p.grupo?.toLowerCase().includes(ql)||p.nome.toLowerCase().includes(ql)||p.partes.toLowerCase().includes(ql));
   let cardsHtml='';
-  GRUPOS_LIST.forEach(g=>{
-    const lista=psFiltrados.filter(p=>p.grupo===g);
+  gruposDaCarteira(psFiltrados).forEach(g=>{
+    const lista=psFiltrados.filter(p=>String(p.grupo||'').trim()===g);
     if(!lista.length) return;
-    const cor=COR_GRUPO[g]||'var(--text2)';
+    const cor=corDoGrupo(g);
     cardsHtml+=`<div style="margin-bottom:4px"><div class="secao-titulo" style="color:${cor}"><div style="width:8px;height:8px;border-radius:50%;background:${cor};flex-shrink:0"></div>${g.toUpperCase()}<div class="secao-linha"></div><div class="secao-count">${lista.length}</div></div>${lista.map(p=>cardProc(p)).join('')}</div>`;
   });
   // Atualiza só os cards, mantém filtros
@@ -4693,7 +4700,7 @@ function calNovo(dStr){
     <div class="fg"><label class="fl">Tipo</label>
       <select class="fs" id="_ceTipo"><option value="prazo">⚖️ Prazo processual</option><option value="audiencia">🏛️ Audiência</option><option value="pericia">🔬 Perícia</option><option value="reuniao">🤝 Reunião</option><option value="outro">📌 Outro</option></select>
     </div>
-    <div class="fg"><label class="fl">Título</label><input class="fi" id="_ceTit" placeholder="Ex: Audiência de instrução — Varejão"></div>
+    <div class="fg"><label class="fl">Título</label><input class="fi" id="_ceTit" placeholder="Ex: Audiência de instrução — Cliente Alfa"></div>
     <div class="fg"><label class="fl">Data (dd/mm/aaaa)</label><input class="fi" id="_ceDt" value="${def}" placeholder="01/05/2026"></div>
     <div class="fg"><label class="fl">Vincular a processo (opcional)</label>
       <select class="fs" id="_ceProc"><option value="">— Sem vínculo —</option>${ps.map(p=>`<option value="${p.id}">${p.nome.substring(0,42)}</option>`).join('')}</select>
@@ -5334,7 +5341,7 @@ Liste os precedentes jurisprudenciais mais relevantes e estratégicos para este 
    As 2-3 teses com maior chance de êxito neste tribunal, em ordem de força.
 
 5. ARGUMENTOS QUE JÁ FUNCIONARAM EM CASOS SIMILARES
-   O que tribunais têm acolhido em casos com perfil parecido?`;
+   O que tribcidades têm acolhido em casos com perfil parecido?`;
   }
 
   else if(aba === 'estrategia'){
@@ -5968,7 +5975,7 @@ async function _jurisChatEnviar(){
   _jurisAnexoAtual=null;
   const infoEl=document.getElementById('_jurisAnexoInfo');if(infoEl)infoEl.style.display='none';
 
-  const sysMsg={role:'user',content:'[SISTEMA] Você é o Lex — analista jurídico sênior debatendo jurisprudência.\\n\\nResultados da última pesquisa:\\n'+resultadosCtx+'\\n\\nREGRAS:\\n1. NUNCA concorde automaticamente. Questione a aplicabilidade.\\n2. Aponte precedentes CONTRÁRIOS se existirem.\\n3. Analise a força vinculante (súmula, repetitivo, isolado).\\n4. Se o Kleuber apresentar uma decisão, compare com o entendimento majoritário.\\n5. Sugira teses alternativas que podem ser mais fortes.\\n6. Se discordar, argumente com fundamento.\\n7. Indique se o entendimento está consolidado ou em mutação.\\n8. Alerte sobre riscos de usar precedentes superados ou minoritários.'};
+  const sysMsg={role:'user',content:'[SISTEMA] Você é o Lex — analista jurídico sênior debatendo jurisprudência.\\n\\nResultados da última pesquisa:\\n'+resultadosCtx+'\\n\\nREGRAS:\\n1. NUNCA concorde automaticamente. Questione a aplicabilidade.\\n2. Aponte precedentes CONTRÁRIOS se existirem.\\n3. Analise a força vinculante (súmula, repetitivo, isolado).\\n4. Se o Titular apresentar uma decisão, compare com o entendimento majoritário.\\n5. Sugira teses alternativas que podem ser mais fortes.\\n6. Se discordar, argumente com fundamento.\\n7. Indique se o entendimento está consolidado ou em mutação.\\n8. Alerte sobre riscos de usar precedentes superados ou minoritários.'};
 
   const messages=[sysMsg,..._jurisChatHistory.slice(-10)];
 
@@ -5991,7 +5998,7 @@ async function buscarJuris(){
   const trib=document.getElementById('jtrib')?.value||'';
   const periodo=document.getElementById('jperiodo')?.value||'';
   const el=document.getElementById('jres');
-  el.innerHTML='<div style="text-align:center;padding:30px"><div style="font-size:17px;margin-bottom:12px;animation:spin 1.5s linear infinite">🔍</div><div style="font-size:14px;font-weight:600;color:var(--text)">Pesquisando jurisprudência com IA...</div><div style="font-size:11px;color:var(--text3);margin-top:6px">Consultando tribunais · Pode levar 20-40s</div></div>';
+  el.innerHTML='<div style="text-align:center;padding:30px"><div style="font-size:17px;margin-bottom:12px;animation:spin 1.5s linear infinite">🔍</div><div style="font-size:14px;font-weight:600;color:var(--text)">Pesquisando jurisprudência com IA...</div><div style="font-size:11px;color:var(--text3);margin-top:6px">Consultando tribcidades · Pode levar 20-40s</div></div>';
 
   // Salvar no histórico
   if(q){
@@ -6453,7 +6460,7 @@ async function _juizChatEnviar(){
   
   // Montar mensagens com imagem se for anexo de imagem
   let messages=[];
-  const systemMsg={role:'user',content:'[SISTEMA] Contexto dos magistrados cadastrados:\\n'+juizesCtx+'\\n\\nVocê é o Lex — analista jurídico sênior. REGRAS DE DEBATE:\\n1. NUNCA concorde automaticamente. Analise criticamente.\\n2. Se o Kleuber trouxer uma decisão, analise os pontos fracos E fortes.\\n3. Dê seu ponto de vista mesmo que contrarie o do Kleuber.\\n4. Se discordar, explique POR QUÊ com argumentos jurídicos.\\n5. Sugira estratégias alternativas que o Kleuber pode não ter pensado.\\n6. Se o Kleuber mandar uma decisão, cruze com o perfil do juiz cadastrado.\\n7. Aponte riscos que o Kleuber pode estar ignorando.\\n8. Seja direto, sem rodeios — como um sócio debatendo estratégia.'};
+  const systemMsg={role:'user',content:'[SISTEMA] Contexto dos magistrados cadastrados:\\n'+juizesCtx+'\\n\\nVocê é o Lex — analista jurídico sênior. REGRAS DE DEBATE:\\n1. NUNCA concorde automaticamente. Analise criticamente.\\n2. Se o Titular trouxer uma decisão, analise os pontos fracos E fortes.\\n3. Dê seu ponto de vista mesmo que contrarie o titular.\\n4. Se discordar, explique POR QUÊ com argumentos jurídicos.\\n5. Sugira estratégias alternativas que o Titular pode não ter pensado.\\n6. Se o Titular mandar uma decisão, cruze com o perfil do juiz cadastrado.\\n7. Aponte riscos que o Titular pode estar ignorando.\\n8. Seja direto, sem rodeios — como um sócio debatendo estratégia.'};
   
   messages.push(systemMsg);
   
@@ -7624,7 +7631,7 @@ async function abrirModalPrep(id){
       <div class="fg"><label class="fl">Área</label><select class="fs" id="pa">${['Previdenciário','Cível','Trabalhista','Tributário','Família','Criminal','Administrativo','Outro'].map(a=>`<option${(caso?.area||'Previdenciário')===a?' selected':''}>${a}</option>`).join('')}</select></div>
     </div>
     <div class="fg"><label class="fl">Partes</label><input class="fi" id="pp" value="${caso?.partes||''}" placeholder="Autor vs Réu"></div>
-    <div class="fg"><label class="fl">Tribunal</label><input class="fi" id="ptr" value="${caso?.tribunal||''}" placeholder="Ex: TJMG — Unaí/MG"></div>
+    <div class="fg"><label class="fl">Tribunal</label><input class="fi" id="ptr" value="${caso?.tribunal||''}" placeholder="Ex: Tribunal — Cidade/UF"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="fg"><label class="fl">Previsão distribuição (dd/mm/aaaa)</label><input class="fi" id="ppv" value="${caso?.previsao||''}" placeholder="15/05/2026"></div>
       <div class="fg"><label class="fl">Valor estimado (R$)</label><input class="fi" id="pvl" value="${caso?.valor||''}" type="number" placeholder="50000"></div>
@@ -9198,7 +9205,7 @@ const LEX_SETORES = [
   {nome:'Perícia e cálculos', agente:'Pericial', pagina:'pericia', entrega:'Minuta de parecer, quesitos e memória de cálculo com os dados fornecidos.'},
   {nome:'Prazos e acompanhamento', agente:'Cobrador', pagina:'prazos', entrega:'Consulta de prazos e identificação de processos sem atualização.'},
   {nome:'Identificação de processos', agente:'Roteador', pagina:'processos', entrega:'Localização do caso antes de consultar ou alterar informações.'},
-  {nome:'Tribunais e PJe', agente:'PJe', pagina:'pje', entrega:'Conexão e importação do acervo ainda pendentes de implantação.'}
+  {nome:'Tribcidades e PJe', agente:'PJe', pagina:'pje', entrega:'Conexão e importação do acervo ainda pendentes de implantação.'}
 ];
 async function renderAgentes(){
   if(!podeConfig()){ document.getElementById('content').textContent='Acesso restrito ao Administrador.'; return; }
@@ -9295,7 +9302,7 @@ async function processarComandoTelegram(txt, cfg){
   if(lower.startsWith('/peticao')){
     const partes=txt.slice(8).trim();
     if(!partes){
-      await enviarMsgTelegram('📝 <b>Como usar:</b>\n/peticao [nome do processo] | [tipo de peça]\n\nExemplo:\n/peticao Varejão | Embargos de Declaração\n\nTipos: Petição Inicial, Contestação, Agravo de Instrumento, Embargos de Declaração, Impugnação, Manifestação, Contrarrazões');
+      await enviarMsgTelegram('📝 <b>Como usar:</b>\n/peticao [nome do processo] | [tipo de peça]\n\nExemplo:\n/peticao Cliente Alfa | Embargos de Declaração\n\nTipos: Petição Inicial, Contestação, Agravo de Instrumento, Embargos de Declaração, Impugnação, Manifestação, Contrarrazões');
       return;
     }
     const partes2=partes.split('|');
@@ -9575,8 +9582,8 @@ function toggleChatGlobal(){
 
 // ═══════════════════════════════════════════════════════════════════════
 // GESTOR WEB (v5.0) — modal de conversa inteligente com o processo
-// Chama /api/vivo/conversar. Kleuber conversa em linguagem natural,
-// Gestor propõe atualização estruturada, Kleuber confirma → aplica via
+// Chama /api/vivo/conversar. Titular conversa em linguagem natural,
+// Gestor propõe atualização estruturada, Titular confirma → aplica via
 // /api/processo/atualizar.
 // ═══════════════════════════════════════════════════════════════════════
 let _gestorProcAtual = null;
@@ -10347,7 +10354,7 @@ ${textoAndamento}`;
 
   try {
     const resp = await chamarIA([{role:'user',content:ctx}],
-`Você é o Lex, gerente jurídico ELITE do escritório Camargos Advocacia.
+`Você é o Lex, gerente jurídico ELITE do escritório ${getNomeEscritorio()}.
 O funcionário acabou de fazer uma ação no processo. Sua missão:
 1. LEIA e INTERPRETE o andamento — entenda O QUE foi feito
 2. DETERMINE o setor correto (administrativo/judicial/autuacao)
@@ -11313,7 +11320,7 @@ async function gerarParecerDivida() {
   }
   
   if (instrucoes) {
-    contexto += 'INSTRUÇÕES DO ANALISTA JURÍDICO (KLEUBER):\n' + instrucoes + '\n\n';
+    contexto += 'INSTRUÇÕES DO ANALISTA JURÍDICO (TITULAR):\n' + instrucoes + '\n\n';
   }
   
   if (window._dividaDocs && window._dividaDocs.length) {
@@ -13330,10 +13337,10 @@ function pipelineVerPecaHistorico(id){
         <div id="pdf-file-status" style="font-size:11px;color:var(--accent);font-weight:700;"></div>
       </div>
       <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:14px;">DADOS DO PROCESSO</div>
-      <div class="fg"><label class="fl">Nome do caso</label><input class="fi" id="pdf-nome" placeholder="Ex: Varejao das Madeiras"></div>
-      <div class="fg"><label class="fl">Numero do processo</label><input class="fi" id="pdf-num" placeholder="Ex: 5009280-55.2024..."></div>
+      <div class="fg"><label class="fl">Nome do caso</label><input class="fi" id="pdf-nome" placeholder="Ex: Ação de cobrança"></div>
+      <div class="fg"><label class="fl">Numero do processo</label><input class="fi" id="pdf-num" placeholder="Ex: 0000000-00.2024..."></div>
       <div class="fg"><label class="fl">Partes</label><input class="fi" id="pdf-partes" placeholder="Autor vs. Reu"></div>
-      <div class="fg"><label class="fl">Grupo / Cliente</label><input class="fi" id="pdf-grupo" placeholder="Ex: Varejao, COFCO..."></div>
+      <div class="fg"><label class="fl">Grupo / Cliente</label><input class="fi" id="pdf-grupo" placeholder="Ex: Cliente Alfa"></div>
       <div class="form-row">
         <div class="fg"><label class="fl">Area</label>
           <select class="fs" id="pdf-area">

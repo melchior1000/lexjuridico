@@ -15,14 +15,14 @@ function turn(history,text,data={}) {
 test('print: oi + quem é vc tem apresentação única e não arquiva',()=>{
   const d=intakeDecision('Oi | Quem é vc?');
   assert.equal(d.reply,INTRO);assert.equal(d.archive,false);
-  assert.match(d.reply,/assistente virtual.*LEX Jurídico.*Dr. Kleuber/);
+  assert.match(d.reply,/assistente virtual.*escritório.*advogado responsável/i);
 });
-test('Kleuber → João da Silva mantém o pedido e não pergunta o nome novamente',()=>{
+test('Advogado responsável → João da Silva mantém o pedido e não pergunta o nome novamente',()=>{
   const history=[];
-  assert.equal(turn(history,'Quero falar com Kleuber').kind,'lawyer');
+  assert.equal(turn(history,'Quero falar com o advogado responsável').kind,'lawyer');
   const next=turn(history,'João da Silva');
   assert.equal(next.kind,'lawyer');assert.equal(next.name,'João da Silva');
-  assert.match(next.reply,/Dr. Kleuber/);assert.doesNotMatch(next.reply,/diga seu nome/);
+  assert.match(next.reply,/advogado responsável/i);assert.doesNotMatch(next.reply,/diga seu nome/);
   const third=turn(history,'Ele pode me retornar?');
   assert.equal(third.name,'João da Silva');assert.doesNotMatch(third.reply,/diga seu nome/);
 });
@@ -34,7 +34,7 @@ test('nome espontâneo explícito → assunto avança e não repete cadastro',()
 });
 test('intenção não pode ser confundida com nome após pergunta de identificação',()=>{
   const history=[];turn(history,'Preciso de ajuda');
-  for(const text of ['Quero falar com Kleuber','Quem é você?','Preciso de ajuda','Sim autorizo']) {
+  for(const text of ['Quero falar com o advogado responsável','Quem é você?','Preciso de ajuda','Sim autorizo']) {
     assert.equal(intakeDecision(text,{},[...history].reverse()).name,null);
   }
 });
@@ -53,7 +53,7 @@ test('identidade e administrativo nunca arquivam automaticamente',()=>{
   for(const text of ['Quem é vc?','Sou fornecedor e tenho fatura']) assert.equal(intakeDecision(text).archive,false);
 });
 test('mudança explícita de assunto prevalece sobre histórico antigo',()=>{
-  const h=[];turn(h,'Quero falar com Kleuber');turn(h,'João da Silva');
+  const h=[];turn(h,'Quero falar com o advogado responsável');turn(h,'João da Silva');
   assert.equal(turn(h,'Agora preciso de perícia contábil').destino,'pericia');
 });
 const cfg={operator:'5561999171717',url:'https://example.invalid',key:'test'};
@@ -62,7 +62,7 @@ test('WhatsApp real da função: dois turnos consultam histórico e reportam uma
   const history=[],sent=[],names=[];
   const store={history:async()=>[...history].reverse(),upsert:async(_,nome)=>{names.push(nome);return {classe:'geral'};},appendEvent:async e=>history.push(e)};
   const request=async(_,opts)=>{sent.push(opts.data);return {key:{id:'sent'}};};
-  for(const input of ['Quero falar com Kleuber','João da Silva']) await publicWhatsappReception(body(input),'LEX',{...cfg,store,request});
+  for(const input of ['Quero falar com o advogado responsável','João da Silva']) await publicWhatsappReception(body(input),'LEX',{...cfg,store,request});
   const clients=sent.filter(x=>x.number!=='5561999171717');
   const reports=sent.filter(x=>x.number==='5561999171717');
   assert.equal(clients.length,2);assert.equal(reports.length,2);
@@ -88,7 +88,7 @@ const tg=(id,text,n=1,extra={})=>({chat:{id,type:'private'},from:{id,first_name:
 test('Telegram: mesma porta e memória sobrevivem à recriação do serviço',async()=>{
   const records=recordFake(),sent=[],reported=[];
   const options={records,owner:'7171',send:async(id,text)=>{sent.push({id,text});return true;},report:async t=>{reported.push(t);return true;}};
-  await createTelegramReception(options).receive(tg('123','Quero falar com Kleuber'));
+  await createTelegramReception(options).receive(tg('123','Quero falar com o advogado responsável'));
   await createTelegramReception(options).receive(tg('123','João da Silva',2));
   assert.match(sent[1].text,/João da Silva/);assert.doesNotMatch(sent[1].text,/diga seu nome/);assert.equal(reported.length,0);
 });
@@ -183,7 +183,7 @@ test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()
   const end=source.indexOf('async function ',start+30);
   vm.runInContext(source.slice(start,end),c);
   await c.adapterEvolution(body('Oi','556199171717'));
-  assert.match(sent[0],/Dr. Kleuber/);assert.equal(calls,0);
+  assert.match(sent[0],/Sou o LEX/i);assert.equal(calls,0);
   await c.adapterEvolution(body('Prepare uma tarefa','556199171717'));assert.equal(calls,1);
 });
 
