@@ -20,7 +20,7 @@ module.exports = [
     }
   },
   {
-    files: ['office-ui-v2.js','office-flow-ui.js','office-command-ui.js','reception-handoff-ui.js','office-attachment-ui.js','office-dossier-ui.js','login-theme.js'],
+    files: ['office-ui-v2.js','office-flow-ui.js','office-command-ui.js','reception-handoff-ui.js','office-attachment-ui.js','office-dossier-ui.js','login-theme.js','lex-nav.js'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'script', globals: {...globals.browser,...lexBrowserGlobals} },
     rules: {
       'no-const-assign': 'error',

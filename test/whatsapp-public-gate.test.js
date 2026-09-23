@@ -1,3 +1,5 @@
+// Identidade do escritório-piloto usada nestes cenários (white-label via ambiente).
+Object.assign(process.env,{ESCRITORIO_NOME:'LEX Jurídico',ESCRITORIO_RESP:'Kleuber',LEX_TITULAR_TRATAMENTO:'Dr.'});
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {whatsappAccessMode,publicWhatsappReply,publicWhatsappReception}=require('../lib/integration-status');

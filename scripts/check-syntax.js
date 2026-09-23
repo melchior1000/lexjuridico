@@ -10,7 +10,7 @@ function check(label, input, filename) {
 const SKIP=new Set(['.git','node_modules','.vercel','coverage','dist','artifacts']);
 const CRITICAL=[
   'bot.js','lex_agente_vivo.js','lex_agente_vivo_core.js',
-  'office-ui.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','office-flow-ui.js',
+  'office-ui.js','lex-nav.js','office-ui-base.js','office-ui-device.js','office-ui-v2.js','office-flow-ui.js',
   'login-theme.js','conector-navegador/popup.js'
 ];
 function walk(dir='.'){

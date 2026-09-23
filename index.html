@@ -759,33 +759,36 @@ table{max-width:100%;}
     <div class="logo-name">Lex</div>
     <div class="logo-sub">Escritório virtual · 2026.09</div>
   </div>
-  <nav>
-    <div class="nav-section">Escritório</div>
-    <button class="nav-btn" onclick="ir('trabalho',this)"><span class="nav-icon">◈</span> Hoje / Trabalho</button>
-    <button class="nav-btn active" onclick="ir('painel',this)"><span class="nav-icon">◈</span> Painel Geral</button>
-    <button class="nav-btn" onclick="ir('processos',this)"><span class="nav-icon">⊞</span> Processos</button>
-    <button class="nav-btn" onclick="ir('autuacao',this)"><span class="nav-icon">🗂</span> Autuação</button>
-    <button class="nav-btn" onclick="ir('processos_admin',this)"><span class="nav-icon">▣</span> Processo Administrativo</button>
-    <button class="nav-btn" onclick="ir('prazos',this)"><span class="nav-icon">◷</span> Prazos</button>
-    <button class="nav-btn" onclick="ir('calendario',this)"><span class="nav-icon">📅</span> Calendário</button>
-    <button class="nav-btn" onclick="ir('estatisticas',this)"><span class="nav-icon">◎</span> Estatísticas</button>
-    <div class="nav-section">Inteligência</div>
-    <button class="nav-btn" onclick="ir('juris',this)"><span class="nav-icon">⚖</span> Jurisprudência</button>
-    <button class="nav-btn" onclick="ir('peticao',this)"><span class="nav-icon">✎</span> Gerador de Peça</button>
-    <button class="nav-btn" onclick="ir('juizes',this)"><span class="nav-icon">◉</span> Padrão decisório</button>
-    <div class="nav-section">Configuração</div>
-    <button class="nav-btn" onclick="ir('escritorio',this)"><span class="nav-icon">⌂</span> Meu escritório</button>
-    <button class="nav-btn" onclick="abrirCentroDados()"><span class="nav-icon">💾</span> Centro de Dados</button>
-    <button class="nav-btn nav-btn-config" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Gestão de Senhas</button>
+  <nav aria-label="Menu principal">
+    <div class="nav-section">Dia a dia</div>
+    <button class="nav-btn active" data-route="painel" onclick="ir('painel',this)"><span class="nav-icon">◈</span> Início</button>
+    <button class="nav-btn" data-route="trabalho" onclick="ir('trabalho',this)"><span class="nav-icon">☑</span> Tarefas</button>
+    <button class="nav-btn" data-route="recepcao" id="lex-nav-recepcao" onclick="ir('recepcao',this)"><span class="nav-icon">📥</span> Recepção</button>
+    <button class="nav-btn" data-route="processos" onclick="ir('processos',this)"><span class="nav-icon">⊞</span> Processos</button>
+    <button class="nav-btn" data-route="prazos" onclick="ir('prazos',this)"><span class="nav-icon">◷</span> Prazos</button>
+    <div class="nav-section">Produção jurídica</div>
+    <button class="nav-btn" data-route="peticao" onclick="ir('peticao',this)"><span class="nav-icon">✎</span> Peças</button>
+    <button class="nav-btn" data-route="pericia" onclick="ir('pericia',this)"><span class="nav-icon">🔬</span> Perícia</button>
+    <button class="nav-btn" data-route="juris" onclick="ir('juris',this)"><span class="nav-icon">⚖</span> Jurisprudência</button>
+    <button class="nav-btn" data-route="juizes" onclick="ir('juizes',this)"><span class="nav-icon">◉</span> Padrão decisório</button>
+    <details id="lex-nav-mais" class="lex-nav-mais">
+      <summary class="nav-section" style="cursor:pointer;list-style:none">Mais telas ▾</summary>
+      <button class="nav-btn" data-route="autuacao" onclick="ir('autuacao',this)"><span class="nav-icon">🗂</span> Autuação (casos novos)</button>
+      <button class="nav-btn" data-route="processos_admin" onclick="ir('processos_admin',this)"><span class="nav-icon">▣</span> Processos administrativos</button>
+      <button class="nav-btn" data-route="preparacao" onclick="ir('preparacao',this)"><span class="nav-icon">⋯</span> Em preparação</button>
+      <button class="nav-btn" data-route="calendario" onclick="ir('calendario',this)"><span class="nav-icon">📅</span> Calendário</button>
+      <button class="nav-btn" data-route="agenda" onclick="ir('agenda',this)"><span class="nav-icon">📇</span> Contatos</button>
+      <button class="nav-btn" data-route="mensagens" onclick="ir('mensagens',this)"><span class="nav-icon">💬</span> Histórico de mensagens</button>
+      <button class="nav-btn" data-route="estatisticas" onclick="ir('estatisticas',this)"><span class="nav-icon">◎</span> Estatísticas</button>
+    </details>
+    <div class="nav-section" data-admin="1">Configuração</div>
+    <button class="nav-btn" data-route="escritorio" data-admin="1" onclick="ir('escritorio',this)"><span class="nav-icon">⌂</span> Meu escritório</button>
+    <button class="nav-btn" data-route="whatsapp" data-admin="1" id="lex-nav-whatsapp" onclick="ir('whatsapp',this)"><span class="nav-icon">📱</span> WhatsApp</button>
+    <button class="nav-btn" data-route="telegram" data-admin="1" onclick="ir('telegram',this)"><span class="nav-icon">✈</span> Telegram</button>
+    <button class="nav-btn" data-route="pje" data-admin="1" id="btn-pje" onclick="ir('pje',this)"><span class="nav-icon">🔗</span> PJe e fontes <span id="_pjeDot" style="font-size:9px;color:var(--red-soft)">○</span></button>
+    <button class="nav-btn nav-btn-config" data-route="senhas" data-admin="1" onclick="ir('senhas',this)"><span class="nav-icon">🔑</span> Senhas e acesso</button>
+    <button class="nav-btn" data-admin="1" onclick="abrirCentroDados()"><span class="nav-icon">💾</span> Backup e dados</button>
     <input type="file" id="import-file" accept=".json,.zip" style="display:none" onchange="importarBackup(this)">
-    <div class="nav-section">Canais</div>
-    <button class="nav-btn" id="lex-nav-whatsapp" onclick="ir('whatsapp',this)"><span class="nav-icon">📱</span> WhatsApp</button>
-    <button class="nav-btn" onclick="ir('telegram',this)"><span class="nav-icon">✈️</span> Telegram</button>
-    <button class="nav-btn" onclick="ir('mensagens',this)"><span class="nav-icon">💬</span> Central Mensagens</button>
-    <button class="nav-btn" onclick="ir('agenda',this)"><span class="nav-icon">📇</span> Agenda / Contatos</button>
-    <button class="nav-btn" onclick="ir('pericia',this)"><span class="nav-icon">🔬</span> Setor de Perícia</button>
-    <button class="nav-btn" onclick="ir('agentes',this)"><span class="nav-icon">🤖</span> Central de agentes</button>
-    <button class="nav-btn" id="btn-pje" onclick="ir('pje',this)"><span class="nav-icon">🔗</span> PJe <span id="_pjeDot" style="font-size:9px;color:var(--red-soft)">○</span></button>
   </nav>
   <div class="sidebar-bottom">
     <div class="urgente-pill"><div class="pulse"></div><span id="urg-count" style="font-size:12px;color:var(--text2)">— urgentes</span></div>
@@ -2191,7 +2194,7 @@ function varreduraInicial(){
       tipo: 'urgente',
       icone: '🚨',
       titulo: urgSemPrazo.length + ' processo(s) URGENTE(S) sem prazo',
-      detalhe: urgSemPrazo.map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--red);text-decoration:underline;font-weight:600">${p.nome}</a>`).join(', '),
+      detalhe: urgSemPrazo.map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--red);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', '),
       acao: 'Ver processos',
       fn: () => ir('processos', null)
     });
@@ -2217,7 +2220,7 @@ function varreduraInicial(){
       tipo: 'parado15',
       icone: '🚨',
       titulo: parados15.length + ' processo(s) EMERGÊNCIA — sem atualização há 15+ dias',
-      detalhe: parados15.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--red);text-decoration:underline;font-weight:600">${p.nome}</a>`).join(', ') + (parados15.length>3?' e mais...':''),
+      detalhe: parados15.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--red);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados15.length>3?' e mais...':''),
       acao: 'Ver agora',
       fn: () => {
         abrirChat(null);
@@ -2232,7 +2235,7 @@ function varreduraInicial(){
       tipo: 'parado10',
       icone: '⚠️',
       titulo: parados10.length + ' processo(s) CRÍTICO — sem atualização há 10+ dias',
-      detalhe: parados10.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--orange);text-decoration:underline;font-weight:600">${p.nome}</a>`).join(', ') + (parados10.length>3?' e mais...':''),
+      detalhe: parados10.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--orange);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados10.length>3?' e mais...':''),
       acao: 'Verificar',
       fn: () => {
         abrirChat(null);
@@ -2247,7 +2250,7 @@ function varreduraInicial(){
       tipo: 'parado5',
       icone: '⏰',
       titulo: parados5.length + ' processo(s) LEMBRETE — sem atualização há 5+ dias',
-      detalhe: parados5.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--gold);text-decoration:underline;font-weight:600">${p.nome}</a>`).join(', ') + (parados5.length>3?' e mais...':''),
+      detalhe: parados5.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--gold);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados5.length>3?' e mais...':''),
       acao: 'Listar',
       fn: () => {
         abrirChat(null);
@@ -3195,7 +3198,7 @@ function renderGestaoSenhas(){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
         <div class="fg"><label class="fl">Nome do escritório / empresa</label><input class="fi" id="esc-nome" placeholder="Ex: Silva Advocacia" value="${esc.nome||''}"></div>
         <div class="fg"><label class="fl">Responsável (assina documentos)</label><input class="fi" id="esc-resp" placeholder="Nome completo" value="${esc.responsavel||''}"></div>
-        <div class="fg"><label class="fl">Registro profissional (OAB, CRC, etc.)</label><input class="fi" id="esc-reg" placeholder="Ex: OAB/MG nº 00000" value="${esc.registro||''}"></div>
+        <div class="fg"><label class="fl">Registro profissional (OAB, CRC, etc.)</label><input class="fi" id="esc-reg" placeholder="Ex: OAB/UF nº 00000" value="${esc.registro||''}"></div>
         <div class="fg"><label class="fl">Endereço / Cidade</label><input class="fi" id="esc-end" placeholder="Ex: Belo Horizonte/MG" value="${esc.endereco||''}"></div>
         <div class="fg"><label class="fl">Telefone / Email</label><input class="fi" id="esc-tel" placeholder="Ex: (38) 99999-9999" value="${esc.telefone||''}"></div>
         <div class="fg"><label class="fl">Segmento</label>
@@ -4054,7 +4057,7 @@ function verificarNotificacoes(){
   const lista=document.getElementById('notif-lista');
   lista.innerHTML=alertas.map(p=>`
     <div class="notif-item ${p.d<=2?'':'orange'}" onclick="fecharNotif();abrirProc(${p.id})">
-      <div class="notif-item-nome">${p.nome}</div>
+      <div class="notif-item-nome">${lexEscape(p.nome)}</div>
       <div class="notif-item-det">Prazo em ${p.d===0?'HOJE':p.d+' dia(s)'} — ${p.prazo}${p.prazoReal?' (real: '+p.prazoReal+')':''}</div>
     </div>`).join('');
   document.getElementById('notif-overlay').classList.add('open');
@@ -4138,7 +4141,7 @@ function buscarLive(q){
   ).slice(0,6);
   if(!res.length){el.className='';el.innerHTML='';return;}
   el.className='show';
-  el.innerHTML=res.map(p=>`<div class="search-item" onclick="abrirProc(${p.id})"><div class="si-nome">${p.nome}</div><div class="si-det">${p.partes} · ${p.tribunal}</div></div>`).join('');
+  el.innerHTML=res.map(p=>`<div class="search-item" onclick="abrirProc(${p.id})"><div class="si-nome">${lexEscape(p.nome)}</div><div class="si-det">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div></div>`).join('');
 }
 function fecharBusca(){document.getElementById('search-results').className='';}
 
@@ -4175,7 +4178,7 @@ function _renderPainelReal(){
   const alertasHtml=alertas.map(p=>`
     <div class="alerta-banner ${p.d<=2?'':'orange'}" onclick="abrirProc(${p.id})">
       <div class="alerta-left"><div style="font-size:18px">${p.d<=2?'🔴':'🟠'}</div>
-        <div><div class="alerta-nome">${p.nome}</div>
+        <div><div class="alerta-nome">${lexEscape(p.nome)}</div>
         <div class="alerta-msg">Prazo: ${p.prazo}${p.prazoReal?' (real: '+p.prazoReal+')':''}</div></div>
       </div>
       <div><div class="alerta-dias" style="color:${p.d<=2?'var(--red)':'var(--orange)'}">${p.d===0?'HOJE':p.d+'d'}</div><div class="prazo-label">restantes</div></div>
@@ -4310,8 +4313,8 @@ function cardProc(p){
     }
   }
   return `<div class="proc-card" style="border-left-color:${cor}${ehAutuacao?';box-shadow:inset 0 0 0 1px var(--setor-autuacao)33':(ehAdmin?';box-shadow:inset 0 0 0 1px var(--setor-admin)33':'')}" onclick="abrirProc(${p.id})">
-    <div class="pc-top"><div><div class="pc-nome">${p.nome}</div><div class="pc-partes">${p.partes}</div></div>
-    <div class="pc-right"><div class="pc-tribunal">${p.tribunal}</div><div class="pc-prazo" style="color:${pf.cor}">${pf.txt}</div></div></div>
+    <div class="pc-top"><div><div class="pc-nome">${lexEscape(p.nome)}</div><div class="pc-partes">${lexEscape(p.partes)}</div></div>
+    <div class="pc-right"><div class="pc-tribunal">${lexEscape(p.tribunal)}</div><div class="pc-prazo" style="color:${pf.cor}">${pf.txt}</div></div></div>
     <div class="pc-bottom"><span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span>${chipTipo}<span class="tag">${p.area}</span>${chip}${chipParado}${(p.frentes||[]).slice(0,2).map(f=>`<span class="tag">${f}</span>`).join('')}</div>
   </div>`;
 }
@@ -4390,7 +4393,7 @@ function _autuacaoCobrarWhatsapp(casoId){
   if(!c) return;
   const faltas = (c.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
   if(!faltas.length){ toast('Sem documentos faltantes','ok'); return; }
-  const msg = `Oi ${c.nome}, aqui é do escritório Camargos Advocacia.\n\nPara protocolar seu caso (${c.tipo||c.area}), ainda faltam os seguintes documentos:\n\n${faltas.map((d,i)=>`${i+1}. ${d}`).join('\n')}\n\nPode nos enviar por aqui? Obrigado!`;
+  const msg = `Oi ${c.nome}, aqui é do ${getNomeEscritorio()==='Sistema de Gestão'?'escritório':'escritório '+getNomeEscritorio()}.\n\nPara protocolar seu caso (${c.tipo||c.area}), ainda faltam os seguintes documentos:\n\n${faltas.map((d,i)=>`${i+1}. ${d}`).join('\n')}\n\nPode nos enviar por aqui? Obrigado!`;
   try {
     navigator.clipboard.writeText(msg);
     toast('✓ Texto de cobrança copiado (cole no WhatsApp)','ok');
@@ -4949,10 +4952,10 @@ function abrirProc(id){
     <button class="back-btn" onclick="ir('processos',document.querySelector('.nav-btn[onclick*="processos"]'))">← Voltar</button>
     <div class="detalhe-header" style="border-left:4px solid ${cor}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-        <div class="detalhe-nome">${p.nome}</div>
+        <div class="detalhe-nome">${lexEscape(p.nome)}</div>
         <span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span>
       </div>
-      <div class="detalhe-partes">${p.partes}</div>
+      <div class="detalhe-partes">${lexEscape(p.partes)}</div>
     </div>
 
     <div onclick="abrirGestorWeb(${p.id})" style="background:linear-gradient(135deg,#c9a961 0%,#a88840 50%,#c9a961 100%);border-radius:12px;padding:16px 22px;margin:14px 0;cursor:pointer;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(201,169,97,0.25);transition:transform .15s, box-shadow .15s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(201,169,97,0.4)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 14px rgba(201,169,97,0.25)'">
@@ -5089,7 +5092,7 @@ function abrirProc(id){
     </div>
     <div class="info-grid">
       <div class="info-card"><div class="info-label">Número do processo</div><div class="info-val">${p.numero}</div></div>
-      <div class="info-card"><div class="info-label">Tribunal</div><div class="info-val">${p.tribunal}</div></div>
+      <div class="info-card"><div class="info-label">Tribunal</div><div class="info-val">${lexEscape(p.tribunal)}</div></div>
       <div class="info-card"><div class="info-label">Área</div><div class="info-val">${p.area}</div></div>
       <div class="info-card"><div class="info-label">Prazo (−3 dias)</div><div class="info-val" style="color:${pf.cor};font-weight:700">${p.prazo||'Não definido'}${p.prazoReal?` <span style="color:var(--text3);font-size:11px;font-weight:300">(real: ${p.prazoReal})</span>`:''}</div></div>
       ${p.valor?`<div class="info-card"><div class="info-label">Valor da causa</div><div class="info-val">R$ ${Number(p.valor).toLocaleString('pt-BR')}</div></div>`:''}
@@ -5171,7 +5174,7 @@ function imprimirProcesso(id){
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html><head>
   <!-- LEX v2 - Build 2026-04-22 21:20 --><meta charset="UTF-8">
-  <title>${p.nome}</title>
+  <title>${lexEscape(p.nome)}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Georgia,serif;background:#f8f9fa;color:#111;font-size:14px;line-height:1.7}
@@ -5194,7 +5197,7 @@ function imprimirProcesso(id){
     @media print{.hdr{position:static}.btn{display:none}}
   </style></head><body>
   <div class="hdr">
-    <h1>📄 ${p.nome}</h1>
+    <h1>📄 ${lexEscape(p.nome)}</h1>
     <div style="display:flex;gap:6px">
       <button class="btn" style="background:#4f6ef744;color:#a0b0ff" onclick="window.close()">← Fechar</button>
       <button class="btn" style="background:#2ec97e;color:#000" onclick="window.print()">🖨 Imprimir</button>
@@ -5602,9 +5605,9 @@ function renderPrazos(){
       <button class="btn-novo" style="font-size:12px;padding:8px 16px" onclick="calNovo(null)">+ Novo prazo/evento</button>
     </div>
     ${com.length?`<div class="secao-titulo" style="color:var(--orange)"><div style="width:8px;height:8px;border-radius:50%;background:var(--orange);flex-shrink:0"></div>COM PRAZO DEFINIDO<div class="secao-linha"></div><div class="secao-count">${com.length}</div></div>
-    ${com.map(p=>{const cor=p.d==null?'var(--text3)':p.d<=0?'var(--red)':p.d<=3?'var(--red)':p.d<=7?'var(--orange)':'var(--green)';return`<div class="prazo-card" style="border-left:3px solid ${cor}"><div onclick="abrirProc(${p.id})" style="flex:1;cursor:pointer"><div class="prazo-nome">${p.nome}</div><div class="prazo-acao">${p.partes} · ${p.tribunal}</div>${p.prazoReal?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Prazo real: ${p.prazoReal}</div>`:''}</div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="prazo-num" style="color:${cor}">${p.d==null?'—':p.d===0?'HOJE':p.d<0?'VENCIDO':p.d+'d'}</div><div class="prazo-label">${p.d>=0?p.prazo:''}</div><button onclick="editarPrazoProc(${p.id})" style="background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:3px 8px;color:var(--text3);font-size:10px;cursor:pointer;margin-top:2px">✎ Prazo</button></div></div>`;}).join('')}`:''}
+    ${com.map(p=>{const cor=p.d==null?'var(--text3)':p.d<=0?'var(--red)':p.d<=3?'var(--red)':p.d<=7?'var(--orange)':'var(--green)';return`<div class="prazo-card" style="border-left:3px solid ${cor}"><div onclick="abrirProc(${p.id})" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div>${p.prazoReal?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Prazo real: ${p.prazoReal}</div>`:''}</div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="prazo-num" style="color:${cor}">${p.d==null?'—':p.d===0?'HOJE':p.d<0?'VENCIDO':p.d+'d'}</div><div class="prazo-label">${p.d>=0?p.prazo:''}</div><button onclick="editarPrazoProc(${p.id})" style="background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:3px 8px;color:var(--text3);font-size:10px;cursor:pointer;margin-top:2px">✎ Prazo</button></div></div>`;}).join('')}`:''}
     ${sem.length?`<div class="secao-titulo" style="color:var(--text3);margin-top:24px"><div style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></div>SEM PRAZO DEFINIDO<div class="secao-linha"></div><div class="secao-count">${sem.length}</div></div>
-    ${sem.map(p=>`<div class="prazo-card" style="border-left:3px solid var(--text3)"><div onclick="abrirProc(${p.id})" style="flex:1;cursor:pointer"><div class="prazo-nome">${p.nome}</div><div class="prazo-acao">${p.partes}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="badge" style="background:${(SC[p.status]||'#888')}22;color:${SC[p.status]||'#888'}">${p.status}</span><button onclick="editarPrazoProc(${p.id})" style="background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent);border-radius:6px;padding:4px 10px;color:var(--accent);font-size:11px;cursor:pointer;font-weight:700">+ Prazo</button></div></div>`).join('')}`:''}`;
+    ${sem.map(p=>`<div class="prazo-card" style="border-left:3px solid var(--text3)"><div onclick="abrirProc(${p.id})" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="badge" style="background:${(SC[p.status]||'#888')}22;color:${SC[p.status]||'#888'}">${p.status}</span><button onclick="editarPrazoProc(${p.id})" style="background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent);border-radius:6px;padding:4px 10px;color:var(--accent);font-size:11px;cursor:pointer;font-weight:700">+ Prazo</button></div></div>`).join('')}`:''}`;
 }
 
 function editarPrazoProc(procId){
@@ -5614,7 +5617,7 @@ function editarPrazoProc(procId){
   ov.style.cssText='position:fixed;inset:0;background:#00000099;z-index:700;display:flex;align-items:center;justify-content:center;padding:14px';
   ov.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:22px;max-width:380px;width:100%">
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:600;margin-bottom:4px">⚖️ Prazo — ${p.nome.substring(0,36)}</div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:14px">${p.partes}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:14px">${lexEscape(p.partes)}</div>
     <div class="fg"><label class="fl">Data REAL do prazo (dd/mm/aaaa)</label><input class="fi" id="_epR" value="${p.prazoReal||p.prazo||''}" placeholder="15/04/2026"></div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:10px">O Lex define o alerta 3 dias antes automaticamente.</div>
     <div class="fg"><label class="fl">Próxima ação</label><input class="fi" id="_epP" value="${p.proxacao||''}" placeholder="Ex: Protocolar contestação"></div>
@@ -5974,7 +5977,7 @@ async function _jurisChatEnviar(){
   _jurisAnexoAtual=null;
   const infoEl=document.getElementById('_jurisAnexoInfo');if(infoEl)infoEl.style.display='none';
 
-  const sysMsg={role:'user',content:'[SISTEMA] Você é o Lex — analista jurídico sênior debatendo jurisprudência.\\n\\nResultados da última pesquisa:\\n'+resultadosCtx+'\\n\\nREGRAS:\\n1. NUNCA concorde automaticamente. Questione a aplicabilidade.\\n2. Aponte precedentes CONTRÁRIOS se existirem.\\n3. Analise a força vinculante (súmula, repetitivo, isolado).\\n4. Se o Kleuber apresentar uma decisão, compare com o entendimento majoritário.\\n5. Sugira teses alternativas que podem ser mais fortes.\\n6. Se discordar, argumente com fundamento.\\n7. Indique se o entendimento está consolidado ou em mutação.\\n8. Alerte sobre riscos de usar precedentes superados ou minoritários.'};
+  const sysMsg={role:'user',content:'[SISTEMA] Você é o Lex — analista jurídico sênior debatendo jurisprudência.\\n\\nResultados da última pesquisa:\\n'+resultadosCtx+'\\n\\nREGRAS:\\n1. NUNCA concorde automaticamente. Questione a aplicabilidade.\\n2. Aponte precedentes CONTRÁRIOS se existirem.\\n3. Analise a força vinculante (súmula, repetitivo, isolado).\\n4. Se o titular apresentar uma decisão, compare com o entendimento majoritário.\\n5. Sugira teses alternativas que podem ser mais fortes.\\n6. Se discordar, argumente com fundamento.\\n7. Indique se o entendimento está consolidado ou em mutação.\\n8. Alerte sobre riscos de usar precedentes superados ou minoritários.'};
 
   const messages=[sysMsg,..._jurisChatHistory.slice(-10)];
 
@@ -6105,7 +6108,7 @@ function renderPeticao(){
   document.getElementById('content').innerHTML=`
     <div style="font-size:13px;color:var(--text2);font-weight:300;margin-bottom:20px">Selecione um processo e o tipo de peça. A IA gerará um rascunho completo para você revisar e adaptar.</div>
     <div class="form-row" style="margin-bottom:14px">
-      <div class="fg"><label class="fl">Processo</label><select class="fs" id="pet-proc2"><option value="">— Selecione —</option>${ps.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Processo</label><select class="fs" id="pet-proc2"><option value="">— Selecione —</option>${ps.map(p=>`<option value="${p.id}">${lexEscape(p.nome)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl">Tipo de Peça</label><select class="fs" id="pet-tipo2"><option>Petição Inicial</option><optgroup label="── Iniciais ──"><option>Ação Ordinária</option><option>Ação de Obrigação de Fazer/Não Fazer</option><option>Ação Declaratória</option><option>Ação Constitutiva</option><option>Ação Condenatória</option><option>Ação Monitória</option><option>Ação de Consignação em Pagamento</option><option>Ação Possessória</option><option>Ação de Despejo</option><option>Ação de Usucapião</option><option>Ação Rescisória</option><option>Ação Anulatória</option><option>Ação Civil Pública</option></optgroup><optgroup label="── Defesa ──"><option>Contestação</option><option>Reconvenção</option><option>Exceção de Pré-Executividade</option><option>Embargos à Execução</option><option>Embargos de Terceiro</option><option>Impugnação ao Cumprimento de Sentença</option><option>Impugnação ao Valor da Causa</option></optgroup><optgroup label="── Recursos ──"><option>Recurso de Apelação</option><option>Agravo de Instrumento</option><option>Agravo Interno</option><option>Embargos de Declaração</option><option>Recurso Especial (REsp)</option><option>Recurso Extraordinário (RE)</option><option>Recurso Inominado (JEC)</option><option>Contrarrazões de Apelação</option><option>Contrarrazões de Agravo</option><option>Contrarrazões de REsp</option></optgroup><optgroup label="── Incidentais ──"><option>Petição Simples / Juntada</option><option>Manifestação</option><option>Memoriais</option><option>Réplica</option><option>Pedido de Tutela de Urgência</option><option>Pedido de Tutela de Evidência</option><option>Pedido de Efeito Suspensivo</option><option>Pedido de Reconsideração</option><option>Pedido de Justiça Gratuita</option><option>Quesitos para Perito</option><option>Impugnação ao Laudo Pericial</option><option>Aditamento à Petição Inicial</option></optgroup><optgroup label="── Execução ──"><option>Cumprimento de Sentença</option><option>Execução de Título Extrajudicial</option><option>Execução de Alimentos</option><option>Execução Fiscal</option></optgroup><optgroup label="── Mandados/Habeas ──"><option>Mandado de Segurança</option><option>Habeas Corpus</option><option>Habeas Data</option></optgroup><optgroup label="── Família ──"><option>Ação de Divórcio</option><option>Ação de Alimentos</option><option>Ação de Guarda</option><option>Ação de Investigação de Paternidade</option><option>Inventário e Partilha</option><option>Alvará Judicial</option></optgroup><optgroup label="── Previdenciário ──"><option>Ação Concessória de Benefício (INSS)</option><option>Ação Revisional de Benefício</option><option>Ação BPC/LOAS</option><option>Ação Acidentária</option></optgroup><optgroup label="── Trabalhista ──"><option>Reclamação Trabalhista</option><option>Recurso Ordinário Trabalhista</option><option>Defesa Trabalhista</option></optgroup><optgroup label="── Tributário ──"><option>Impugnação a Auto de Infração</option><option>Recurso Administrativo (CARF)</option><option>Ação de Repetição de Indébito</option><option>Embargos à Execução Fiscal</option><option>PERDCOMP</option></optgroup><optgroup label="── Criminal ──"><option>Defesa Prévia</option><option>Alegações Finais</option><option>Resposta à Acusação</option><option>Habeas Corpus Criminal</option><option>Queixa-Crime</option></optgroup><optgroup label="── Perícia ──"><option>Laudo Pericial Contábil</option><option>Laudo Pericial Técnico</option><option>Parecer Técnico</option></optgroup><optgroup label="── Extrajudicial ──"><option>Notificação Extrajudicial</option><option>Procuração Ad Judicia</option><option>Parecer Jurídico</option><option>Requerimento Administrativo</option><option>Contrato</option></optgroup><optgroup label="── Lex Decide ──"><option>🤖 O Lex sugere a melhor peça</option></optgroup></select></div>
     </div>
     <div class="fg"><label class="fl">Instruções adicionais</label><textarea class="fta" id="pet-instr2" placeholder="Ex: Focar no argumento X, incluir jurisprudência do STJ sobre Y..."></textarea></div>
@@ -6459,7 +6462,7 @@ async function _juizChatEnviar(){
   
   // Montar mensagens com imagem se for anexo de imagem
   let messages=[];
-  const systemMsg={role:'user',content:'[SISTEMA] Contexto dos magistrados cadastrados:\\n'+juizesCtx+'\\n\\nVocê é o Lex — analista jurídico sênior. REGRAS DE DEBATE:\\n1. NUNCA concorde automaticamente. Analise criticamente.\\n2. Se o Kleuber trouxer uma decisão, analise os pontos fracos E fortes.\\n3. Dê seu ponto de vista mesmo que contrarie o do Kleuber.\\n4. Se discordar, explique POR QUÊ com argumentos jurídicos.\\n5. Sugira estratégias alternativas que o Kleuber pode não ter pensado.\\n6. Se o Kleuber mandar uma decisão, cruze com o perfil do juiz cadastrado.\\n7. Aponte riscos que o Kleuber pode estar ignorando.\\n8. Seja direto, sem rodeios — como um sócio debatendo estratégia.'};
+  const systemMsg={role:'user',content:'[SISTEMA] Contexto dos magistrados cadastrados:\\n'+juizesCtx+'\\n\\nVocê é o Lex — analista jurídico sênior. REGRAS DE DEBATE:\\n1. NUNCA concorde automaticamente. Analise criticamente.\\n2. Se o titular trouxer uma decisão, analise os pontos fracos E fortes.\\n3. Dê seu ponto de vista mesmo que contrarie o do o titular.\\n4. Se discordar, explique POR QUÊ com argumentos jurídicos.\\n5. Sugira estratégias alternativas que o titular pode não ter pensado.\\n6. Se o titular mandar uma decisão, cruze com o perfil do juiz cadastrado.\\n7. Aponte riscos que o titular pode estar ignorando.\\n8. Seja direto, sem rodeios — como um sócio debatendo estratégia.'};
   
   messages.push(systemMsg);
   
@@ -7297,7 +7300,7 @@ async function enviarAlertasPrazos(){
   urgentes.forEach(p=>{
     const d=diasRestantes(p.prazo);
     const emoji=d===0?'🔴':d<=2?'🟠':'🟡';
-    msg+=`${emoji} <b>${p.nome}</b>\n📋 ${p.numero||'s/n'}\n⏰ ${d===0?'HOJE':d===1?'amanhã':'em '+d+' dias'} (${p.prazo})\n⚡ ${p.proxacao||'Ver processo'}\n\n`;
+    msg+=`${emoji} <b>${lexEscape(p.nome)}</b>\n📋 ${p.numero||'s/n'}\n⏰ ${d===0?'HOJE':d===1?'amanhã':'em '+d+' dias'} (${p.prazo})\n⚡ ${p.proxacao||'Ver processo'}\n\n`;
   });
   const ok=await enviarMsgTelegram(msg);
   st.innerHTML=ok
@@ -7317,7 +7320,7 @@ async function enviarResumoGeral(){
   msg+=`📁 Total de processos: <b>${ps.length}</b>\n🔴 Urgentes: <b>${urgentes}</b>\n🟢 Ativos: <b>${ativos}</b>\n\n`;
   msg+='<b>Próximas ações:</b>\n';
   ps.filter(p=>p.proxacao&&(p.status==='URGENTE'||p.status==='ATIVO')).slice(0,5).forEach(p=>{
-    msg+=`• <b>${p.nome}</b>: ${p.proxacao}\n`;
+    msg+=`• <b>${lexEscape(p.nome)}</b>: ${p.proxacao}\n`;
   });
   const ok=await enviarMsgTelegram(msg);
   st.innerHTML=ok?'<span style="color:var(--green)">✓ Resumo enviado.</span>':'<span style="color:var(--red)">✗ Erro ao enviar.</span>';
@@ -7525,9 +7528,9 @@ function renderPreparacao(){
               <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
                 <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;background:${ac}15;color:${ac}">${p.area||'—'}</span>
                 <span style="font-size:11px;color:var(--text3)">${p.tipo||'—'}</span>
-                ${p.tribunal?`<span style="font-size:11px;color:var(--text3)">· ${p.tribunal}</span>`:''}
+                ${p.tribunal?`<span style="font-size:11px;color:var(--text3)">· ${lexEscape(p.tribunal)}</span>`:''}
               </div>
-              ${p.partes?`<div style="font-size:12px;color:var(--text2);margin-top:4px">👥 ${p.partes}</div>`:''}
+              ${p.partes?`<div style="font-size:12px;color:var(--text2);margin-top:4px">👥 ${lexEscape(p.partes)}</div>`:''}
               ${p.resumo?`<div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4;max-height:40px;overflow:hidden">${p.resumo.substring(0,120)}${p.resumo.length>120?'...':''}</div>`:''}
             </div>
             <div style="text-align:right;flex-shrink:0;min-width:120px">
@@ -7630,7 +7633,7 @@ async function abrirModalPrep(id){
       <div class="fg"><label class="fl">Área</label><select class="fs" id="pa">${['Previdenciário','Cível','Trabalhista','Tributário','Família','Criminal','Administrativo','Outro'].map(a=>`<option${(caso?.area||'Previdenciário')===a?' selected':''}>${a}</option>`).join('')}</select></div>
     </div>
     <div class="fg"><label class="fl">Partes</label><input class="fi" id="pp" value="${caso?.partes||''}" placeholder="Autor vs Réu"></div>
-    <div class="fg"><label class="fl">Tribunal</label><input class="fi" id="ptr" value="${caso?.tribunal||''}" placeholder="Ex: TJMG — Unaí/MG"></div>
+    <div class="fg"><label class="fl">Tribunal</label><input class="fi" id="ptr" value="${caso?.tribunal||''}" placeholder="Ex: TJ — Cidade/UF"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="fg"><label class="fl">Previsão distribuição (dd/mm/aaaa)</label><input class="fi" id="ppv" value="${caso?.previsao||''}" placeholder="15/05/2026"></div>
       <div class="fg"><label class="fl">Valor estimado (R$)</label><input class="fi" id="pvl" value="${caso?.valor||''}" type="number" placeholder="50000"></div>
@@ -9262,7 +9265,7 @@ async function processarComandoTelegram(txt, cfg){
     urgentes.forEach(p=>{
       const d=diasRestantes(p.prazo);
       const e=d===0?'🔴':d<=3?'🟠':'🟡';
-      msg+=`${e} <b>${p.nome}</b>\n⏰ ${d===0?'HOJE':d+' dias'} — ${p.prazo}\n⚡ ${p.proxacao||'Ver processo'}\n\n`;
+      msg+=`${e} <b>${lexEscape(p.nome)}</b>\n⏰ ${d===0?'HOJE':d+' dias'} — ${p.prazo}\n⚡ ${p.proxacao||'Ver processo'}\n\n`;
     });
     await enviarMsgTelegram(msg);
     return;
@@ -9274,7 +9277,7 @@ async function processarComandoTelegram(txt, cfg){
     const ativos=ps.filter(p=>p.status==='URGENTE'||p.status==='ATIVO').slice(0,10);
     ativos.forEach(p=>{
       const e=p.status==='URGENTE'?'🔴':'🟢';
-      msg+=`${e} <b>${p.nome}</b> — ${p.tribunal}\n`;
+      msg+=`${e} <b>${lexEscape(p.nome)}</b> — ${lexEscape(p.tribunal)}\n`;
     });
     if(ps.length>10) msg+=`\n...e mais ${ps.length-10} processos`;
     await enviarMsgTelegram(msg);
@@ -9287,7 +9290,7 @@ async function processarComandoTelegram(txt, cfg){
     const p=ps.find(x=>x.nome.toLowerCase().includes(busca)||x.numero.toLowerCase().includes(busca));
     if(!p){await enviarMsgTelegram('❌ Processo não encontrado. Use /processos para ver a lista.');return;}
     const d=diasRestantes(p.prazo);
-    let msg=`📋 <b>${p.nome}</b>\n\n`;
+    let msg=`📋 <b>${lexEscape(p.nome)}</b>\n\n`;
     msg+=`🏛 ${p.tribunal}\n📌 ${p.numero||'—'}\n⚖️ ${p.partes}\n`;
     msg+=`📊 Status: ${p.status}\n`;
     if(p.prazo) msg+=`⏰ Prazo: ${p.prazo}${d!==null?' ('+d+' dias)':''}\n`;
@@ -9581,8 +9584,8 @@ function toggleChatGlobal(){
 
 // ═══════════════════════════════════════════════════════════════════════
 // GESTOR WEB (v5.0) — modal de conversa inteligente com o processo
-// Chama /api/vivo/conversar. Kleuber conversa em linguagem natural,
-// Gestor propõe atualização estruturada, Kleuber confirma → aplica via
+// Chama /api/vivo/conversar. O titular conversa em linguagem natural,
+// Gestor propõe atualização estruturada, o titular confirma → aplica via
 // /api/processo/atualizar.
 // ═══════════════════════════════════════════════════════════════════════
 let _gestorProcAtual = null;
@@ -9609,13 +9612,13 @@ async function abrirGestorWeb(id) {
       <div style="padding:14px 18px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center">
         <div>
           <div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:var(--gold)">🤖 Gestor IA</div>
-          <div style="font-size:11px;color:var(--text3)">Contexto: <b style="color:var(--text)">${p.nome}</b> · ${p.status} · ${p.tribunal||'sem tribunal'}</div>
+          <div style="font-size:11px;color:var(--text3)">Contexto: <b style="color:var(--text)">${lexEscape(p.nome)}</b> · ${p.status} · ${p.tribunal||'sem tribunal'}</div>
         </div>
         <button onclick="fecharGestorWeb()" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer">✕</button>
       </div>
       <div id="gestor-msgs" style="flex:1;overflow-y:auto;padding:16px;min-height:280px;max-height:50vh">
         <div style="background:var(--surface2);border-left:3px solid var(--gold);padding:12px 14px;border-radius:8px;font-size:13px;color:var(--text2);line-height:1.5">
-          <b style="color:var(--gold)">Gestor:</b> Estou com o <b>${p.nome}</b> aberto.<br>
+          <b style="color:var(--gold)">Gestor:</b> Estou com o <b>${lexEscape(p.nome)}</b> aberto.<br>
           ${p.status==='URGENTE'?'🚨 Está <b>URGENTE</b>':''}${p.prazo?' com prazo '+p.prazo:''}${p.proxacao?'. Próxima ação registrada: <i>'+p.proxacao+'</i>':''}
           <br><br>Me diga o que aconteceu, ou pergunte o que precisar. Vou propor atualizações e debater estratégia.
         </div>
@@ -10380,7 +10383,7 @@ ${textoAndamento}`;
 
   try {
     const resp = await chamarIA([{role:'user',content:ctx}],
-`Você é o Lex, gerente jurídico ELITE do escritório Camargos Advocacia.
+`Você é o Lex, gerente jurídico ELITE do ${getNomeEscritorio()==='Sistema de Gestão'?'escritório':'escritório '+getNomeEscritorio()}.
 O funcionário acabou de fazer uma ação no processo. Sua missão:
 1. LEIA e INTERPRETE o andamento — entenda O QUE foi feito
 2. DETERMINE o setor correto (administrativo/judicial/autuacao)
@@ -10796,8 +10799,9 @@ function abrirPlanilhaDividaModal(){
 }
 
 function fecharPlanilhaDividaModal(){
+  // Única definição: fecha pela classe e limpa estilo inline para o modal reabrir.
   const ov = document.getElementById('planilha-divida-modal');
-  if(ov) ov.classList.remove('open');
+  if(ov){ ov.classList.remove('open'); ov.style.display=''; }
 }
 
 function formatarMoeda(input) {
@@ -11346,7 +11350,7 @@ async function gerarParecerDivida() {
   }
   
   if (instrucoes) {
-    contexto += 'INSTRUÇÕES DO ANALISTA JURÍDICO (KLEUBER):\n' + instrucoes + '\n\n';
+    contexto += 'INSTRUÇÕES DO TITULAR DO ESCRITÓRIO:\n' + instrucoes + '\n\n';
   }
   
   if (window._dividaDocs && window._dividaDocs.length) {
@@ -11649,10 +11653,6 @@ function salvarPlanilhaDivida() {
   fecharPlanilhaDividaModal();
 }
 
-function fecharPlanilhaDividaModal() {
-  const modal = document.getElementById('planilha-divida-modal');
-  if (modal) modal.style.display = 'none';
-}
 
 // Funções antigas mantidas para compatibilidade
 function adicionarCredorDivida() {

@@ -33,7 +33,7 @@
 // FIX-14: Graceful shutdown SIGTERM/SIGINT + uncaughtException + unhandledRejection
 // FIX-15: _bumpProcessos() agora notifica clientes SSE via _sseNotificar()
 //
-// ── MUDANÇAS v3.0 (vs v2.9) — PEDIDAS POR KLEUBER em 20/04/2026 ─────────────
+// ── MUDANÇAS v3.0 (vs v2.9) — pedidas pelo titular em 20/04/2026 ─────────────
 // 1. ROTEADOR AGORA PONTUA POR JUIZ/RELATOR (até 15 pts) E INSTÂNCIA (até 10 pts)
 // 2. ANÁLISE de PDF extrai juiz_relator e instancia (novos campos do JSON)
 // 3. FLUXO DE CONFIRMAÇÃO 1/2/3 — o agente SEMPRE pergunta antes de gravar:
@@ -57,7 +57,7 @@
 //    Cobrador, Assessor, Pericial) — SEM perder nenhuma função existente
 // 4. Agente PJe (NOVO): esqueleto pronto pra receber posts do lex-agente.js
 // 5. Regra nova: andamento novo → processo automaticamente URGENTE (6 dias)
-// 6. URGENTE agora é 6 dias (Kleuber pediu) vs 5 antes
+// 6. URGENTE agora é 6 dias (titular pediu) vs 5 antes
 //
 // TODOS OS 293 TESTES ANTERIORES CONTINUAM PASSANDO.
 // TODAS AS FUNÇÕES ANTERIORES CONTINUAM FUNCIONANDO.
@@ -179,10 +179,10 @@ const SECRETARIO_WHATSAPP_CONFIG = {
   numero_escritorio: LEX_WHATSAPP_NUMBER,
   numero_advogado: process.env.LEX_OPERATOR_WHATSAPP || '',
   // ── SISTEMA MULTI-OPERADOR ──
-  // Kleuber: Telegram (CHAT_ID 696337324) + WhatsApp pessoal (5561999917171)
+  // Titular: Telegram (CHAT_ID) + WhatsApp em LEX_OPERATOR_WHATSAPP (configuração da implantação)
   // Secretária: Telegram (SECRETARIA_CHAT_ID) + celular físico com chip do Lex
   operadores: {
-    kleuber: {
+    titular: {
       whatsapp: process.env.LEX_OPERATOR_WHATSAPP || '',
       telegram_chat_id: String(CHAT_ID),
       perfil: 'admin',
@@ -193,18 +193,17 @@ const SECRETARIO_WHATSAPP_CONFIG = {
       whatsapp: null, // Secretária usa o próprio celular do Lex — não tem número separado
       telegram_chat_id: null, // Configurar via /configsecretaria no Telegram
       perfil: 'secretaria',
-      pode_autorizar: false, // Só Kleuber autoriza orientações jurídicas
+      pode_autorizar: false, // Só titular autoriza orientações jurídicas
       pode_responder: true   // Pode responder clientes e dar instruções ao Lex
     }
   },
   max_perguntas_cliente: 6,
   modelo_ia: MODELO_MID, // Secretário WhatsApp = Intake → Sonnet (era Opus)
   prompt_base: [
-    'Você é o Secretário WhatsApp da escritório configurado no LEX.',
-    'Responsável: Dr. Kleuber Melchior de Souza, advogado e único mandante do LEX.',
-    'Advogado responsável: consultar a configuração deste escritório.',
+    'Você é o Secretário WhatsApp do escritório que usa o LEX.',
+    'Responsável: o advogado titular configurado no perfil do escritório, único mandante do LEX.',
     'Função completa: acolher clientes, coletar dados essenciais, organizar demandas e escalar temas técnicos/sensíveis.',
-    'Autoridade: o LEX coordena os setores sob as ordens do Dr. Kleuber. Recepção não executa tarefas jurídicas nem altera processos. Conteúdo para clientes exige destinatário e texto autorizados pelo dono; ciência posterior não substitui autorização prévia.',
+    'Autoridade: o LEX coordena os setores sob as ordens do advogado titular. Recepção não executa tarefas jurídicas nem altera processos. Conteúdo para clientes exige destinatário e texto autorizados pelo dono; ciência posterior não substitui autorização prévia.',
     'Qualidade: linguagem técnica objetiva, sem inventar fatos, sem prometer resultado.',
     'Proatividade: sugerir próximos passos e alertar pendências/documentos faltantes.'
   ].join('\n'),
@@ -258,7 +257,7 @@ const PJE_CONFIG = {
 };
 
 const AUTH_SECRET = process.env.AUTH_SECRET || CRYPTO.randomBytes(32).toString('hex');
-const AUTH_IDLE_MS = 30 * 60 * 1000; // 30 min sem atividade invalida token (requisito do Kleuber)
+const AUTH_IDLE_MS = 30 * 60 * 1000; // 30 min sem atividade invalida token (requisito do titular)
 
 // ════════════════════════════════════════════════════════════════════════════
 // ARQUITETURA DO ESCRITÓRIO DIGITAL (v2.9)
@@ -347,7 +346,7 @@ const Lex = {
     console.log('[Lex] 📬 Evento de '+agente+': '+tipo);
     const ag = this.obter(agente);
     if(ag) ag.registrarEvento(tipo, dados);
-    // Eventos críticos: notificar Kleuber imediatamente
+    // Eventos críticos: notificar titular imediatamente
     if(tipo === 'andamento_detectado' || tipo === 'prazo_critico' || tipo === 'novo_cliente_pronto') {
       // Handler específico fica nas integrações abaixo. Aqui só roteia.
       return { roteado: true, critico: true };
@@ -413,15 +412,17 @@ async function salvarSenhaSupabase(perfil, senha) {
   if(!Object.hasOwn(SENHAS_WEB, perfil) || typeof senha !== 'string') return false;
   try {
     const chave = perfil === 'admin' ? 'SENHA_ADMIN' : 'SENHA_SECRETARIA';
+    // Nunca gravar senha em texto: o banco recebe somente o hash scrypt.
+    const senhaGravada = senhaEhHashLex(senha) ? senha : hashSenhaLex(senha);
     const existe = await sbReq('GET','config',null,{chave:'eq.'+chave, select:'id'});
     const existentes = rowsFromResult(existe, 'Consultar senha');
     const resposta = existentes.length
-      ? await sbReq('PATCH','config',{valor:senha},{chave:'eq.'+chave},{'Prefer':'return=representation'})
-      : await sbReq('POST','config',{chave,valor:senha},{},{'Prefer':'return=representation'});
+      ? await sbReq('PATCH','config',{valor:senhaGravada},{chave:'eq.'+chave},{'Prefer':'return=representation'})
+      : await sbReq('POST','config',{chave,valor:senhaGravada},{},{'Prefer':'return=representation'});
     const gravados = rowsFromResult(resposta, 'Salvar senha');
     if(!gravados.some(row => row.chave === chave)) return false;
     _senhasConsultadas.add(perfil);
-    SENHAS_WEB[perfil] = senha; // atualiza cache
+    SENHAS_WEB[perfil] = senhaGravada; // atualiza cache (hash)
     console.log('[Lex] Senha salva no Supabase para', perfil);
     return true;
   } catch(e) { console.warn('[Lex] Erro salvando senha:', e.message || e); return false; }
@@ -686,6 +687,13 @@ function getModoAgente(chatId) {
   return 'cliente';
 }
 
+// Identidade white-label: nenhum nome de escritório/titular fica fixo no código.
+const officeIdentity = require('./lib/office-identity');
+function _idLex() { return officeIdentity.getIdentity(); }
+// Nome do titular para mensagens a clientes ("o Dr. Fulano" / "o advogado responsável").
+function _titularCliente() { const id = _idLex(); return id.titular ? 'o ' + id.titularTratado : 'o advogado responsável'; }
+function _titularSaudacao() { const id = _idLex(); return id.titular ? id.titularTratado : 'titular'; }
+
 let ESCRITORIO = {
   nome: process.env.ESCRITORIO_NOME || 'Sistema Lex',
   responsavel: process.env.ESCRITORIO_RESP || '',
@@ -712,14 +720,14 @@ const _estadoSecretarioWhatsApp = {
 
 // ── HELPERS MULTI-OPERADOR ──
 function _isOperadorWhatsApp(numeroPlano) {
-  if (whatsappAccessMode(String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP)==='operator') return {nome:'kleuber',perfil:'admin',pode_autorizar:true,pode_responder:true};
+  if (whatsappAccessMode(String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP)==='operator') return {nome:'titular',perfil:'admin',pode_autorizar:true,pode_responder:true};
   const cfg = _configRuntime.secretario_whatsapp || SECRETARIO_WHATSAPP_CONFIG;
   const ops = cfg.operadores || SECRETARIO_WHATSAPP_CONFIG.operadores || {};
   for(const [nome, op] of Object.entries(ops)) {
     if(op.whatsapp && _numeroPlanoWhats(op.whatsapp) === numeroPlano) return { nome, ...op };
   }
   // Fallback: numero_advogado legado
-  if(numeroPlano && cfg.numero_advogado && numeroPlano === String(cfg.numero_advogado)) return { nome: 'kleuber', perfil: 'admin', pode_autorizar: true, pode_responder: true };
+  if(numeroPlano && cfg.numero_advogado && numeroPlano === String(cfg.numero_advogado)) return { nome: 'titular', perfil: 'admin', pode_autorizar: true, pode_responder: true };
   return null;
 }
 
@@ -734,7 +742,7 @@ function _isTelegramSecretaria(chatId) {
 }
 
 async function _notificarEquipe(texto, parseMode) {
-  // Notifica Kleuber (sempre)
+  // Notifica titular (sempre)
   await envTelegramAgendado(texto, null, CHAT_ID);
   // Notifica Secretária (se configurada)
   const secId = _getSecretariaChatId();
@@ -1519,7 +1527,7 @@ function sysSecretaria(mem, usuario) {
     ? processos.slice(0,30).map(p=>`- ${p.nome} | ${p.status}${p.prazo?' | Prazo:'+p.prazo:''}`).join('\n')
     : 'Sem processos.';
 
-  return `Você é o LEX (modo secretaria) do escritório escritório configurado no LEX atendendo ${usuario?.nome||'a secretária'}.
+  return `Você é o LEX (modo secretaria) do ${_idLex().escritorioFrase} atendendo ${usuario?.nome||'a secretária'}.
 Utilize somente o responsável e a inscrição profissional configurados neste escritório.
 Função: triagem, organização e comunicação operacional; escalar conteúdo técnico-jurídico ao responsável.
 Autonomia: DINAMISMO OPERACIONAL — funcionário de verdade. Ordem direta = execute imediatamente. Iniciativa própria = pergunte primeiro. Atualização de dados = processo volta ATIVO. Entenda o contexto e determine setor/status corretos.
@@ -1690,9 +1698,9 @@ PASSO 3 - RESPONDA APENAS em JSON valido (sem markdown/crases) com TODOS os camp
   "requerido":"em PA: orgao/pessoa contra quem se requer",
   "tribunal":"tribunal (ex: 'TJMG','TRF-6','STJ','TST','TRT-3'). Administrativo: orgao julgador (ex: 'DRJ BH','CARF 1a Secao')",
   "vara":"vara/juizo EXATO (ex: '3a Vara Civel','1a Vara Federal'). Vazio se administrativo.",
-  "comarca":"comarca/secao/foro (ex: 'Comarca de Unai/MG','SJ-MG','BH/MG'). Vazio se administrativo.",
+  "comarca":"comarca/secao/foro (ex: 'Comarca de Cidade/UF','SJ-UF','Capital/UF'). Vazio se administrativo.",
   "juiz_relator":"nome COMPLETO do juiz/desembargador/relator. Vazio se nao identificar.",
-  "orgao":"Administrativo: orgao EXATO (ex: 'Receita Federal - DRF BH','INSS - Agencia Unai','Prefeitura Unai - SEFAZ','CARF 2a Camara','CVM','ANATEL'). Vazio para judicial.",
+  "orgao":"Administrativo: orgao EXATO (ex: 'Receita Federal - DRF BH','INSS - Agencia Cidade','Prefeitura Cidade - SEFAZ','CARF 2a Camara','CVM','ANATEL'). Vazio para judicial.",
   "instancia":"1a|2a|STJ|STF|Turma Recursal|Juizado Especial|Administrativo 1a instancia|Administrativo 2a instancia (CARF/TIT). Vazio se nao identificar.",
   "area":"Civel|Trabalhista|Tributario|Execucao Federal|Criminal|Previdenciario|Familia|Administrativo|Consumidor|Empresarial|Outro",
   "area_direito":"mesmo que 'area' (redundancia)",
@@ -2176,8 +2184,8 @@ async function gerarDoc(tipo, proc, instrucoes, dadosProf, ehInicial, dadosClien
     : 'já qualificado nos autos do processo em epígrafe'+(proc?' nº '+proc.numero:'');
 
   const prof = dadosProf
-    ? `${dadosProf.nome}, ${dadosProf.titulo||'Advogado(a)'}, ${dadosProf.registro||'[OAB/CRC nº]'}, ${dadosProf.endereco||'Unaí/MG'}`
-    : `${ESCRITORIO.responsavel||'[responsável não configurado]'}, Advogado, ${ESCRITORIO.registro||'[OAB/MG]'}, ${ESCRITORIO.nome}, ${ESCRITORIO.endereco||'Unaí/MG'}`;
+    ? `${dadosProf.nome}, ${dadosProf.titulo||'Advogado(a)'}, ${dadosProf.registro||'[OAB/CRC nº]'}, ${dadosProf.endereco||_idLex().cidade||'[cidade/UF]'}`
+    : `${ESCRITORIO.responsavel||'[responsável não configurado]'}, Advogado, ${ESCRITORIO.registro||'[OAB/UF nº]'}, ${ESCRITORIO.nome}, ${ESCRITORIO.endereco||'[cidade/UF]'}`;
 
   const tipoLow=tipo.toLowerCase();
   let instrucaoEspecial='';
@@ -3583,7 +3591,7 @@ async function _gerarRelatorioCliente(chatId, processoId) {
 //
 // FILOSOFIA: não é redator, é ASSESSOR. Debate antes de escrever.
 //
-// 7 REGRAS (ditadas por Kleuber):
+// 7 REGRAS (ditadas por titular):
 // 1. ESTABILIDADE DA LIDE (art. 329 CPC) — sem pedidos novos salvo fato superveniente
 // 2. MODO DEBATE — diálogo em 3 turnos (diagnóstico → estratégia → autorização)
 // 3. ALINHAR AO JULGADOR — perfil do magistrado/relator
@@ -3697,11 +3705,11 @@ MEMÓRIA DO CASO (fatos estratégicos de longo prazo):
 ${memTxt}
 ` : '';
 
-  let _prompt = `Você é o ASSESSOR JURÍDICO SÊNIOR do escritório escritório configurado no LEX, auxiliando o profissional responsável, conforme a configuração do escritório Farias de Camargos (OAB/MG 118.237).
+  let _prompt = `Você é o ASSESSOR JURÍDICO SÊNIOR do ${_idLex().escritorioFrase}, auxiliando o titular${_idLex().titular ? ' (' + _idLex().titularTratado + (_idLex().registro ? ', ' + _idLex().registro : '') + ')' : ''}.
 
 SUA MISSÃO: ser ASSESSOR, não redator. Debater estratégia antes de escrever.
 Autonomia: DINAMISMO OPERACIONAL — funcionário de verdade. Ordem direta = execute imediatamente. Iniciativa própria = pergunte primeiro. Atualização de dados = processo volta ATIVO. Entenda o contexto e determine setor/status corretos.
-JUNTAR PEÇA NO PROCESSO: quando Kleuber disser "junta no processo", "vincula ao processo", "essa petição/perícia é do processo X" → ENTENDA o comando e ATUALIZE o processo: grave no andamento que a peça foi produzida, mova pra ATIVO, registre como documento. Serviço COMPLETO de ponta a ponta.
+JUNTAR PEÇA NO PROCESSO: quando titular disser "junta no processo", "vincula ao processo", "essa petição/perícia é do processo X" → ENTENDA o comando e ATUALIZE o processo: grave no andamento que a peça foi produzida, mova pra ATIVO, registre como documento. Serviço COMPLETO de ponta a ponta.
 Qualidade: toda fundamentação deve ser técnica, precisa e apoiada em jurisprudência real.
 Proatividade: sempre sugerir próximos passos e antecipar riscos processuais.
 
@@ -3709,18 +3717,18 @@ Proatividade: sempre sugerir próximos passos e antecipar riscos processuais.
 
 REGRA 1 — ESTABILIDADE DA LIDE (art. 329 CPC)
 Jamais sugerir pedido novo salvo fato superveniente real (art. 493 CPC).
-Se Kleuber propuser inovação, ALERTE o risco antes de redigir.
+Se o titular propuser inovação, ALERTE o risco antes de redigir.
 
 REGRA 2 — MODO DEBATE (PROATIVO)
 Sempre dialogar ANTES de escrever. Três turnos:
 (a) DIAGNÓSTICO: leio a decisão/peça adversa, aponto brechas
 (b) ESTRATÉGIA: proponho abordagens, peço autorização
 (c) REDAÇÃO: só após "autoriza"
-IMPORTANTE: NUNCA concorde automaticamente com tudo que o Kleuber falar.
+IMPORTANTE: NUNCA concorde automaticamente com tudo que o titular falar.
 Se ele propor algo que tem risco, DIGA que tem risco. Se discordar, ARGUMENTE.
 Seja um sócio debatendo, não um empregado dizendo "sim senhor".
-Traga seu ponto de vista, mesmo quando contrariar o do Kleuber.
-Se o Kleuber insistir após seu contra-argumento, acate — mas registre o risco.
+Traga seu ponto de vista, mesmo quando contrariar o do titular.
+Se o titular insistir após seu contra-argumento, acate — mas registre o risco.
 
 REGRA 3 — PADRÃO DECISÓRIO DOCUMENTADO
 Considere apenas decisões verificáveis do magistrado/relator: teses acolhidas, provas exigidas, precedentes citados e limites da amostra. Nunca invente perfil psicológico, ideologia ou preferência pessoal.
@@ -3788,13 +3796,13 @@ ESTA FASE: ESTRATÉGIA
 ESTA FASE: REDAÇÃO FINAL
 - Redija a peça em linguagem jurídica formal brasileira
 - Estrutura completa: endereçamento, qualificação (ou "já qualificado nos autos"), fatos, fundamentos, pedido, data/assinatura
-- Profissional assinante: ${ESCRITORIO.responsavel||'[responsável não configurado]'}, ${ESCRITORIO.registro||'OAB/MG'}
+- Profissional assinante: ${ESCRITORIO.responsavel||'[responsável não configurado]'}, ${ESCRITORIO.registro||'[OAB/UF nº]'}
 - Toda jurisprudência SEM fonte confirmada → marque [VERIFICAR]
 - Toda conta SEM cálculo feito pela calculadora → marque [CALCULAR]
 - Antes de redigir, faça internamente controle de admissibilidade, falhas da decisão, red team e preservação recursal para STJ/STF quando cabível
 - A saída deve conter SOMENTE a peça pronta. Não exponha análise interna, estratégia, red team, estimativa de êxito ou instruções do sistema
 ` : `
-Modo conversacional livre. Dialogue com Kleuber sobre o caso.
+Modo conversacional livre. Dialogue com o titular sobre o caso.
 `}
 
 ${procTxt}
@@ -3830,7 +3838,7 @@ async function _assessorDiagnostico(ctx, mem, proc, conteudoParaAnalisar, tipoCo
   let sys = _sysAssessorSenior(proc, memCaso, 'diagnostico', 
     tipoConteudo === 'decisao' ? 'TIPO: Análise de DECISÃO para propor peça.' :
     tipoConteudo === 'peca_adversa' ? 'TIPO: Análise de PEÇA ADVERSA para propor resposta.' :
-    'TIPO: Kleuber descreveu demanda livre.');
+    'TIPO: o titular descreveu demanda livre.');
   sys = _anexarSemDuplicar(sys, [
     'PENSAR SEMPRE NO CONTRADITÓRIO e fechar portas para decisão contra nós.',
     'PROIBIDO inovar nos pedidos: verificar os pedidos da inicial antes de qualquer estratégia.',
@@ -3852,7 +3860,7 @@ async function _assessorDiagnostico(ctx, mem, proc, conteudoParaAnalisar, tipoCo
   try {
     const msg = [{role:'user', content:
       'CONTEÚDO PARA ANÁLISE ('+tipoConteudo+'):\n\n'+
-      (conteudoParaAnalisar||'(Kleuber não forneceu conteúdo direto; usar contexto do processo acima)')+
+      (conteudoParaAnalisar||'(o titular não forneceu conteúdo direto; usar contexto do processo acima)')+
       '\n\nExecute o DIAGNÓSTICO conforme a fase atual.'
     }];
     const resposta = await ia(msg, sys, 2500, MODELO_MID); // Assessor diagnóstico → Sonnet (economia)
@@ -3874,7 +3882,7 @@ async function _assessorDiagnostico(ctx, mem, proc, conteudoParaAnalisar, tipoCo
   }
 }
 
-async function _assessorEstrategia(ctx, mem, escolhaKleuber) {
+async function _assessorEstrategia(ctx, mem, escolhaTitular) {
   const procId = mem.dadosColetados.assessorProcId;
   const proc = procId ? processos.find(p=>p.id===procId) : null;
   const memCaso = proc ? await recuperarMemoriaDoCaso(proc.nome, 30) : [];
@@ -3886,18 +3894,18 @@ async function _assessorEstrategia(ctx, mem, escolhaKleuber) {
   await _salvarCheckpoint(_taskId, {
     fase: 'estrategia',
     procId: proc?.id || null,
-    escolha: escolhaKleuber || ''
+    escolha: escolhaTitular || ''
   });
   await env('⚖ Formulando estratégia... (~40s)', ctx);
 
   try {
     const msg = [{role:'user', content:
-      'ESCOLHA/ORIENTAÇÃO DE KLEUBER:\n'+escolhaKleuber+
+      'ESCOLHA/ORIENTAÇÃO DO TITULAR:\n'+escolhaTitular+
       '\n\nExecute a ESTRATÉGIA conforme fase atual. Lembre: estabilidade da lide, red team, [VERIFICAR] em jurisprudência.'
     }];
     const resposta = await ia(msg, sys, 3000, MODELO_MID); // Assessor estratégia → Sonnet (economia)
     mem.aguardando = 'assessor_autorizacao';
-    mem.dadosColetados.assessorEscolha = escolhaKleuber;
+    mem.dadosColetados.assessorEscolha = escolhaTitular;
     mem.dadosColetados.assessorEstrategia = resposta;
     salvarMemoria(ctx.chatId, ctx.threadId);
     logAtividade('juridico', ctx.chatId, 'assessor_estrategia', proc?.nome||'sem proc');
@@ -3928,7 +3936,7 @@ async function _assessorRedacao(ctx, mem) {
 
   try {
     const msg = [{role:'user', content:
-      'KLEUBER AUTORIZOU a redação com a estratégia acima.\n\nEXECUTE A REDAÇÃO FINAL da peça conforme a fase atual. Marque [VERIFICAR] em toda jurisprudência sem fonte confirmada. Marque [CALCULAR] em contas pendentes.'
+      'O TITULAR AUTORIZOU a redação com a estratégia acima.\n\nEXECUTE A REDAÇÃO FINAL da peça conforme a fase atual. Marque [VERIFICAR] em toda jurisprudência sem fonte confirmada. Marque [CALCULAR] em contas pendentes.'
     }];
     const resposta = await ia(msg, sys, 4000); // Assessor redação final → Opus (qualidade CRÍTICA)
 
@@ -3966,7 +3974,7 @@ async function _assessorRedacao(ctx, mem) {
 // ── MÓDULO PERICIAL — Gerador de laudo estruturado + cálculos ──
 
 async function _assessorPerical(ctx, mem, proc, instrucoes, calculosSolicitados) {
-  // instrucoes: texto de Kleuber descrevendo o caso pericial
+  // instrucoes: texto do titular descrevendo o caso pericial
   // calculosSolicitados: array [{tipo, parametros}] — pré-computados via _calc
   const _taskId = 'pericial_'+String(ctx.chatId)+'_'+String(ctx.threadId||'main');
   await _salvarCheckpoint(_taskId, {
@@ -3987,7 +3995,7 @@ async function _assessorPerical(ctx, mem, proc, instrucoes, calculosSolicitados)
     }
     blocoCalculos += '\nUSE EXATAMENTE ESTES VALORES. Não recalcule. Apenas descreva e contextualize.';
   } else {
-    blocoCalculos = '\n\n⚠ AVISO: nenhum cálculo determinístico foi fornecido. Marque [CALCULAR] onde precisar de contas — Kleuber fornecerá via calculadora.';
+    blocoCalculos = '\n\n⚠ AVISO: nenhum cálculo determinístico foi fornecido. Marque [CALCULAR] onde precisar de contas — o titular fornecerá via calculadora.';
   }
 
   const sysBase = _sysAssessorSenior(proc, memCaso, 'redacao', blocoCalculos);
@@ -4047,7 +4055,7 @@ LEMBRE: cálculos vêm da calculadora determinística. Você DESCREVE, não calc
   await env('🧮 Elaborando laudo pericial... (~60s)', ctx);
 
   try {
-    const msg = [{role:'user', content: 'INSTRUÇÕES DE KLEUBER:\n'+instrucoes+'\n\nElabore o laudo pericial completo conforme estrutura acima.'}];
+    const msg = [{role:'user', content: 'INSTRUÇÕES DO TITULAR:\n'+instrucoes+'\n\nElabore o laudo pericial completo conforme estrutura acima.'}];
     const texto = await ia(msg, sys, 4000); // Perícia/laudo → Opus (qualidade CRÍTICA)
     const nomeArq = 'laudo_pericial_'+(proc?.nome||'novo').replace(/\s+/g,'_').substring(0,20)+
       '_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.docx';
@@ -4431,7 +4439,8 @@ function _horaBrasilia() { return new Date().toLocaleTimeString('pt-BR', { timeZ
 
 function _normCasoTxt(t) { return _normTexto(String(t||'')).replace(/\s+/g, ' ').trim(); }
 
-const _MSG_ESCALONAR_DIRETO_DR = 'Essa questão precisa do Kleuber diretamente, tá? Vou pedir pra ele te retornar o mais rápido possível. Qual o melhor horário pra te ligar?';
+// Calculada na hora do uso: o perfil do escritório pode ser alterado sem reiniciar.
+function _msgEscalonarDiretoDr() { return 'Essa questão precisa ' + _titularCliente().replace(/^o /, 'do ') + ' diretamente, tá? Vou pedir retorno o mais rápido possível. Qual o melhor horário pra te ligar?'; }
 const _MSG_LIMITE_PERGUNTAS = 'Agradeco seu contato. Nesta sessao atingimos o limite de 6 perguntas. O escritorio atende em horario comercial e retornaremos no proximo periodo util.';
 const _REGEX_SENSIVEIS_SECRETARIO = [
   /r\$\s*\d+/i,
@@ -4499,7 +4508,7 @@ function _filtrarRespostaSensivel(resposta) {
   const txt = String(resposta||'');
   const hits = _REGEX_SENSIVEIS_SECRETARIO.filter(rx => rx.test(txt));
   if(hits.length) {
-    const msg = _MSG_ESCALONAR_DIRETO_DR;
+    const msg = _msgEscalonarDiretoDr();
     console.warn('[seguranca-whatsapp] conteudo sensivel bloqueado');
     logAtividade('juridico', 'whatsapp', 'seguranca_bloqueio', 'filtro_sensivel').catch(()=>{});
     return { bloqueada: true, resposta: msg, motivos: hits.map(r=>String(r)) };
@@ -4666,24 +4675,24 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
   await _notificarEquipe(resumo).catch(()=>{});
   logAtividade('juridico', cliente?.chat_id || 'whatsapp', 'escalonamento_advogado', motivo || 'n/a').catch(()=>{});
 
-  // ── FOLLOW-UP AUTOMÁTICO: se Kleuber não responder em 5min, avisa o cliente e cobra o Kleuber ──
+  // ── FOLLOW-UP AUTOMÁTICO: se titular não responder em 5min, avisa o cliente e cobra o titular ──
   const clienteNum = cliente?.whatsapp_jid || cliente?.telefone || '';
   const clienteNome = cliente?.nome || 'cliente';
   if(clienteNum) {
-    // Timer 5 minutos: avisa o cliente que está tentando falar com Kleuber
+    // Timer 5 minutos: avisa o cliente que está tentando falar com titular
     setTimeout(async () => {
       // Verifica se já foi resolvido
       const esc = _estadoSecretarioWhatsApp.escalonamentos_memoria.find(e => e.id === item.id);
-      if(esc && esc.resolvido) return; // Kleuber já respondeu, ignora
+      if(esc && esc.resolvido) return; // titular já respondeu, ignora
       
       // Avisa o cliente com tom humano
-      const msgCliente = 'Oi' + (clienteNome !== 'cliente' ? ', ' + clienteNome.split(' ')[0] : '') + '! Estou tentando falar com o Kleuber sobre o seu caso, mas ele deve estar em atendimento agora. Assim que eu conseguir falar com ele ou com a secretária, te dou um retorno, tá? Não vou te deixar sem resposta!';
+      const msgCliente = 'Oi' + (clienteNome !== 'cliente' ? ', ' + clienteNome.split(' ')[0] : '') + '! Estou tentando falar com ' + _titularCliente() + ' sobre o seu caso, mas deve estar em atendimento agora. Assim que eu conseguir falar com o advogado ou com a secretária, te dou um retorno, tá? Não vou te deixar sem resposta!';
       try {
         await envWhatsApp(msgCliente, clienteNum);
         _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente);
       } catch(e) { console.warn('[Lex] Erro follow-up cliente:', e.message); }
       
-      // Cobra a equipe no Telegram (Kleuber + Secretária)
+      // Cobra a equipe no Telegram (titular + Secretária)
       const cobranca = '⚠️ *RETORNO PENDENTE*\n\n'
         + '👤 Cliente: ' + clienteNome + '\n'
         + '📱 WhatsApp: ' + clienteNum + '\n'
@@ -4712,7 +4721,7 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
       const esc = _estadoSecretarioWhatsApp.escalonamentos_memoria.find(e => e.id === item.id);
       if(esc && esc.resolvido) return;
       
-      const msgCliente2 = (clienteNome !== 'cliente' ? clienteNome.split(' ')[0] + ', ' : '') + 'desculpa a demora! O Kleuber ainda está resolvendo algumas questões, mas seu caso não foi esquecido. Vou te dar um retorno assim que possível, tá bom?';
+      const msgCliente2 = (clienteNome !== 'cliente' ? clienteNome.split(' ')[0] + ', ' : '') + 'desculpa a demora! ' + _titularCliente().replace(/^o /,'O ') + ' ainda está resolvendo algumas questões, mas seu caso não foi esquecido. Vou te dar um retorno assim que possível, tá bom?';
       try {
         await envWhatsApp(msgCliente2, clienteNum);
         _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente2);
@@ -4743,8 +4752,8 @@ async function _registrarRespostaAdvogadoWhats() {
   return {notificados:0,pendencia:'Use /responder NUMERO TEXTO EXATO para autorizar um único destinatário.'};
 }
 
-// ── MEDIAÇÃO INTELIGENTE: Lex pega resposta do Kleuber, aperfeiçoa, analisa dúvidas e sugere ──
-async function _mediarRespostaKleuber(respostaKleuber, clienteNome, processo, historicoConversa, jidCliente) {
+// ── MEDIAÇÃO INTELIGENTE: Lex pega resposta do titular, aperfeiçoa, analisa dúvidas e sugere ──
+async function _mediarRespostaTitular(respostaTitular, clienteNome, processo, historicoConversa, jidCliente) {
   const contextoProc = processo ? JSON.stringify({
     numero: processo.numero || null,
     nome: processo.nome || null,
@@ -4766,22 +4775,22 @@ async function _mediarRespostaKleuber(respostaKleuber, clienteNome, processo, hi
   } catch(e) {}
   
   const system = [
-    'Você é o LEX, mediador inteligente entre Kleuber (CEO/analista jurídico) e o cliente do escritório escritório configurado no LEX.',
-    'Kleuber mandou uma resposta pra repassar ao cliente. Seu trabalho:',
+    'Você é o LEX, mediador inteligente entre o titular do escritório e o cliente do ' + _idLex().escritorioFrase + '.',
+    'O titular mandou uma resposta para repassar ao cliente. Seu trabalho:',
     '',
-    '1. APERFEIÇOAR A RESPOSTA: Pegue a essência do que Kleuber escreveu e transforme em uma mensagem profissional, empática, humana, no tom WhatsApp (curta, sem lista, sem robô). Mantenha TODAS as informações que Kleuber passou — não corte nada, só melhore a forma.',
+    '1. APERFEIÇOAR A RESPOSTA: Pegue a essência do que o titular escreveu e transforme em uma mensagem profissional, empática, humana, no tom WhatsApp (curta, sem lista, sem robô). Mantenha TODAS as informações que o titular passou — não corte nada, só melhore a forma.',
     '2. ANALISAR DÚVIDAS: Baseado no histórico da conversa e no processo, identifique dúvidas que o cliente provavelmente ainda tem ou vai ter.',
-    '3. SUGERIR PRO KLEUBER: Se você perceber algo no processo que o Kleuber pode querer informar ao cliente (prazo, próximo passo, documento pendente), sugira.',
-    '4. ANALISAR INSISTÊNCIA: Se o cliente parece ansioso/insistente, avise o Kleuber do nível de urgência emocional.',
-    '5. ORIENTAÇÕES QUE VOCÊ PODE DAR: Se houver alguma orientação geral (prazo, documento necessário, próximo passo) que você pode dar sem precisar de autorização jurídica, sugira pro Kleuber e peça OK.',
+    '3. SUGERIR AO TITULAR: Se você perceber algo no processo que o titular pode querer informar ao cliente (prazo, próximo passo, documento pendente), sugira.',
+    '4. ANALISAR INSISTÊNCIA: Se o cliente parece ansioso/insistente, avise o titular do nível de urgência emocional.',
+    '5. ORIENTAÇÕES QUE VOCÊ PODE DAR: Se houver alguma orientação geral (prazo, documento necessário, próximo passo) que você pode dar sem precisar de autorização jurídica, sugira pro titular e peça OK.',
     '',
     'Responda em JSON com exatamente estas chaves:',
-    '{"msgCliente": "mensagem aperfeiçoada pro cliente (tom WhatsApp humano, curta)", "resumoKleuber": "texto pro Kleuber no Telegram com: dúvidas do cliente, sugestões, nível de insistência, e se tem algo que Lex pode responder com autorização", "orientacoesPossiveis": "lista curta do que Lex pode orientar se Kleuber autorizar (ou null se nada)"}'
+    '{"msgCliente": "mensagem aperfeiçoada pro cliente (tom WhatsApp humano, curta)", "resumoTitular": "texto para o titular no Telegram com: dúvidas do cliente, sugestões, nível de insistência, e se tem algo que Lex pode responder com autorização", "orientacoesPossiveis": "lista curta do que Lex pode orientar se titular autorizar (ou null se nada)"}'
   ].join('\n');
   
   const user = [
-    'RESPOSTA DO KLEUBER (pra aperfeiçoar e enviar ao cliente):',
-    String(respostaKleuber||''),
+    'RESPOSTA DO TITULAR (para aperfeiçoar e enviar ao cliente):',
+    String(respostaTitular||''),
     '',
     'CLIENTE: ' + clienteNome,
     'PROCESSO: ' + contextoProc,
@@ -4801,18 +4810,18 @@ async function _mediarRespostaKleuber(respostaKleuber, clienteNome, processo, hi
     if(jsonMatch) parsed = JSON.parse(jsonMatch[0]);
   } catch(e) {
     // Se não conseguiu parsear, usa resposta como texto direto
-    parsed = { msgCliente: String(respIA||'').substring(0, 500), resumoKleuber: null };
+    parsed = { msgCliente: String(respIA||'').substring(0, 500), resumoTitular: null };
   }
   
-  // Monta resumo pro Kleuber no Telegram
+  // Monta resumo pro titular no Telegram
   let resumoTG = '✅ *RESPOSTA ENVIADA AO CLIENTE*\n\n';
   resumoTG += '👤 Cliente: ' + clienteNome + '\n';
   if(processo?.numero) resumoTG += '📁 Processo: ' + processo.numero + '\n';
-  resumoTG += '\n📤 *O que você mandou:*\n' + String(respostaKleuber||'').substring(0, 200) + '\n';
+  resumoTG += '\n📤 *O que você mandou:*\n' + String(respostaTitular||'').substring(0, 200) + '\n';
   resumoTG += '\n📨 *O que o Lex enviou (aperfeiçoado):*\n' + String(parsed.msgCliente||'').substring(0, 300) + '\n';
   
-  if(parsed.resumoKleuber) {
-    resumoTG += '\n📋 *Análise do Lex:*\n' + String(parsed.resumoKleuber||'');
+  if(parsed.resumoTitular) {
+    resumoTG += '\n📋 *Análise do Lex:*\n' + String(parsed.resumoTitular||'');
   }
   if(parsed.orientacoesPossiveis && parsed.orientacoesPossiveis !== 'null') {
     resumoTG += '\n\n💡 *Posso orientar o cliente sobre:*\n' + String(parsed.orientacoesPossiveis) + '\n\n↪ _Responda "autorizo" se quiser que eu passe essas orientações pro cliente._';
@@ -4820,12 +4829,12 @@ async function _mediarRespostaKleuber(respostaKleuber, clienteNome, processo, hi
   
   return {
     msgCliente: parsed.msgCliente || null,
-    resumoKleuber: resumoTG,
+    resumoTitular: resumoTG,
     orientacoesPossiveis: (parsed.orientacoesPossiveis && parsed.orientacoesPossiveis !== 'null') ? parsed.orientacoesPossiveis : null
   };
 }
 
-// ── HANDLER: Kleuber autoriza orientações sugeridas pelo Lex ──
+// ── HANDLER: titular autoriza orientações sugeridas pelo Lex ──
 async function _processarAutorizacaoLex() {
   // Um sim/ok/autorizo genérico nunca identifica destinatário e conteúdo aprovados.
   return false;
@@ -4869,13 +4878,13 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
     }
   } catch(e) {}
 
-  // ── SE NÃO TEM PROCESSO CADASTRADO: levanta dados e cobra Kleuber ──
+  // ── SE NÃO TEM PROCESSO CADASTRADO: levanta dados e cobra titular ──
   if(!sessao.processo && !sessao._cobrou_cadastro) {
     sessao._cobrou_cadastro = true;
     const nomeCliente = sessao.cliente?.nome || sessao.dados_informados?.nome_completo || 'cliente';
     const cpfCliente = sessao.cliente?.cpf || sessao.dados_informados?.cpf || 'não informado';
     const telCliente = _normalizarNumeroWhats(numero);
-    // Avisa equipe (Kleuber + Secretária) no Telegram para cadastrar
+    // Avisa equipe (titular + Secretária) no Telegram para cadastrar
     const alertaCadastro = '📋 *CADASTRO PENDENTE*\n\n'
       + '👤 Cliente: ' + nomeCliente + '\n'
       + '📄 CPF: ' + cpfCliente + '\n'
@@ -4892,7 +4901,7 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
     return {
       ok: true,
       escalonado: true,
-      resposta: 'Já passei seu caso pro Kleuber, tá? Assim que eu conseguir falar com ele, te dou um retorno!'
+      resposta: 'Já passei seu caso para ' + _titularCliente() + ', tá? Assim que eu tiver a orientação, te dou um retorno!'
     };
   }
 
@@ -4912,7 +4921,7 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
       [String(mensagem||'')]
     );
     await _salvarSessaoSecretarioWhatsApp(sessao);
-    return { ok:true, escalonado:true, resposta:_MSG_ESCALONAR_DIRETO_DR };
+    return { ok:true, escalonado:true, resposta:_msgEscalonarDiretoDr() };
   }
 
   const contextoProc = sessao.processo ? JSON.stringify({
@@ -4932,17 +4941,17 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
     'NUNCA use formato de lista, bullets ou numeração. É uma conversa, não um relatório.',
     'NUNCA diga "Como posso ajudar?" ou frases genéricas de atendimento robótico.',
     'Pode fazer perguntas de volta pro cliente, mostrar interesse genuíno no caso.',
-    'Se o cliente mandar "oi", responda algo como "Oi! Tudo bem? Sou do escritório escritório configurado no LEX, em que posso te ajudar?".',
+    'Se o cliente mandar "oi", responda algo como "Oi! Tudo bem? Sou do ' + _idLex().escritorioFrase + ', em que posso te ajudar?".',
     'Chame o cliente pelo nome quando souber.',
-    'Se precisar transferir pro Kleuber, diga algo tipo "Vou pedir pro Kleuber te retornar, tá? Assim que eu falar com ele ou com a secretária, a gente te dá um retorno!"',
-    'QUANDO NÃO CONSEGUIR RESOLVER: NUNCA diga "não posso ajudar". Diga que vai falar com o Kleuber e pedir pra ele retornar. Exemplo: "Vou passar pro Kleuber e pedir pra ele te retornar, tá bom?"',
+    'Se precisar transferir para o advogado, diga algo tipo "Vou pedir para '+_titularCliente()+' te retornar, tá? Assim que eu falar com o advogado ou com a secretária, a gente te dá um retorno!"',
+    'QUANDO NÃO CONSEGUIR RESOLVER: NUNCA diga "não posso ajudar". Diga que vai falar com o advogado e pedir retorno. Exemplo: "Vou passar para '+_titularCliente()+' e pedir retorno, tá bom?"',
     'PROCESSO CADASTRADO: Se CONTEXTO_PROCESSO tiver dados, use para informar o cliente sobre andamento, status, prazo.',
-    'SEM PROCESSO (CONTEXTO_PROCESSO vazio/{}): Analise o que o cliente precisa, levante o máximo de informações do caso (tipo do problema, valores, datas, partes envolvidas) pra facilitar o cadastro. Avise o cliente que vai encaminhar pro Kleuber.',
+    'SEM PROCESSO (CONTEXTO_PROCESSO vazio/{}): Analise o que o cliente precisa, levante o máximo de informações do caso (tipo do problema, valores, datas, partes envolvidas) pra facilitar o cadastro. Avise o cliente que vai encaminhar pro titular.',
     'SEMPRE ANALISE O CLIENTE: entenda a situação, o tom, a urgência. Passe essas informações pro escalonamento.',
     'Seu tom é: acolhedor, profissional mas descontraído, confiável, humano.',
     'Pode informar somente: '+(cfg.permitido||[]).join(', ')+'.',
     'Assuntos proibidos (NUNCA responda, escalone): '+(cfg.proibido||[]).join(', ')+'.',
-    'Se cliente perguntar assunto proibido, responda EXATAMENTE: "'+_MSG_ESCALONAR_DIRETO_DR+'".',
+    'Se cliente perguntar assunto proibido, responda EXATAMENTE: "'+_msgEscalonarDiretoDr()+'".',
     'Mantenha o cliente calmo e seguro. Se ele estiver nervoso, acolha primeiro, depois informe.'
   ].join('\n');
   const user = [
@@ -4973,7 +4982,7 @@ async function _conversarWhatsAppCliente(numero, mensagem, sessao) {
       [String(mensagem||''), String(resposta||'')]
     );
     await _salvarSessaoSecretarioWhatsApp(sessao);
-    return { ok:true, escalonado:true, resposta:_MSG_ESCALONAR_DIRETO_DR };
+    return { ok:true, escalonado:true, resposta:_msgEscalonarDiretoDr() };
   }
 
   sessao.perguntas_feitas = Number(sessao.perguntas_feitas||0) + 1;
@@ -5763,7 +5772,7 @@ function _agendarCobrador() {
 // ════════════════════════════════════════════════════════════════════════════
 const _PIX_CONFIG = {
   tipo_chave: 'aleatoria',
-  chave: '', // Kleuber vai passar a chave amanhã
+  chave: '', // configurada pelo titular via /setpix
   beneficiario: process.env.PIX_BENEFICIARIO || '',
   cidade: 'BRASILIA',
   celular: process.env.PIX_TELEFONE || ''
@@ -5837,7 +5846,7 @@ async function _lexCobrarClienteWhatsApp(clienteNome, clienteWhatsapp, valor, re
     await envWhatsApp(msg, jid);
     _registrarMsgCentral('whatsapp', 'saida', jid, 'Lex (cobrança PIX)', msg);
     
-    // Notifica Kleuber
+    // Notifica titular
     await envTelegram('💰 *Cobrança enviada!*\n👤 ' + clienteNome + '\n💵 R$ ' + parseFloat(valor).toFixed(2) + '\n📋 ' + (referencia||'—'), null, CHAT_ID).catch(()=>{});
     
     // Salva registro no Supabase
@@ -5859,8 +5868,8 @@ async function _lexCobrarClienteWhatsApp(clienteNome, clienteWhatsapp, valor, re
   }
 }
 
-// Comando /setpix — Kleuber configura a chave PIX via Telegram
-// Comando /cobrar <nome> <whatsapp> <valor> <ref> — Kleuber manda Lex cobrar
+// Comando /setpix — titular configura a chave PIX via Telegram
+// Comando /cobrar <nome> <whatsapp> <valor> <ref> — titular manda Lex cobrar
 // Comando /cobrarlote — cobra todos os clientes pendentes
 // ════════════════════════════════════════════════════════════════════════════
 // PIPELINE UNIFICADA — Telegram E WhatsApp passam por aqui
@@ -6143,7 +6152,7 @@ async function processarMensagem(ctx, dados) {
     return;
   }
 
-  // ── /setpix <chave> — Kleuber configura a chave PIX via Telegram/WhatsApp ──
+  // ── /setpix <chave> — titular configura a chave PIX via Telegram/WhatsApp ──
   if(/^\/setpix\s+/i.test(txt) && isAdmin(chatId)) {
     const novaChave = txt.replace(/^\/setpix\s+/i, '').trim();
     if(!novaChave) { await env('Use: /setpix <sua-chave-pix-aleatoria>', ctx); return; }
@@ -6271,7 +6280,7 @@ async function processarMensagem(ctx, dados) {
 
   // ════════════════════════════════════════════════════════════════════════
   // ── AGENTE CADASTRADOR INTELIGENTE — /novocaso (Telegram + WhatsApp) ──
-  // Fluxo: Kleuber manda /novocaso → modo intake → envia fotos/textos/áudios
+  // Fluxo: titular manda /novocaso → modo intake → envia fotos/textos/áudios
   //        → /pronto (ou 2min silêncio) → IA lê TUDO → cria caso → lista faltantes
   // ════════════════════════════════════════════════════════════════════════
 
@@ -6294,7 +6303,7 @@ async function processarMensagem(ctx, dados) {
       }
 
       // 2. Montar contexto completo pra IA interpretar
-      let contextoCompleto = '=== MENSAGENS DO ANALISTA JURÍDICO (KLEUBER) ===\n';
+      let contextoCompleto = '=== MENSAGENS DO TITULAR DO ESCRITÓRIO ===\n';
       sessao.textos.forEach((t,i) => contextoCompleto += (i+1) + '. ' + t + '\n');
 
       if (dadosImagens.length) {
@@ -6317,8 +6326,8 @@ async function processarMensagem(ctx, dados) {
       }
 
       // 3. IA interpreta TUDO e monta o caso
-      const systemIntake = `Você é o Agente Cadastrador do escritório escritório configurado no LEX — setor de AUTUAÇÃO.
-Kleuber Melchior (CEO e Analista Jurídico) está cadastrando um caso novo a partir de fotos e descrições.
+      const systemIntake = `Você é o Agente Cadastrador do ${_idLex().escritorioFrase} — setor de AUTUAÇÃO.
+O titular do escritório está cadastrando um caso novo a partir de fotos e descrições.
 Use a inscrição profissional informada no cadastro do responsável.
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO ESPECIALISTA, não robô:
@@ -6332,7 +6341,7 @@ DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO ESPECIALISTA, não robô:
   * Divórcio, guarda, pensão, inventário = FAMÍLIA (judicial)
   * Crime, BO, denúncia, lesão corporal = CRIMINAL (judicial)
   * Recurso administrativo, PAD, licitação, servidor público, multa administrativa = ADMINISTRATIVO
-- Se Kleuber DISSER que é administrativo/judicial, OBEDEÇA — ele é o CEO.
+- Se o titular DISSER que é administrativo/judicial, OBEDEÇA — ele é quem decide.
 - Se o documento for de Receita Federal/CARF = TRIBUTÁRIO + tipo ADMINISTRATIVO
 - Se o documento for de INSS negando benefício = PREVIDENCIÁRIO + tipo JUDICIAL
 
@@ -6376,7 +6385,7 @@ REGRAS:
    - Administrativo: RG, CPF, ato administrativo impugnado, comprovante residência, recurso administrativo se houver
 5. NÃO invente dados — se não tem, deixe vazio
 6. LEIA o documento inteiro antes de classificar — não chute a área por uma palavra isolada
-7. Se Kleuber disser "processo administrativo" ou "recurso administrativo", o tipo_processo É administrativo`;
+7. Se o titular disser "processo administrativo" ou "recurso administrativo", o tipo_processo É administrativo`;
 
       const iaResp = await ia([{role:'user',content:contextoCompleto}], systemIntake, 1500, MODELO_TOP);
       let dados = null;
@@ -6741,7 +6750,7 @@ REGRAS:
       instrucoes = mProc[2];
       proc = processos.find(p => p.nome.toLowerCase().includes(nomeProc.toLowerCase()));
     }
-    // Chama o módulo pericial (sem cálculos por enquanto — Kleuber fornece via /calc)
+    // Chama o módulo pericial (sem cálculos por enquanto — titular fornece via /calc)
     await Lex.consultar('Pericial','gerarLaudo',ctx,mem,proc,instrucoes,null);
     return;
   }
@@ -6897,7 +6906,7 @@ async function _detectarIntencaoProcesso(txt, ctx, mem) {
     return 'ID:'+p.id+' | '+p.nome+' | Nº:'+(p.numero||'—')+' | Partes:'+(p.partes||'—')+' | Autor:'+(autorN||'—')+' | Réu:'+(reuN||'—')+' | Cliente:'+(p.cliente||'—')+' | Área:'+(p.area||p.area_direito||'—')+' | Tipo:'+(p.tipo_acao||p.tipo||'—')+' | Status:'+(p.status||'—')+' | Prazo:'+(p.prazo||'—')+' | Vara:'+(p.vara||'—')+' | Juiz:'+(p.juiz||p.juiz_relator||'—');
   }).join('\n');
   
-  const system = `Você é o Lex, gestor inteligente do escritório escritório configurado no LEX.
+  const system = `Você é o Lex, gestor inteligente do ${_idLex().escritorioFrase}.
 O usuário mandou mensagem via ${ctx.canal||'telegram'}. Analise se quer consultar, atualizar ou agir sobre algum processo.
 
 PROCESSOS CADASTRADOS (busque por QUALQUER campo: nome, número, partes, autor, réu, cliente, área, tipo):
@@ -7054,9 +7063,9 @@ async function _conversaInteligente(ctx, mem, txt, low) {
       conteudo = ultimoAnd ? ('Último andamento: '+ultimoAnd.data+' - '+ultimoAnd.txt+'\n\nDescrição do caso: '+(proc.descricao||'')) : (proc.descricao||'(sem conteúdo direto)');
     } else if(lc === 'adversa' || lc.includes('peça adversa') || lc.includes('peca adversa')) {
       tipoConteudo = 'peca_adversa';
-      conteudo = '(Kleuber vai colar a peça adversa na próxima mensagem ou já está em algum PDF analisado)';
+      conteudo = '(o titular vai colar a peça adversa na próxima mensagem ou já está em algum PDF analisado)';
     } else {
-      // Descrição livre de Kleuber
+      // Descrição livre do titular
       tipoConteudo = 'pedido_livre';
       conteudo = trim;
     }
@@ -7085,7 +7094,7 @@ async function _conversaInteligente(ctx, mem, txt, low) {
     return;
   }
 
-  // ── HANDLER ASSESSOR — estratégia (Kleuber escolhe direção após diagnóstico) ──
+  // ── HANDLER ASSESSOR — estratégia (titular escolhe direção após diagnóstico) ──
   if(mem.aguardando === 'assessor_estrategia' && mem.dadosColetados?.assessorDiagnostico) {
     const trim = txt.trim();
     if(/^(cancel|cancela|parar|sair)/i.test(trim)) {
@@ -7132,7 +7141,7 @@ async function _conversaInteligente(ctx, mem, txt, low) {
 
   // ════════════════════════════════════════════════════════════════════════
   // HANDLER v3.0: CONFIRMAÇÃO 1/2/3 APÓS MATCH ENCONTRADO
-  // Kleuber escolhe: 1=NOVO (ignora match), 2=CONFIRMAR andamento, 3=consultoria
+  // titular escolhe: 1=NOVO (ignora match), 2=CONFIRMAR andamento, 3=consultoria
   // ════════════════════════════════════════════════════════════════════════
   if(mem.aguardando === 'confirmar_andamento_123' && mem.dadosColetados?.processoMatch) {
     const respRaw = (txt||'').trim();
@@ -7220,7 +7229,7 @@ async function _conversaInteligente(ctx, mem, txt, low) {
 
   // ════════════════════════════════════════════════════════════════════════
   // HANDLER v3.0: CONFIRMAÇÃO 1/2/3 QUANDO NÃO HOUVE MATCH
-  // Kleuber escolhe: 1=cadastrar NOVO, 2=cancelar, 3=consultoria
+  // titular escolhe: 1=cadastrar NOVO, 2=cancelar, 3=consultoria
   // ════════════════════════════════════════════════════════════════════════
   if(mem.aguardando === 'sem_match_123' && mem.dadosColetados?.analisePendente) {
     const respRaw = (txt||'').trim();
@@ -7348,7 +7357,7 @@ async function _conversaInteligente(ctx, mem, txt, low) {
         delete mem.dadosColetados.candidatosAmbiguos;
         delete mem.dadosColetados.analisePendente;
         delete mem.dadosColetados.arqPendente;
-        // v3.0: como Kleuber JÁ escolheu manualmente o processo, aplicamos direto
+        // v3.0: como titular JÁ escolheu manualmente o processo, aplicamos direto
         // sem passar pelo 1/2/3 de confirmação (seria redundante)
         if(procEscolhido.numero) analise.numero_processo = procEscolhido.numero;
         logAtividade('juridico', ctx.chatId, 'roteador_resolvido_manual',
@@ -8186,7 +8195,7 @@ function _normCNJ(s) {
 // AGENTE ROTEADOR v1 — Pontuação multi-critério + desambiguação
 // ════════════════════════════════════════════════════════════════════════════
 //
-// Resolve o problema: "Eliane x Wanderson tem 3 processos. Qual é este PDF?"
+// Resolve o problema: "as mesmas partes têm 3 processos. Qual é este PDF?"
 //
 // REGRAS:
 // 1. CNJ exato (ou últimos 15 dígitos) → match direto, score 100+
@@ -8233,6 +8242,26 @@ function _scorePartes(analise, proc) {
   return Math.min(40, acertos * 10);
 }
 
+// Extrai a cidade/comarca de um texto já normalizado por _normTexto.
+// Aceita "comarca/foro/secao judiciaria de X", "... de X UF" e "X UF" no fim.
+const _UFS_LEX = 'ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to';
+const _NAO_CIDADE_LEX = /\b(tj[a-z]*|trf[a-z0-9]*|trt[a-z0-9]*|tre[a-z]*|stj|stf|tst|jf|vara|varas|civel|civil|criminal|federal|estadual|juizado|juizados|tribunal|justica|trabalho|fazenda|publica|familia|especial|regional|turma|camara|secao|subsecao|judiciaria|foro|comarca)\b/;
+function _extrairCidadeTribunal(txt) {
+  const t = String(txt || '').replace(/\s+/g, ' ').trim();
+  if(!t) return null;
+  const limpar = c => {
+    const v = String(c || '').replace(new RegExp('\\s+(' + _UFS_LEX + ')$'), '').trim();
+    return v.length >= 3 && !_NAO_CIDADE_LEX.test(v) ? v : null;
+  };
+  const m1 = t.match(new RegExp('\\b(?:comarca|foro(?:\\s+regional)?|subsecao judiciaria|secao judiciaria)\\s+(?:de|do|da)\\s+([a-z]+(?:\\s+(?!(?:' + _UFS_LEX + ')\\b)[a-z]+){0,3})'));
+  if(m1 && limpar(m1[1])) return limpar(m1[1]);
+  const m2 = t.match(new RegExp('\\b(?:de|do|da|em)\\s+([a-z]+(?:\\s+[a-z]+){0,2}?)\\s+(?:' + _UFS_LEX + ')\\b'));
+  if(m2 && limpar(m2[1])) return limpar(m2[1]);
+  const m3 = t.match(new RegExp('([a-z]{3,}(?:\\s+[a-z]{3,}){0,2})\\s+(?:' + _UFS_LEX + ')$'));
+  if(m3) { const partes = m3[1].split(' '); for(let i = 0; i < partes.length; i++) { const c = limpar(partes.slice(i).join(' ')); if(c) return c; } }
+  return null;
+}
+
 // Score 0-30: vara + cidade/comarca batem
 function _scoreVara(analise, proc) {
   const t1 = _normTexto(analise.tribunal || '');
@@ -8252,13 +8281,14 @@ function _scoreVara(analise, proc) {
   const v2 = extrairVara(t2);
 
   // Extrai cidade/UF
-  const cidades = ['unai','brasilia','belo horizonte','sao paulo','santo amaro','palmas','silves','bonfinopolis'];
-  const cidade1 = cidades.find(c => t1.includes(c));
-  const cidade2 = cidades.find(c => t2.includes(c));
+  // Genérico para qualquer escritório: sem lista fixa de cidades de uma carteira.
+  const cidade1 = _extrairCidadeTribunal(t1);
+  const cidade2 = _extrairCidadeTribunal(t2);
 
   let score = 0;
   if(v1 && v2 && v1 === v2) score += 15;
-  if(cidade1 && cidade2 && cidade1 === cidade2) score += 15;
+  // "santo amaro" x "santo amaro sao paulo": mesma comarca descrita com mais ou menos detalhe.
+  if(cidade1 && cidade2 && (cidade1 === cidade2 || (' '+cidade1+' ').includes(' '+cidade2+' ') || (' '+cidade2+' ').includes(' '+cidade1+' '))) score += 15;
   // Se palavras do tribunal batem (ex: "TJMG", "TRT")
   const palT1 = new Set(_palavrasRelevantes(t1));
   const palT2 = new Set(_palavrasRelevantes(t2));
@@ -8315,7 +8345,7 @@ function _scoreValor(analise, proc) {
   return diff <= 0.1 ? 10 : 0;
 }
 
-// Score 0-15: juiz/relator confere — v3.0 — SEMPRE ATIVO (pedido de Kleuber)
+// Score 0-15: juiz/relator confere — v3.0 — SEMPRE ATIVO (pedido do titular)
 // Se um dos lados não tem juiz registrado, retorna 0 (neutro, não penaliza)
 function _scoreJuiz(analise, proc) {
   const j1 = _normTexto(analise.juiz_relator || '');
@@ -8326,7 +8356,7 @@ function _scoreJuiz(analise, proc) {
   if(j1 === j2) return 15;
 
   // Match por palavras relevantes (sobrenome ou nome principal)
-  // Kleuber: o documento pode trazer "Des. Amauri Pinto Ferreira" e o cadastro
+  // titular: o documento pode trazer "Des. Amauri Pinto Ferreira" e o cadastro
   //          "Amauri Ferreira" — precisa tolerar essa variação.
   const pal1 = new Set(_palavrasRelevantes(j1));
   const pal2 = new Set(_palavrasRelevantes(j2));
@@ -8657,7 +8687,7 @@ function _cadastrarProcessoNovo(analise, arq, opcoes) {
 
 // ── O AGENTE propriamente dito ──
 async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
-  // Formata resposta estruturada no estilo que Kleuber pediu:
+  // Formata resposta estruturada no estilo que titular pediu:
   //   [CABEÇALHO]  identificação do processo
   //   [ANÁLISE]    o que mudou
   //   [AÇÃO]       o que o Lex fez
@@ -8711,7 +8741,7 @@ async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
     return;
   }
 
-  // ── CASO B: SEM MATCH — PERGUNTA 1/2/3 (v3.0, pedido de Kleuber) ──
+  // ── CASO B: SEM MATCH — PERGUNTA 1/2/3 (v3.0, pedido do titular) ──
   if(decisao.tipo === 'sem_match') {
     mem.aguardando = 'sem_match_123';
     mem.dadosColetados.analisePendente = analise;
@@ -8747,7 +8777,7 @@ async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
     return;
   }
 
-  // ── CASO C: MATCH ENCONTRADO — SEMPRE PERGUNTA 1/2/3 (v3.0, pedido de Kleuber) ──
+  // ── CASO C: MATCH ENCONTRADO — SEMPRE PERGUNTA 1/2/3 (v3.0, pedido do titular) ──
   // Comportamento anterior (v2.9): atualizava direto quando CNJ exato batia.
   // Comportamento novo (v3.0): SEMPRE exibe os dados do processo localizado
   // e pergunta se é NOVO, CONFIRMAR andamento, ou só consultoria.
@@ -8821,7 +8851,7 @@ async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
 
 // ════════════════════════════════════════════════════════════════════════════
 // APLICA ATUALIZAÇÃO DE ANDAMENTO NO PROCESSO (v3.0)
-// Extraído do CASO C antigo. Chamado depois que Kleuber responde "2" no
+// Extraído do CASO C antigo. Chamado depois que titular responde "2" no
 // fluxo de confirmação 1/2/3 (handler confirmar_andamento_123 abaixo).
 // ════════════════════════════════════════════════════════════════════════════
 async function _aplicarAtualizacaoNoProcesso(ctx, mem, arq, analise, proc) {
@@ -8954,7 +8984,7 @@ async function _aplicarAtualizacaoNoProcesso(ctx, mem, arq, analise, proc) {
     }
   }
 
-  // ── ANÁLISE ESTRATÉGICA (instrução permanente do Kleuber) ──
+  // ── ANÁLISE ESTRATÉGICA (instrução permanente do titular) ──
   if(analise.eh_decisao || analise.resposta_sugerida) {
     rel += '\n\n━━━ ANÁLISE ESTRATÉGICA ━━━';
     if(analise.resposta_sugerida) rel += '\n💼 Peça sugerida: '+analise.resposta_sugerida;
@@ -9105,7 +9135,7 @@ async function adapterTelegram(msg) {
   if(!isTelegramOwner(msg,CHAT_ID)) return telegramReception.receive(msg);
   if(await telegramReception.ownerCommand(msg)) return;
   const ownerText=String(msg.text||'').trim();
-  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return env('Olá, Dr. Kleuber. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a clientes, informe destinatário e texto exato.',ctx);
+  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return env('Olá, '+_titularSaudacao()+'. Sou o '+_idLex().assistente+', coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a clientes, informe destinatário e texto exato.',ctx);
   if(/^\/(resp|autorizo|pode|manda)(?:\s|$)/i.test(ownerText)) return env('Informe o destinatário e o texto exato. Telegram: /respondertg ID TEXTO. WhatsApp: /responder NUMERO TEXTO no seu WhatsApp privado.',ctx);
 
   // Imagem
@@ -9149,10 +9179,10 @@ async function adapterTelegram(msg) {
   if(/^\/resp\s+/i.test(textoTg.trim()) && (isAdmin(chatId) || _isTelegramSecretaria(chatId))) {
     const respTexto = textoTg.trim().replace(/^\/resp\s+/i, '').trim();
     if(!respTexto) return env('Use: /resp <mensagem para o cliente>', ctx);
-    const quem = isAdmin(chatId) ? 'kleuber' : 'secretaria';
+    const quem = isAdmin(chatId) ? 'titular' : 'secretaria';
     const result = await _registrarRespostaAdvogadoWhats(respTexto, quem).catch(()=>({notificados:0}));
     if(result.notificados > 0) {
-      return env('✅ Resposta enviada ao cliente (aperfeiçoada pelo Lex).\n' + (quem === 'secretaria' ? 'Kleuber foi notificado.' : ''), ctx);
+      return env('✅ Resposta enviada ao cliente (aperfeiçoada pelo Lex).\n' + (quem === 'secretaria' ? 'O titular foi notificado.' : ''), ctx);
     } else {
       return env('⚠️ Nenhum cliente aguardando retorno no momento.', ctx);
     }
@@ -9188,11 +9218,11 @@ async function adapterEvolution(body) {
   if(access!=='operator') return publicWhatsappReception(body,EVO_INST);
   if(await handleWhatsappOperatorCommand(body,EVO_INST)) return;
   const ownerText=String(msgData.conversation||msgData.extendedTextMessage?.text||'').trim();
-  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá, Dr. Kleuber. Sou o LEX, coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
+  if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá, '+_titularSaudacao()+'. Sou o '+_idLex().assistente+', coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
   if(/^(sim|ok|autorizo|pode|manda|envia)[!. ]*$/i.test(ownerText)) return envWhatsApp('Para enviar uma resposta ao cliente, preciso do destinatário e do texto exato: /responder NUMERO TEXTO. Nenhuma mensagem foi autorizada por este comando genérico.',chatIdWpp);
   const operador={perfil:'admin'};
   const txtOp=ownerText;
-      // /configsecretaria <chat_id> — Kleuber configura o Telegram da secretária
+      // /configsecretaria <chat_id> — titular configura o Telegram da secretária
       if(operador.perfil === 'admin' && /^\/configsecretaria\s+(\d+)/i.test(txtOp.trim())) {
         const match = txtOp.trim().match(/^\/configsecretaria\s+(\d+)/i);
         if(match) {
@@ -9204,7 +9234,7 @@ async function adapterEvolution(body) {
           await envWhatsApp('✅ Secretária configurada! Telegram Chat ID: ' + secChatId + '\nEla vai receber notificações de escalonamento junto com você.', chatIdWpp).catch(()=>{});
           await envTelegram('✅ Secretária configurada no Telegram (Chat ID: ' + secChatId + '). Ela vai receber as notificações de escalonamento.', null, CHAT_ID).catch(()=>{});
           if(secChatId) {
-            await envTelegram('👋 Olá! Sou o Lex, assistente do escritório escritório configurado no LEX.\n\nVocê foi configurada como secretária. A partir de agora vai receber as notificações de escalonamento dos clientes do WhatsApp.\n\nPode responder com instruções que eu repasso pro cliente!', null, secChatId).catch(()=>{});
+            await envTelegram('👋 Olá! Sou o Lex, assistente do ' + _idLex().escritorioFrase + '.\n\nVocê foi configurada como secretária. A partir de agora vai receber as notificações de escalonamento dos clientes do WhatsApp.\n\nPode responder com instruções que eu repasso pro cliente!', null, secChatId).catch(()=>{});
           }
           return;
         }
@@ -9270,27 +9300,40 @@ async function adapterEvolution(body) {
 // ════════════════════════════════════════════════════════════════════════════
 // SERVIDOR HTTP + API REST
 // ════════════════════════════════════════════════════════════════════════════
-// FIX (PDF grandes): limite elevado para 500MB p/ aceitar lotes e anexos muito grandes.
-// base64 -> +33% overhead; 500MB cobre cenarios de pericia com varios PDFs.
-// Rotas curtas (ex: /api/chat texto puro) continuam sendo rejeitadas corretamente.
+// Limite global do corpo JSON (LEX_MAX_BODY_MB, padrão 32 MB). Acima dele a
+// requisição é recusada com 413 e o conteúdo já recebido é descartado.
 const LEX_MAX_BODY_BYTES = parseInt(process.env.LEX_MAX_BODY_MB || '32', 10) * 1024 * 1024;
 function lerBody(req) {
   return new Promise((res,rej)=>{
     const chunks = [];
     let tamanho = 0;
+    let excedeu = false;
     req.on('data', c=>{
-      chunks.push(c);
+      if(excedeu) return;
       tamanho += c.length;
       if(tamanho > LEX_MAX_BODY_BYTES) {
+        // Descarta o que já chegou e recusa: não acumular além do limite em RAM.
+        excedeu = true;
+        chunks.length = 0;
+        const erro = new Error('Payload muito grande ('+Math.round(tamanho/1048576)+'MB > '+Math.round(LEX_MAX_BODY_BYTES/1048576)+'MB)');
+        erro.status = 413;
         try { req.destroy(); } catch(_) {}
-        rej(new Error('Payload muito grande ('+Math.round(tamanho/1048576)+'MB > '+Math.round(LEX_MAX_BODY_BYTES/1048576)+'MB)'));
+        rej(erro);
+        return;
       }
+      chunks.push(c);
     });
     req.on('end', ()=>{
-      try{
-        const raw = Buffer.concat(chunks).toString('utf8');
-        res(raw ? JSON.parse(raw) : {});
-      }catch(e){ res({}); }
+      if(excedeu) return;
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if(!raw.trim()) { res({}); return; }
+      try { res(JSON.parse(raw)); }
+      catch(e) {
+        // JSON inválido não vira pedido vazio executável: falha fechada.
+        const erro = new Error('Corpo JSON inválido');
+        erro.status = 400;
+        rej(erro);
+      }
     });
     req.on('error', rej);
   });
@@ -9387,6 +9430,60 @@ function getToken(req) {
   return null;
 }
 
+
+// ═══ SENHAS — hash scrypt, comparação em tempo constante e IP real atrás de proxy ═══
+// Valores legados em texto continuam aceitos e são convertidos para hash no login.
+const LEX_SENHA_PREFIXO = 'scrypt$';
+function hashSenhaLex(senha) {
+  const salt = CRYPTO.randomBytes(16);
+  const hash = CRYPTO.scryptSync(String(senha), salt, 32, {N:16384, r:8, p:1});
+  return LEX_SENHA_PREFIXO + '16384$' + salt.toString('base64') + '$' + hash.toString('base64');
+}
+function senhaEhHashLex(valor) { return typeof valor === 'string' && valor.startsWith(LEX_SENHA_PREFIXO); }
+function conferirSenhaLex(informada, armazenada) {
+  if(typeof informada !== 'string' || typeof armazenada !== 'string' || !informada || !armazenada) return false;
+  try {
+    if(senhaEhHashLex(armazenada)) {
+      const [, custo, salt, hash] = armazenada.split('$');
+      const esperado = Buffer.from(hash || '', 'base64');
+      const N = Number(custo);
+      if(!esperado.length || !Number.isSafeInteger(N) || N < 1024 || N > 1048576) return false;
+      const calculado = CRYPTO.scryptSync(informada, Buffer.from(salt || '', 'base64'), esperado.length, {N, r:8, p:1, maxmem:256*1024*1024});
+      return CRYPTO.timingSafeEqual(calculado, esperado);
+    }
+    const a = CRYPTO.createHash('sha256').update(informada).digest();
+    const b = CRYPTO.createHash('sha256').update(armazenada).digest();
+    return CRYPTO.timingSafeEqual(a, b);
+  } catch(e) { return false; }
+}
+// x-forwarded-for pode ser forjado pelo cliente. Só a posição gravada pelo
+// último proxy confiável (Render = 1 salto) identifica o IP para o rate limit.
+function ipClienteLex(req) {
+  const env = (typeof process !== 'undefined' && process.env) ? process.env : {};
+  const saltos = Number.parseInt(env.LEX_TRUSTED_PROXY_HOPS ?? '1', 10);
+  const direto = (req.socket && req.socket.remoteAddress) || '';
+  if(!Number.isSafeInteger(saltos) || saltos <= 0) return direto || 'desconhecido';
+  const lista = String((req.headers && req.headers['x-forwarded-for']) || '').split(',').map(v => v.trim()).filter(Boolean);
+  if(lista.length >= saltos) return lista[lista.length - saltos];
+  return direto || lista[0] || 'desconhecido';
+}
+// Encerra imediatamente streams SSE abertos com um token revogado.
+function encerrarSseDoTokenLex(token) {
+  if(typeof _sseClientes === 'undefined' || !_sseClientes || !global._sseTokens) return 0;
+  let encerrados = 0;
+  for(const [cid, tk] of global._sseTokens) {
+    if(tk !== token) continue;
+    const cres = _sseClientes.get(cid);
+    try { if(cres) { cres.write('event: sessao_encerrada\ndata: {"motivo":"revogada"}\n\n'); cres.end(); } } catch(e) {}
+    _sseClientes.delete(cid); global._sseTokens.delete(cid); encerrados++;
+  }
+  return encerrados;
+}
+function sessaoAindaValidaLex(token) {
+  if(!token || (global._tokensRevogados && global._tokensRevogados.has(token))) return false;
+  const ultimo = global._sessaoAtividade ? global._sessaoAtividade.get(token) : null;
+  return !!ultimo && (Date.now() - ultimo) <= AUTH_IDLE_MS;
+}
 
 // PATCH BOT FINAL: helpers faltantes
 function notificarTodosSSE(evento, dados) {
@@ -9696,7 +9793,7 @@ async function _assistenteAtendimento(processo, fatos, area, subtipo) {
   const docsSub = (checkArea.por_subtipo||{})[subtipo||processo.tipo_acao||''] || [];
   const alertas = checkArea.alertas || [];
 
-  const prompt = `Você é o ASSISTENTE DE ATENDIMENTO do escritório escritório configurado no LEX (OAB/MG 118.237).
+  const prompt = `Você é o ASSISTENTE DE ATENDIMENTO do ${_idLex().escritorioFrase}${_idLex().registro ? ' (' + _idLex().registro + ')' : ''}.
 Analise o caso e gere RELATÓRIO COMPLETO DE ATENDIMENTO.
 
 ═══ DADOS DO CASO ═══
@@ -9747,7 +9844,7 @@ REGRAS: Cite artigos e leis EXATOS. Para previdenciário: verificar carência, q
 function _formatarRelatorioAtendimento(rel, processo) {
   const L = [];
   L.push('═══════════════════════════════════════════════════════');
-  L.push('   RELATÓRIO DE ATENDIMENTO — CAMARGOS ADVOCACIA');
+  L.push('   RELATÓRIO DE ATENDIMENTO' + (typeof _idLex === 'function' && _idLex().escritorio ? ' — ' + _idLex().escritorio.toUpperCase() : ''));
   L.push('═══════════════════════════════════════════════════════');
   L.push('Data: ' + new Date().toLocaleString('pt-BR'));
   L.push('Processo: ' + (processo.nome||'—') + ' | Nº: ' + (processo.numero||'(sem número)'));
@@ -10201,7 +10298,7 @@ const server = http.createServer(async (req, res) => {
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
     await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,
       engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,
-      setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};},log:msg=>console.warn('[Tarefa]',msg)});
+      setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
   }
   if(req.method==='POST' && ['/api/webhook-whatsapp','/api/whatsapp/webhook'].includes(url)) {
@@ -10221,6 +10318,16 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Aparelho-Id'
     });
     res.end('Lex OK');
+    return;
+  }
+
+  // Negação por padrão: toda rota /api/* exige sessão válida, salvo as públicas
+  // abaixo, que têm autenticação própria (senha, segredo de webhook ou conector).
+  const ROTAS_PUBLICAS_LEX = new Set(['/api/login', '/api/ping', '/api/webhook-whatsapp',
+    '/api/whatsapp/webhook', '/api/conector/andamento', '/api/webhook-asaas', '/api/auth/refresh']);
+  if(url.startsWith('/api/') && !ROTAS_PUBLICAS_LEX.has(url) && !validarToken(getToken(req))) {
+    res.writeHead(401, CORS);
+    res.end(JSON.stringify({error:'Nao autenticado'}));
     return;
   }
 
@@ -10245,7 +10352,7 @@ const server = http.createServer(async (req, res) => {
   // ── AUTH ──
   if(url==='/api/login' && req.method==='POST') {
     try {
-      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      const clientIp = ipClienteLex(req);
       if(!_checkLoginRate(clientIp)) {
         res.writeHead(429, corsHeaders(req));
         res.end(JSON.stringify({error:'Muitas tentativas. Aguarde 15 minutos.'}));
@@ -10262,10 +10369,14 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(503,corsHeaders(req));
         res.end(JSON.stringify({error:'Senha nao configurada. Configure a senha do perfil no servidor.'}));
         return;
-      } else if(b.senha !== senhaCorreta) {
+      } else if(!conferirSenhaLex(b.senha, senhaCorreta)) {
         res.writeHead(401,corsHeaders(req));
         res.end(JSON.stringify({error:'Senha incorreta'}));
         return;
+      }
+      // Senha legada em texto: converte para hash sem bloquear o login.
+      if(!senhaEhHashLex(senhaCorreta) && typeof salvarSenhaSupabase === 'function') {
+        Promise.resolve().then(()=>salvarSenhaSupabase(b.perfil, b.senha)).catch(()=>{});
       }
       
       const token = gerarToken(b.perfil);
@@ -10294,7 +10405,7 @@ const server = http.createServer(async (req, res) => {
       const alvo = b.perfilAlvo || perfil;
       if(perfil !== 'admin' && alvo !== perfil) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissao'})); return; }
       if(!Object.hasOwn(SENHAS_WEB, alvo)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil invalido'})); return; }
-      if(perfil !== 'admin' && b.senhaAtual !== await obterSenhaValida(alvo)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Senha atual incorreta'})); return; }
+      if(perfil !== 'admin' && !conferirSenhaLex(b.senhaAtual, await obterSenhaValida(alvo))) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Senha atual incorreta'})); return; }
       if(typeof b.novaSenha !== 'string' || b.novaSenha.length < 8) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'Senha deve ter pelo menos 8 caracteres'})); return; }
       if(!await salvarSenhaSupabase(alvo,b.novaSenha)) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({error:'Banco nao confirmou a gravacao'})); return; }
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true,msg:'Senha alterada com sucesso'}));
@@ -11238,13 +11349,13 @@ if(url==='/api/memoria' && req.method==='GET') {
         try {
           enviado = await envTelegram(texto, null, destino);
           if(!enviado) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,enviado:false,error:'Telegram nao confirmou o envio'})); return; }
-          _registrarMsgCentral('telegram', 'saida', destino, 'Kleuber (Lex)', texto);
+          _registrarMsgCentral('telegram', 'saida', destino, (_idLex().titular || 'Titular') + ' (Lex)', texto);
         } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro Telegram: '+e.message})); return; }
       } else if(canal === 'whatsapp') {
         try {
           enviado = await envWhatsApp(texto, destino);
           if(!enviado) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,enviado:false,error:'WhatsApp nao confirmou o envio'})); return; }
-          _registrarMsgCentral('whatsapp', 'saida', destino, 'Kleuber (Lex)', texto);
+          _registrarMsgCentral('whatsapp', 'saida', destino, (_idLex().titular || 'Titular') + ' (Lex)', texto);
         } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:'Erro WhatsApp: '+e.message})); return; }
       } else {
         res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'canal deve ser telegram ou whatsapp'})); return;
@@ -11595,6 +11706,8 @@ if(url==='/api/memoria' && req.method==='GET') {
     });
     const clientId = Date.now() + '_' + Math.random().toString(36).slice(2);
     _sseClientes.set(clientId, res);
+    if(!global._sseTokens) global._sseTokens = new Map();
+    global._sseTokens.set(clientId, tkSse);
     console.log('[SSE] Cliente conectado:', clientId, '| total:', _sseClientes.size);
     // Envia estado inicial
     res.write('event: conectado\ndata: '+JSON.stringify({
@@ -11604,12 +11717,15 @@ if(url==='/api/memoria' && req.method==='GET') {
       ts: Date.now()
     })+'\n\n');
     // Heartbeat a cada 25s para manter conexão viva (proxies matam após 30s sem dados)
+    // O heartbeat não renova a sessão: stream de sessão revogada/inativa é encerrado.
     const hbInterval = setInterval(() => {
+      if(!sessaoAindaValidaLex(tkSse)) { clearInterval(hbInterval); encerrarSseDoTokenLex(tkSse); return; }
       try { res.write(': heartbeat\n\n'); } catch(e) { clearInterval(hbInterval); }
     }, 25000);
     req.on('close', () => {
       clearInterval(hbInterval);
       _sseClientes.delete(clientId);
+      if(global._sseTokens) global._sseTokens.delete(clientId);
       console.log('[SSE] Cliente desconectado:', clientId, '| restantes:', _sseClientes.size);
     });
     return;
@@ -11977,7 +12093,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!tk || !validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Token invalido'})); return; }
       if(!global._tokensRevogados) global._tokensRevogados = new Set();
       global._tokensRevogados.add(tk);
-      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Sessao revogada'}));
+      if(global._sessaoAtividade) global._sessaoAtividade.delete(tk);
+      const streamsEncerrados = encerrarSseDoTokenLex(tk);
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Sessao revogada', streams_encerrados:streamsEncerrados}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
@@ -12859,7 +12977,7 @@ async function _motorProativoLex() {
     
     msg += `\n\n💡 _Lex está monitorando. Próxima verificação em 6h._`;
     
-    // Enviar pro Kleuber via Telegram
+    // Enviar pro titular via Telegram
     try {
       const queued = await envTelegramAgendado(msg, null, CHAT_ID);
       if(queued?.enfileirado) console.log('[LEX MOTOR] Relatório enfileirado para Telegram.');
@@ -12913,7 +13031,7 @@ class AgenteRoteador extends AgenteBase {
   constructor() {
     super({
       nome: 'Roteador',
-      descricao: 'Identifica qual processo é qual entre os cadastrados. Resolve casos com partes iguais (ex: Eliane x 3 processos).',
+      descricao: 'Identifica qual processo é qual entre os cadastrados. Resolve casos com partes iguais (ex.: mesmas partes em 3 processos).',
       status: 'pronto',
       ferramentas: ['identificarProcesso', 'calcularScore']
     });
@@ -12941,7 +13059,7 @@ class AgenteCobrador extends AgenteBase {
   constructor() {
     super({
       nome: 'Cobrador',
-      descricao: 'Monitora processos atrasados. Limiares: URGENTE 6d, ATIVO 15d, EM_PREP 30d. Notifica Kleuber via scheduler 24h.',
+      descricao: 'Monitora processos atrasados. Limiares: URGENTE 6d, ATIVO 15d, EM_PREP 30d. Notifica o titular via scheduler 24h.',
       status: 'pronto',
       ferramentas: ['executar', 'listarAtrasados', 'diasSemAtualizacao']
     });
@@ -12989,7 +13107,7 @@ class AgentePericial extends AgenteBase {
 // ════════════════════════════════════════════════════════════════════════════
 //
 // ARQUITETURA:
-//   1. lex-agente.js (Playwright no PC do Wanderson) consulta PJe com A3
+//   1. lex-agente.js (Playwright no computador do escritório) consulta PJe com A3
 //   2. Quando detecta andamento novo, envia POST para o Lex (endpoint abaixo)
 //   3. Este agente recebe, valida, e reporta evento ao Lex
 //   4. LEX persiste o andamento pelo CNJ exato, sem inventar ou substituir prazos.
@@ -13553,7 +13671,7 @@ function _formatarHorasMinutos(mins) {
 async function bootInicio() {
   try {
     const profile=(await recordStore.read('lex_office'))?.value;
-    if(profile){officeProfile=profile;ESCRITORIO={...ESCRITORIO,...profile};}
+    if(profile){officeProfile=profile;ESCRITORIO={...ESCRITORIO,...profile};officeIdentity.setOfficeProfile(ESCRITORIO);}
     const state=await processStore.read();
     processos.splice(0,processos.length,...state.processes);processosVersao=state.version;
     processosUltimoAparelho=state.device||'banco';
