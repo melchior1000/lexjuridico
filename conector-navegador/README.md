@@ -1,7 +1,7 @@
 # LEX — conector de captura assistida (piloto)
 
 Este conector importa o texto que o advogado seleciona na página do tribunal.
-Não é uma integração de acervo completo. Não lê cookies, senhas, PIN, certificado
+Não conecta nem autentica no PJe e não é uma integração de acervo completo. Não lê cookies, senhas, PIN, certificado
 ou arquivos do computador. Não assina, protocola nem clica em ciência.
 
 1. Extraia este ZIP em uma pasta do computador do escritório.
