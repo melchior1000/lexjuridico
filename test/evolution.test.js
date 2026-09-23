@@ -233,18 +233,14 @@ test('email com anexo é montado localmente, sem envio SMTP', async () => {
   assert.deepEqual(result.envelope.to,['destino@example.invalid']);
 });
 
-test('marcadores de chat não executam escrita para secretaria', async () => {
-  // O teste do handler comprova que o perfil real chega ao executor.
-  let perfilRecebido;
+test('/api/chat é compatibilidade somente leitura e não executa marcadores', async () => {
+  let chamadas=0;
   const app=setup({MODELO_MID:'test-model',ia:async () => '[ATUALIZAR:1:status:ATIVO]',
-    _processarMarcadoresChat:async (texto,perfil) => {perfilRecebido=perfil;return [];}});
-  assert.equal((await app.request('/api/chat',app.token('secretaria'),{messages:[{role:'user',content:'teste'}],system:'teste'},'POST')).status,200);
-  assert.equal(perfilRecebido,'secretaria');
-  const start=source.indexOf('async function _processarMarcadoresChat(');
-  const end=source.indexOf('\n}\n',start)+2;
-  const ctx=vm.createContext({});
-  vm.runInContext(source.slice(start,end),ctx);
-  assert.equal((await ctx._processarMarcadoresChat('[ATUALIZAR:1:status:ATIVO]','secretaria')).length,0);
+    _processarMarcadoresChat:async () => {chamadas++;return [{ok:true}];}});
+  const result=await app.request('/api/chat',app.token('secretaria'),{messages:[{role:'user',content:'teste'}],system:'teste'},'POST');
+  assert.equal(result.status,200);
+  assert.equal(chamadas,0);
+  assert.deepEqual(JSON.parse(result.body).acoes_executadas,[]);
 });
 
 test('frontend não chama API Anthropic quando servidor falha', async () => {
