@@ -32,12 +32,12 @@ Controle definido pelo titular em 19/09/2026 e consolidado para o fechamento com
 **E3 — Histórico/resposta pelo canal correto.** PR #84 registra a regra de resposta pelo canal de origem e de só persistir a saída após confirmação do provedor; PRs #85/#86 conectam esse fluxo à central integrada. O aceite funcional foi consolidado em 19/09/2026 na lista-mestra. O ✅ cobre roteamento/histórico; não equivale a homologação E2E dos canais 7 e 8.
 
 Links localizáveis:
-- https://github.com/melchior1000/lexjuridico/pull/79
-- https://github.com/melchior1000/lexjuridico/pull/82
-- https://github.com/melchior1000/lexjuridico/pull/83
-- https://github.com/melchior1000/lexjuridico/pull/84
-- https://github.com/melchior1000/lexjuridico/pull/85
-- https://github.com/melchior1000/lexjuridico/pull/86
+- PR #79
+- PR #82
+- PR #83
+- PR #84
+- PR #85
+- PR #86
 
 ## Regras de independência
 
