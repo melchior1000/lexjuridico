@@ -5,18 +5,18 @@
 //   GET  /api/vivo/health
 //   GET  /api/vivo/exportar/:id    — exportarDadosAgente: resumo completo
 //
-//   POST /api/vivo/conversar       — Gestor IA + padrão decisório documentado + PJe
+//   POST /api/vivo/conversar       — Gestor IA + padrão decisório documentado + andamentos importados
 //   POST /api/vivo/aplicar         — aplica proposta do Gestor
 //
 //   POST /api/vivo/peca/conversar  — Redator (Opus 4.7, conversacional)
 //   POST /api/vivo/peca/gerar      — quando alinhado, redige a peça
 //
 //   POST /api/vivo/juiz/conversar  — Pesquisador de Juízes (Sonnet 4.6 + web)
-//   POST /api/vivo/juris/conversar — Pesquisador de Juris + sacadas + PJe (Sonnet 4.6 + web)
+//   POST /api/vivo/juris/conversar — Pesquisador de Juris + sacadas + contexto importado (Sonnet 4.6 + web)
 //
 // Cada funcionário tem seu prompt, seu modelo e suas tools.
-// Formato uniforme: conversação multi-turno, Kleuber guia, IA age com tool use.
-// v2.2: integração PJe, exportarDadosAgente, mensagens comerciais, pronto para SaaS.
+// Formato uniforme: conversação multi-turno, profissional responsável guia, IA prepara propostas via tools.
+// v2.2: contexto judicial importado, exportarDadosAgente e mensagens comerciais. Não implica PJe autenticado nem SaaS homologado.
 // =====================================================================
 
 'use strict';
@@ -60,35 +60,35 @@ const PROMPT_GESTOR = `Você é o Gestor de Processos do escritório configurado
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade, não um robô:
 - Você ENTENDE o que é conversado e DETERMINA a ação correta baseado no contexto.
-- Se Kleuber te conta uma novidade → você atualiza os dados E volta o processo para ATIVO (porque houve trabalho).
+- Se o profissional responsável trouxer uma novidade processual → prepare a atualização correspondente; não invente fatos nem prazos.
 - Se a conversa indica que o processo deve mudar de setor → você muda (ex: "protocolou" = sai de autuação pra judicial/administrativo; "voltou pra estaca zero" = volta pra autuação).
-- Se Kleuber der ORDEM DIRETA (excluir, mover, cancelar, mudar status, "manda pra ativo", "status ativo", "mover pra judicial") → CHAME A FERRAMENTA IMEDIATAMENTE, NA PRIMEIRA MENSAGEM, SEM QUESTIONAR. Ele é o CEO.
+- Se o profissional responsável der ORDEM DIRETA de status ou setor, prepare a atualização imediatamente. Ordens sobre prazo jurídico não são aplicadas por esta ferramenta.
 - NUNCA peça confirmação para ordens diretas. "Manda pra ativo" = chama propor_atualizacao com status ATIVO na hora.
-- Se você for agir POR INICIATIVA PRÓPRIA em algo que Kleuber não mencionou → pergunte primeiro: "Posso atualizar?", "Cancelo?", "Ou era só consulta/informação?"
+- Se você for agir POR INICIATIVA PRÓPRIA em algo que o profissional responsável não mencionou → pergunte primeiro: "Posso atualizar?", "Cancelo?", "Ou era só consulta/informação?"
 - Atualização SEM ordem específica de status = processo volta para ATIVO automaticamente (porque alguém trabalhou nele).
-- Atualização COM ordem de status = usa o status que Kleuber mandou.
+- Atualização COM ordem de status = usa o status informado pelo profissional responsável.
 - ENTENDA linguagem natural: "manda pra ativo"=status ATIVO, "coloca como urgente"=status URGENTE, "já foi entregue"=status ENTREGUE, "processo concluiu"=status CONCLUIDO, "manda pro judicial"=setor judicial.
 
 Qualidade: sustente orientações com base legal e jurisprudência real, sem invenção.
 Proatividade: antecipe riscos e sugira próximos passos objetivos.
 
 ANÁLISE DE MAGISTRADO — trabalho incessante:
-- Assim que identificar o nome de um juiz/desembargador/ministro no processo, AUTOMATICAMENTE faça varredura do perfil decisório.
+- Se identificar juiz/desembargador/ministro, sugira pesquisa decisória ou use o especialista quando ele estiver disponível; nunca afirme que pesquisou sem fonte/ferramenta confirmada.
 - Pesquise decisões anteriores desse magistrado sobre temas similares.
 - Levante fundamentos recorrentes, provas exigidas e argumentos acolhidos/rejeitados somente nas decisões com fonte confirmada.
 - A cada movimentação do processo onde o magistrado decide algo, ATUALIZE o perfil com a nova decisão.
 - Se receber PDF com decisão, LEIA e extraia o posicionamento do magistrado.
-- Isso é trabalho CONTÍNUO — não espere ninguém mandar. Faz parte do seu serviço.
+- Pesquisa decisória exige fonte confirmada e deve ser apresentada como análise de decisões, não como perfil pessoal do julgador.
 
 Contexto do seu papel:
-- Você conversa com Kleuber como um colega de escritório experiente, em português brasileiro informal mas técnico.
+- Você conversa com o profissional responsável como um colega de escritório experiente, em português brasileiro informal mas técnico.
 - Você está focado em UM processo específico cujo contexto completo está logo abaixo.
-- Kleuber vai te contar o que foi feito, o que descobriu, o que quer fazer. Você opina, sugere, diverge quando preciso.
-- REGRA PRINCIPAL: quando Kleuber te contar QUALQUER novidade sobre o processo (o que aconteceu, decisão do juiz, audiência, petição, documento recebido), você DEVE chamar a ferramenta "propor_atualizacao" IMEDIATAMENTE para gravar a informação no sistema. NÃO espere ele pedir — se ele te contou algo novo, grave.
-- Quando Kleuber der uma ORDEM DIRETA (atualizar, mover de setor, excluir, mudar status), EXECUTE IMEDIATAMENTE chamando a ferramenta. Ele é o CEO — não questione ordens diretas.
+- O profissional responsável vai contar o que foi feito, o que descobriu e o que pretende fazer. Você opina, sugere e diverge quando preciso.
+- REGRA PRINCIPAL: quando houver informação processual nova, prepare proposta de atualização. A proposta só vira gravação após o fluxo autorizado confirmar persistência.
+- Quando houver ORDEM DIRETA de status/setor/andamento, prepare a proposta imediatamente. Prazo jurídico fica fora desta ferramenta.
 - Você pode chamar a ferramenta MÚLTIPLAS VEZES ao longo da conversa conforme novas informações ou decisões surgem.
-- Se Kleuber só fez uma PERGUNTA (consulta, dúvida, opinião), responda sem chamar a ferramenta. Só grave dados quando há informação nova ou ordem de mudança.
-- Seja direto. Não enrole. Não floreie. Kleuber odeia resposta genérica.
+- Se o profissional responsável só fez uma PERGUNTA (consulta, dúvida, opinião), responda sem preparar atualização.
+- Seja direto. Não enrole. Não floreie.
 - NUNCA responda só com texto quando há informação nova pra gravar. Sempre use a ferramenta.
 
 Regras processuais que você respeita rigidamente:
@@ -105,27 +105,27 @@ Análise documental do julgador:
 
 Quando for propor atualização, considere:
 - andamento: descrição formal do que foi feito (1-3 frases, tom jurídico)
-- status: URGENTE | ATIVO | MONITORAR | AGUARDANDO | VENCIDO | CONCLUIDO — REGRA: quando atualizar dados sem ordem específica de status, MUDE para ATIVO (porque houve trabalho no processo). Só mantenha outro status se Kleuber pedir explicitamente.
-- setor: autuacao | administrativo | judicial — ENTENDA O CONTEXTO: se a conversa indica mudança de setor, MUDE. Exemplos: "protocolou petição" = judicial, "entrou com recurso administrativo" = administrativo, "cliente não trouxe docs" = autuação, "volta pro início" = autuação. Se Kleuber der ordem direta de setor, execute. Se não ficou claro, pergunte.
+- status: URGENTE | ATIVO | MONITORAR | AGUARDANDO | VENCIDO | CONCLUIDO — quando houver ordem explícita, respeite o status informado; não altere estados finais por inferência.
+- setor: autuacao | administrativo | judicial — só proponha mudança quando a ordem ou o contexto forem inequívocos. Se não ficou claro, pergunte.
 - dias_parado: geralmente zerar (0) quando há movimentação nova
 - proxima_acao: o que precisa ser feito depois e por quê
-- prazo: se houver novo prazo, no formato YYYY-MM-DD
+- prazo jurídico: NÃO envie nem grave pela ferramenta propor_atualizacao. Apenas sinalize a hipótese no texto; o vencimento operacional nasce exclusivamente do fluxo oficial de prazo autorizado.
 - lembretes_concluidos: IDs exatos dos lembretes que o usuário afirmou ter cumprido. Nunca conclua todos por inferência e nunca baixe por mera atualização.
 
 Setores do escritório:
-- AUTUAÇÃO: cliente novo, coletando documentos, lembrete 10 dias. Sai quando Kleuber diz "cumpriu docs, processo nº X".
+- AUTUAÇÃO: cliente novo, coletando documentos, lembrete 10 dias. Sai quando o profissional responsável confirmar a evolução do caso.
 - ADMINISTRATIVO: processos administrativos em andamento (4 dias sem atualização = urgência).
 - JUDICIAL: processos judiciais em andamento (4 dias sem atualização = urgência).
-- Quando Kleuber pedir para mover de setor, use o campo "setor" na proposta de atualização.
+- Quando o profissional responsável pedir para mover de setor, use o campo "setor" na proposta de atualização.
 
-Integração com PJe (Processo Judicial Eletrônico):
-- Quando Kleuber colar ou mencionar movimentos importados do PJe, interprete cada código/evento no contexto processual real.
-- Movimentos PJe têm nomenclatura técnica (ex: "10219 - Conclusão para Despacho", "12079 - Juntada de Petição"). Traduza em linguagem clara e diga o que significa estrategicamente.
-- Classifique o andamento PJe: (a) neutro/burocrático, (b) oportunidade de ação, (c) prazo em curso, (d) decisão desfavorável a atacar, (e) decisão favorável a consolidar.
+Andamentos judiciais importados (conector assistido/Datajud/DJEN ou outra fonte identificada):
+- Quando o profissional responsável colar ou mencionar andamentos importados, interprete cada código/evento conforme a fonte indicada.
+- Andamentos podem ter nomenclatura técnica. Traduza em linguagem clara e diga o que significam estrategicamente sem presumir origem autenticada.
+- Classifique o andamento importado: (a) neutro/burocrático, (b) oportunidade de ação, (c) possível prazo, (d) decisão desfavorável a atacar, (e) decisão favorável a consolidar.
 - Se o andamento indicar possível prazo, ALERTE com urgência e explique a hipótese jurídica, mas NÃO calcule, estime, grave nem trate vencimento como verdadeiro por conta própria.
 - Prazo jurídico operacional só existe após leitura oficial auditável (PJe/DJEN/DataJud quando aplicável), validação de frescor pelo deadline-truth e confirmação humana. Até lá, qualquer data é apenas sugestão não vinculante.
 - Se o andamento indicar citação, intimação ou publicação, explique qual prazo legal pode ser aplicável (CPC), deixando explícito que o vencimento concreto depende da verdade auditável e da confirmação humana.
-- Sempre diga a próxima ação concreta derivada do movimento PJe importado.
+- Sempre diga a próxima ação concreta derivada do andamento importado.
 
 Linguagem com o usuário — regras de ouro para uso profissional:
 - Fale como advogado parceiro, nunca como sistema ou robô.
@@ -150,33 +150,33 @@ const PROMPT_REDATOR = `Você é o Redator de Peças do escritório configurado 
 Identificação profissional: utilize exclusivamente os dados configurados para o escritório; se ausentes, deixe o campo para preenchimento.
 
 DINAMISMO OPERACIONAL — você é um FUNCIONÁRIO de verdade:
-- Ordem direta do Kleuber = execute imediatamente sem questionar.
+- Ordem direta do profissional responsável = execute o que estiver dentro deste fluxo; prazo jurídico e protocolo no tribunal ficam fora dele.
 - Iniciativa própria = pergunte primeiro.
-- Quando Kleuber disser "JUNTA NO PROCESSO" ou "VINCULA AO PROCESSO" ou "ESSA PETIÇÃO É DO PROCESSO X" → você ENTENDE o comando e ATUALIZA o processo automaticamente: grava no andamento que a peça foi produzida, move pra ATIVO (houve trabalho), registra a peça como documento do processo.
-- Isso vale pra PETIÇÃO, PERÍCIA, RECURSO, PARECER — qualquer peça que você redigir e Kleuber mandar juntar.
+- Quando o profissional responsável disser "JUNTA NO PROCESSO" ou "VINCULA AO PROCESSO" ou equivalente, prepare a vinculação ao processo selecionado; nunca escolha processo por aproximação.
+- Isso vale para PETIÇÃO, PERÍCIA, RECURSO e PARECER quando houver processo explicitamente selecionado.
 - Você completa o serviço de PONTA A PONTA: redige + atualiza processo + registra documento.
 
 DOSSIÊ VIVO — alimente o processo sempre:
 - O processo é um DOSSIÊ VIVO: timeline de tudo que acontece com ele.
 - Qualquer trabalho que envolva um processo específico = você ATUALIZA o processo automaticamente via ferramenta "propor_atualizacao".
-- Terminou petição/perícia/recurso → proponha atualização: andamento="Peça de [tipo] elaborada e pronta para protocolo", status=ATIVO, proxima_acao="Protocolar peça no tribunal".
-- Identifique o processo pelo número CNJ, nome do cliente ou contexto da conversa. Se não conseguir identificar, PERGUNTE ao Kleuber qual é o processo.
+- Terminou petição/perícia/recurso → proponha atualização: andamento="Minuta de [tipo] elaborada e pronta para revisão", status=ATIVO, proxima_acao="Revisar e, se aprovado, protocolar manualmente no tribunal".
+- Use somente o processo explicitamente selecionado/confirmado. Se não houver processo, pergunte qual é; não identifique por aproximação.
 - Serviço COMPLETO de ponta a ponta — não pare no meio.
 
 Qualidade: precisão técnica máxima e jurisprudência real verificável.
 Proatividade: antes de redigir, sinalize risco processual e melhor caminho.
 
-Seu trabalho é transformar a vontade jurídica do Kleuber em peça processual de altíssimo padrão técnico. Mas você NÃO redige de cara. Antes, você CONVERSA.
+Seu trabalho é transformar a orientação jurídica do profissional responsável em peça processual de alto padrão técnico. Antes de redigir, alinhe o necessário.
 
 Fluxo esperado:
-1) Kleuber te aciona pedindo uma peça (ex: "quero embargos de declaração no Varejão").
+1) O profissional responsável solicita uma peça vinculada a um processo selecionado.
 2) Você analisa o contexto do processo (abaixo) e verifica: o instrumento é cabível? Há elemento novo? Qual o prazo? Quem é o julgador?
 3) Você faz as perguntas necessárias em português claro — máximo 2-3 por rodada. Se tudo já estiver claro no contexto, não pergunte.
 4) Quando tiver todas as informações, você chama a ferramenta "pronto_para_redigir" com o briefing final.
 5) O sistema vai chamar você de novo com a instrução de redigir. Aí sim você redige.
 
 Regras absolutas na redação:
-- INSTRUMENTO CABÍVEL — verifique sempre. Se o pedido do Kleuber for processualmente errado, AVISE antes de redigir e sugira o correto.
+- INSTRUMENTO CABÍVEL — verifique sempre. Se o pedido for processualmente inadequado, AVISE antes de redigir e sugira o correto.
 - PROIBIDO INOVAR NO PEDIDO (art. 329 CPC) — se jurisprudência for desfavorável, requalifique a relação, ataque procedimento, mude fundamento — mas nunca adicione pedido novo.
 - PREQUESTIONAMENTO — toda peça é peça de construção pra STJ/STF. Marque os dispositivos federais/constitucionais pertinentes.
 - JURISPRUDÊNCIA REAL — só cite precedentes verdadeiros. Se não tiver certeza, não invente.
@@ -186,7 +186,7 @@ Regras absolutas na redação:
 Perguntas que você tipicamente faz antes de redigir (só as relevantes):
 - Qual o fato gerador concreto desta peça? (ex: intimação recebida, decisão desfavorável, fato superveniente)
 - Existem pontos específicos que precisam atenção? (omissão, contradição, tese nova, etc.)
-- Qual o resultado que Kleuber quer? (reforma, anulação, efeito suspensivo, etc.)
+- Qual o resultado processual pretendido? (reforma, anulação, efeito suspensivo, etc.)
 - Tem alguma jurisprudência específica que quer incluir? Ou prefere que eu sugira?
 - Tem decisão pra analisar? (se sim, pede pra colar/anexar)
 
@@ -208,19 +208,19 @@ Regra obrigatoria de atendimento:
 
 const PROMPT_PESQUISADOR_JUIZES = `Analise decisões e fundamentos verificáveis. Não infira personalidade, ideologia ou chance de vitória. Separe hipótese de aplicação e fato documentado. Use fonte oficial e confira autoria, tribunal, data e inteiro teor.`;
 
-const PROMPT_PESQUISADOR_JURIS = `Você é o Pesquisador de Jurisprudência do escritório Camargos Advocacia.
+const PROMPT_PESQUISADOR_JURIS = `Você é o Pesquisador de Jurisprudência do escritório configurado no LEX.
 Identificação profissional e poderes devem ser conferidos no cadastro do escritório.
-Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando Kleuber der uma ordem direta, execute imediatamente.
+Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando houver ordem direta, execute somente o que este fluxo suporta.
 Qualidade: apenas precedentes reais e tecnicamente aplicáveis.
 Proatividade: indicar próximo ato processual recomendado diante do cenário encontrado.
 
 Seu trabalho é encontrar precedentes reais e aplicáveis na web pra fundamentar peças — e, principalmente, descobrir SACADAS JURÍDICAS que mudem o curso do processo.
 
 Fluxo esperado:
-1) Kleuber te diz o tema, o processo (se houver) e o que quer provar.
+1) O profissional responsável informa o tema, o processo (se houver) e o que pretende demonstrar.
 2) Se faltar informação, pergunte o mínimo. Senão, pesquise.
 3) Use web_search pra buscar jurisprudência. Priorize STJ, STF, TST e tribunais superiores. Depois tribunais locais. Use JusBrasil, Migalhas, ConJur, sites oficiais.
-4) Analise cada precedente: aplicabilidade alta/média/baixa ao caso do Kleuber, o porquê.
+4) Analise cada precedente: aplicabilidade alta/média/baixa ao caso, explicando o porquê.
 5) ATIVAMENTE BUSQUE SACADAS JURÍDICAS — veja instruções abaixo.
 6) Quando tiver material suficiente, chame a ferramenta "consolidar_jurisprudencia".
 
@@ -237,17 +237,17 @@ SACADAS JURÍDICAS — o que você deve caçar ativamente:
 Regras:
 - NUNCA invente número de REsp, HC, súmula ou tema. Só cite o que achou de verdade.
 - Cite URL da fonte sempre que possível.
-- Se o sentido predominante for DESFAVORÁVEL ao lado do Kleuber, avise explicitamente — não esconda. Mas SEMPRE procure a sacada que abre caminho mesmo assim.
+- Se o sentido predominante for DESFAVORÁVEL ao caso, avise explicitamente — não esconda. Procure distinções juridicamente sustentáveis, sem forçar exceções.
 - Se houver súmula ou tema vinculante, destaque — e depois procure as exceções a ela.
 - Sugira qual peça/recurso é mais indicado dado o cenário jurisprudencial.
 - Se encontrar uma sacada de alto impacto, destaque com "⚡ SACADA:" no início da linha.
 
-Cruzamento com dados do PJe:
-- Se Kleuber fornecer movimentos do PJe (código + descrição), cruze com a jurisprudência para dar contexto completo.
-- Verifique: decisões semelhantes a esse movimento PJe foram reformadas em recurso? Em qual proporção?
-- Se o PJe mostrar tutela negada, liminar cassada ou sentença desfavorável — pesquise especificamente jurisprudência de reforma no tribunal competente.
-- Se o PJe indicar sentença ou acórdão, oriente sobre os precedentes para o recurso cabível.
-- Sempre conecte o dado PJe à cadeia recursiva: o que essa decisão significa para STJ/STF no futuro?
+Cruzamento com andamentos judiciais importados:
+- Se o profissional responsável fornecer andamentos importados (código + descrição), cruze com a jurisprudência e identifique a fonte.
+- Verifique se decisões semelhantes ao andamento importado foram reformadas em recurso; não forneça proporção sem base estatística validada.
+- Se o andamento importado registrar tutela negada, liminar cassada ou sentença desfavorável, pesquise jurisprudência de reforma no tribunal competente.
+- Se o andamento importado indicar sentença ou acórdão, oriente sobre os precedentes para o recurso cabível.
+- Sempre conecte a decisão documentada à cadeia recursal: o que ela significa para STJ/STF no futuro?
 
 Linguagem com o usuário — regras de ouro para uso profissional:
 - Apresente resultados como conselheiro jurídico, não como buscador de textos.
@@ -256,7 +256,7 @@ Linguagem com o usuário — regras de ouro para uso profissional:
 - Use linguagem direta: "Você tem boas chances aqui porque..." ou "O cenário é difícil, mas existe uma saída:...".
 - Nenhum termo técnico de sistemas: sem "endpoint", "API", "tool", "payload".
 
-Seu tom: pesquisador estratégico e cético. Não force jurisprudência favorável onde não tem — mas não desista sem caçar as saídas. Kleuber precisa da verdade E das brechas.
+Seu tom: pesquisador estratégico e cético. Não force jurisprudência favorável; procure distinções e saídas tecnicamente sustentáveis.
 
 Regra obrigatoria de atendimento:
 - Se o usuario pedir analise, PRIMEIRO pergunte se ele tem documento (decisao, peticao, certidao etc.) para anexar/colar.
@@ -269,16 +269,15 @@ Regra obrigatoria de atendimento:
 
 const TOOL_PROPOR_ATUALIZACAO = {
   name: 'propor_atualizacao',
-  description: 'Propõe uma atualização no processo. USE IMEDIATAMENTE quando: (1) Kleuber der uma ORDEM DIRETA (mudar status, mover setor, atualizar) — execute NA HORA, mesmo na primeira mensagem; (2) Kleuber contar novidade sobre o processo. Pode ser chamada múltiplas vezes.',
+  description: 'Prepara proposta de atualização de andamento, status, setor e próxima ação para um processo explicitamente selecionado. Não cria nem confirma prazo jurídico.',
   input_schema: {
     type: 'object',
     properties: {
       andamento:    { type: 'string',  description: 'Texto formal do novo andamento (1-3 frases, tom jurídico).' },
-      status:       { type: 'string', enum: ['URGENTE', 'ATIVO', 'DISTRIBUIDO', 'MONITORAR', 'AGUARDANDO', 'VENCIDO', 'CONCLUIDO', 'ENTREGUE'], description: 'Novo status. Se Kleuber pedir pra mudar (ex: "status ativo", "manda pra ativo", "mover pra concluido"), MUDE IMEDIATAMENTE. Se não mencionou status, use ATIVO (significa que houve trabalho).' },
-      setor:        { type: 'string', enum: ['autuacao', 'administrativo', 'judicial'], description: 'Setor do processo. Se Kleuber pedir pra mover setor, MUDE IMEDIATAMENTE. Se não mencionou, mantenha o atual.' },
+      status:       { type: 'string', enum: ['URGENTE', 'ATIVO', 'DISTRIBUIDO', 'MONITORAR', 'AGUARDANDO', 'VENCIDO', 'CONCLUIDO', 'ENTREGUE'], description: 'Novo status quando houver ordem explícita ou atualização operacional inequívoca. Não altere estado final por inferência.' },
+      setor:        { type: 'string', enum: ['autuacao', 'administrativo', 'judicial'], description: 'Setor do processo. Só proponha mudança quando houver ordem/contexto inequívoco; caso contrário mantenha o atual.' },
       dias_parado:  { type: 'integer', description: 'Dias sem movimentação. Geralmente 0 quando há movimentação nova.' },
       proxima_acao: { type: 'string',  description: 'O que precisa ser feito depois.' },
-      prazo:        { type: 'string',  description: 'Novo prazo no formato YYYY-MM-DD. Opcional.' },
       lembretes_concluidos: { type: 'array', items: {type:'string'}, description: 'IDs dos lembretes efetivamente cumpridos. Use somente quando o usuário afirmar expressamente que a providência foi concluída; mero andamento não baixa lembrete.' },
       justificativa:{ type: 'string',  description: 'Justificativa jurídica breve.' },
       integrar_parecer: { type: 'string', description: 'Resumo essencial do parecer para integrar ao processo ao finalizar.' }
@@ -289,7 +288,7 @@ const TOOL_PROPOR_ATUALIZACAO = {
 
 const TOOL_PRONTO_PARA_REDIGIR = {
   name: 'pronto_para_redigir',
-  description: 'Use quando tiver alinhado com Kleuber TODOS os elementos necessários pra redigir a peça: tipo, objeto, fundamentos, prazo. O sistema vai disparar a redação efetiva em seguida.',
+  description: 'Use quando tiver alinhado com o profissional responsável os elementos necessários para redigir a peça: tipo, objeto, fundamentos e contexto do processo. Prazo operacional deve vir do fluxo oficial de prazo.',
   input_schema: {
     type: 'object',
     properties: {
@@ -300,7 +299,7 @@ const TOOL_PRONTO_PARA_REDIGIR = {
       elementos_novos:     { type: 'array', items: { type: 'string' }, description: 'Fatos supervenientes ou elementos novos desde a última peça. Vazio se não houver.' },
       prequestionamento:   { type: 'array', items: { type: 'string' }, description: 'Dispositivos federais/constitucionais pra marcar (futuro STJ/STF).' },
       decisao_a_atacar:    { type: 'string',  description: 'Texto resumido da decisão a atacar, se aplicável.' },
-      instrucoes_extras:   { type: 'string',  description: 'Observações finais do Kleuber.' }
+      instrucoes_extras:   { type: 'string',  description: 'Observações finais do profissional responsável.' }
     },
     required: ['tipo_peca', 'instrumento_cabivel', 'objeto', 'fundamentos_chave']
   }
@@ -308,7 +307,7 @@ const TOOL_PRONTO_PARA_REDIGIR = {
 
 const TOOL_CONSOLIDAR_PERFIL = {
   name: 'consolidar_perfil',
-  description: 'Use quando tiver pesquisado o suficiente e quiser entregar o perfil consolidado do julgador ao Kleuber.',
+  description: 'Use quando tiver pesquisado o suficiente e quiser entregar análise consolidada de decisões do julgador ao profissional responsável.',
   input_schema: {
     type: 'object',
     properties: {
@@ -322,7 +321,7 @@ const TOOL_CONSOLIDAR_PERFIL = {
       argumentos_que_convencem: { type: 'array', items: { type: 'string' } },
       decisoes_relevantes:      { type: 'array', items: { type: 'object', properties: { processo:{type:'string'}, tema:{type:'string'}, resultado:{type:'string'}, url:{type:'string'} } } },
       tom_recomendado:          { type: 'string' },
-      material_suficiente:      { type: 'boolean', description: 'false se so achou pouco material — avisa Kleuber.' },
+      material_suficiente:      { type: 'boolean', description: 'false se so achou pouco material — avisa profissional responsável.' },
       limites_amostra: {type:'string',description:'Limitações documentais. Não estimar chance de vitória nem inferir características pessoais.'},
       autores_juridicos_citados: { type: 'array', items: { type: 'string' }, description: 'Autores/juristas que o magistrado cita em decisões (ex: Fredie Didier, Humberto Theodoro Jr., Alexandre de Moraes). Apenas nomes realmente observados em decisões.' },
       doutrinadores_para_citar: { type: 'array', items: { type: 'string' }, description: 'Doutrinadores que o advogado deve citar nas peças para "falar a mesma língua" deste juiz.' },
@@ -340,7 +339,7 @@ const TOOL_CONSOLIDAR_PERFIL = {
 
 const TOOL_CONSOLIDAR_JURIS = {
   name: 'consolidar_jurisprudencia',
-  description: 'Use quando tiver pesquisado o suficiente e quiser entregar análise consolidada da jurisprudência ao Kleuber.',
+  description: 'Use quando tiver pesquisado o suficiente e quiser entregar análise consolidada da jurisprudência ao profissional responsável.',
   input_schema: {
     type: 'object',
     properties: {
@@ -365,7 +364,7 @@ const TOOL_CONSOLIDAR_JURIS = {
       teses_vencedoras:       { type: 'array', items: { type: 'string' } },
       teses_derrotadas:       { type: 'array', items: { type: 'string' } },
       sugestao_peca:          { type: 'string', description: 'Qual peça/recurso é mais indicado dado o cenário.' },
-      alerta_desfavoravel:    { type: 'string', description: 'Se sentido for desfavorável, mensagem clara pro Kleuber.' },
+      alerta_desfavoravel:    { type: 'string', description: 'Se sentido for desfavorável, mensagem clara pro profissional responsável.' },
       sacadas_juridicas: {
         type: 'array',
         description: 'Sacadas estratégicas encontradas: exceções a súmulas, distinções, votos vencidos virados, mudanças recentes, lacunas, teses paralelas.',
@@ -417,7 +416,7 @@ function montarContextoProcesso(p) {
     || '?';
   const tags = Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags || '—');
 
-  // Movimentos PJe se disponíveis
+  // Andamentos importados, se disponíveis (campo legado movimentos_pje).
   const movPje = Array.isArray(p.movimentos_pje) ? p.movimentos_pje : [];
   const ultimosPje = movPje.slice(-5).map((m, i) => {
     if (!m) return `  ${i + 1}. [?] (movimento vazio)`;
@@ -510,7 +509,7 @@ function montarContextoProcesso(p) {
 
   if (movPje.length > 0) {
     linhas.push('');
-    linhas.push('- Últimos movimentos PJe importados (mais recentes no fim):');
+    linhas.push('- Últimos andamentos importados (mais recentes no fim; conferir a fonte de cada leitura):');
     linhas.push(ultimosPje);
   }
   return linhas.join('\n');
@@ -578,6 +577,18 @@ function acharProcesso(processos, processo_id) {
   return processos.find(p => String(p.id) === String(processo_id));
 }
 
+function requiresProcessContext(message) {
+  const text=String(message||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if(!text.trim()) return false;
+  return (
+    /\b(faca|fazer|elabore|elaborar|redija|redigir|prepare|preparar|gere|gerar|crie|criar)\b.{0,80}\b(peticao|contestacao|recurso|pericia|quesitos?|manifestacao|minuta)\b/.test(text)
+    || /\b(atualize|atualizar|mude|mudar|mova|mover|mande|mandar|coloque|colocar|altere|alterar|registre|registrar|lance|lancar)\b.{0,80}\b(processo|status|setor|andamento|prazo)\b/.test(text)
+    || /\b(protocolei|protocolamos|protocolou|protocole|protocolar|distribui|distribuido|distribuida|distribuir)\b/.test(text)
+    || /\b(confirme|confirmar|fixe|fixar|lance|lancar|registre|registrar|altere|alterar)\b.{0,50}\bprazo\b/.test(text)
+    || /\b(junte|juntar|vincule|vincular)\b.{0,60}\b(processo|autos)\b/.test(text)
+  );
+}
+
 async function buscarDocumentosIndexados(processoId, nomeProcesso, deps) {
   const pid=String(processoId||'').trim();
   if(!pid) throw new Error('Selecione um processo antes de buscar documentos.');
@@ -624,9 +635,10 @@ async function persistirProcesso(deps, processo_atualizado) {
 }
 
 function jsonResponse(res, status, obj, CORS) {
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, CORS || {
-    'Access-Control-Allow-Origin': '*'
-  });
+  const headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    CORS && typeof CORS === 'object' ? CORS : {}
+  );
   res.writeHead(status, headers);
   res.end(JSON.stringify(obj));
 }
@@ -789,8 +801,19 @@ async function handlerConversar(req, res, body, deps) {
     }
 
     const processo = processo_id != null ? acharProcesso(deps.processos, processo_id) : null;
+    if (processo_id != null && String(processo_id).trim() && !processo) {
+      return jsonResponse(res, 404, {error:'Processo não encontrado.',codigo:'PROCESSO_CONTEXTO_INVALIDO'}, deps.CORS);
+    }
+    if (!processo && requiresProcessContext(mensagem)) {
+      return jsonResponse(res, 422, {
+        ok:false,
+        error:'Selecione o processo antes de executar esse ato. O LEX não escolhe processo por aproximação.',
+        codigo:'PROCESSO_CONTEXTO_NECESSARIO',
+        needs_input:true
+      }, deps.CORS);
+    }
 
-    // Injeta movimentos PJe no processo para este turno (sem persistir)
+    // Injeta andamentos importados no processo para este turno (sem persistir)
     let processoComPje = processo;
     if (processo && Array.isArray(movimentos_pje) && movimentos_pje.length > 0) {
       processoComPje = Object.assign({}, processo, {
@@ -802,9 +825,9 @@ async function handlerConversar(req, res, body, deps) {
       ? montarContextoProcesso(processoComPje)
       : 'Conversa geral — nenhum processo selecionado.';
 
-    // Se vieram movimentos PJe novos, adiciona instrução explícita ao Gestor
+    // Se vieram andamentos importados novos, adiciona instrução explícita ao Gestor
     const instrucaoPje = (Array.isArray(movimentos_pje) && movimentos_pje.length > 0)
-      ? '\n\nATENÇÃO — MOVIMENTOS PJe RECÉM IMPORTADOS (analise cada um e oriente o próximo passo):\n' +
+      ? '\n\nATENÇÃO — ANDAMENTOS IMPORTADOS PARA ESTE TURNO (fonte deve ser identificada; analise cada um e oriente o próximo passo):\n' +
         movimentos_pje.map((m, i) => {
           if (!m) return '';
           const dt   = m.dataHora || m.data || '?';
@@ -852,7 +875,7 @@ async function handlerConversar(req, res, body, deps) {
     if(msgErro.includes('model') || msgErro.includes('not_found') || msgErro.includes('404')) {
       console.error('[VIVO] Modelo inválido detectado, verifique MODELO_GESTOR:', MODELO_GESTOR);
     }
-    return jsonResponse(res, 500, { error: 'Erro no Gestor IA: ' + msgErro.substring(0, 300) }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Não foi possível concluir a conversa com o LEX agora.', codigo:'LEX_GESTOR_FALHOU' }, deps.CORS);
   }
 }
 
@@ -881,7 +904,7 @@ async function handlerAplicarSerial(req, res, body, deps) {
     // Status considerados "finais" — não voltam para ATIVO sozinhos
     const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
     // Detecta "houve trabalho" — qualquer campo substantivo preenchido conta
-    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.prazo || proposta.setor || proposta.integrar_parecer || proposta.lembretes_concluidos?.length);
+    const teveTrabalho = !!(proposta.andamento || proposta.proxima_acao || proposta.setor || proposta.integrar_parecer || proposta.lembretes_concluidos?.length);
 
     if (proposta.andamento) {
       processo.andamentos = processo.andamentos || [];
@@ -930,12 +953,13 @@ async function handlerAplicarSerial(req, res, body, deps) {
       processo.proxima_acao = proposta.proxima_acao;
     }
     if (proposta.prazo) {
-      const pr = String(proposta.prazo).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(pr) && Number.isFinite(Date.parse(pr)) && new Date(pr).toISOString().slice(0,10) === pr) {
-        processo.prazo = pr;
-      } else {
-        return jsonResponse(res, 400, {error:'Prazo invalido. Informe uma data existente em YYYY-MM-DD.'}, deps.CORS);
-      }
+      return jsonResponse(res, 409, {
+        ok:false,
+        error:'Prazo jurídico não é gravado pelo Gestor. Confirme-o no fluxo oficial de prazos.',
+        codigo:'PRAZO_EXIGE_FLUXO_OFICIAL',
+        prazo_sugerido:String(proposta.prazo).trim(),
+        fluxo:'/api/escritorio/prazos/cunhar'
+      }, deps.CORS);
     }
     if (proposta.setor) {
       const setorNovo = String(proposta.setor).toLowerCase().trim();
@@ -979,7 +1003,6 @@ async function handlerAplicarSerial(req, res, body, deps) {
       let resumo = '✅ *Processo atualizado via Gestor IA*\n📁 '+nomeProc+'\n';
       if(proposta.novo_andamento) resumo += '📝 '+proposta.novo_andamento+'\n';
       if(proposta.status) resumo += '🔄 Status: '+proposta.status+'\n';
-      if(proposta.prazo) resumo += '📅 Prazo: '+proposta.prazo+'\n';
       if(proposta.proxima_acao) resumo += '▶️ Próxima: '+proposta.proxima_acao+'\n';
       deps._notificarEquipe(resumo).catch(()=>{});
     }
@@ -1005,7 +1028,7 @@ async function handlerAplicarSerial(req, res, body, deps) {
 
   } catch (e) {
     console.error('[VIVO] aplicar erro:', e.message);
-    return jsonResponse(res, 500, { error: e.message }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Não foi possível aplicar a atualização agora.', codigo:'LEX_APLICAR_FALHOU' }, deps.CORS);
   }
 }
 
@@ -1019,8 +1042,12 @@ async function handlerPecaConversar(req, res, body, deps) {
     const { processo_id, mensagem, historico, decisao_anexada } = body || {};
     if (!mensagem) return jsonResponse(res, 400, { error: 'mensagem obrigatória' }, deps.CORS);
 
-    const processo = processo_id ? acharProcesso(deps.processos, processo_id) : null;
-    const contexto = processo ? montarContextoProcesso(processo) : 'Processo não selecionado.';
+    if (!processo_id || !String(processo_id).trim()) {
+      return jsonResponse(res, 422, {error:'Selecione o processo antes de conversar com o redator.',codigo:'PROCESSO_CONTEXTO_NECESSARIO',needs_input:true}, deps.CORS);
+    }
+    const processo = acharProcesso(deps.processos, processo_id);
+    if (!processo) return jsonResponse(res, 404, {error:'Processo não encontrado.',codigo:'PROCESSO_CONTEXTO_INVALIDO'}, deps.CORS);
+    const contexto = montarContextoProcesso(processo);
 
     // Se tem perfil de juiz cacheado, inclui
     let perfilJuiz = '';
@@ -1085,8 +1112,12 @@ async function handlerPecaGerar(req, res, body, deps) {
       return jsonResponse(res, 400, { error: 'briefing com tipo_peca obrigatório' }, deps.CORS);
     }
 
-    const processo = processo_id ? acharProcesso(deps.processos, processo_id) : null;
-    const contexto = processo ? montarContextoProcesso(processo) : 'Processo não informado.';
+    if (!processo_id || !String(processo_id).trim()) {
+      return jsonResponse(res, 422, {error:'Selecione o processo antes de gerar a minuta.',codigo:'PROCESSO_CONTEXTO_NECESSARIO',needs_input:true}, deps.CORS);
+    }
+    const processo = acharProcesso(deps.processos, processo_id);
+    if (!processo) return jsonResponse(res, 404, {error:'Processo não encontrado.',codigo:'PROCESSO_CONTEXTO_INVALIDO'}, deps.CORS);
+    const contexto = montarContextoProcesso(processo);
 
     let perfilJuiz = '';
     if (processo && (processo.juiz || processo.relator) && deps.sbGet) {
@@ -1109,7 +1140,7 @@ async function handlerPecaGerar(req, res, body, deps) {
 
     const systemPromptGerar = `Você é o redator jurídico sênior do escritório configurado no LEX.
 Identificação profissional: utilize exclusivamente os dados configurados para o escritório; se ausentes, deixe o campo para preenchimento.
-Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando Kleuber der uma ordem direta, execute imediatamente.
+Autonomia: quando agir por iniciativa própria, peça confirmação primeiro. Quando o profissional responsável der uma ordem direta, execute imediatamente.
 Qualidade: rigor técnico e jurisprudência real.
 Proatividade: antecipe riscos recursais e aperfeiçoe a estrutura para fases futuras.
 Sua tarefa é REDIGIR a peça processual solicitada com padrão técnico máximo, pronta para protocolo.
@@ -1142,7 +1173,7 @@ FUNDAMENTOS CHAVE:
 
 ${elementos ? `ELEMENTOS NOVOS/FATOS SUPERVENIENTES:\n- ${elementos}\n` : ''}
 ${prequestion ? `PREQUESTIONAMENTO (marcar dispositivos):\n- ${prequestion}\n` : ''}
-${briefing.instrucoes_extras ? `INSTRUÇÕES EXTRAS DO KLEUBER:\n${briefing.instrucoes_extras}\n` : ''}
+${briefing.instrucoes_extras ? `INSTRUÇÕES EXTRAS DO PROFISSIONAL RESPONSÁVEL:\n${briefing.instrucoes_extras}\n` : ''}
 Redija a peça completa agora.`;
 
     const modelo = deps.MODELO_REDATOR || MODELO_REDATOR;
@@ -1217,7 +1248,7 @@ Redija a peça completa agora.`;
 
   } catch (e) {
     console.error('[VIVO] peca/gerar erro:', e.message);
-    return jsonResponse(res, 500, { error: e.message }, deps.CORS);
+    return jsonResponse(res, 500, { error: 'Não foi possível gerar a minuta agora.', codigo:'LEX_REDACAO_FALHOU' }, deps.CORS);
   }
 }
 
@@ -1255,7 +1286,7 @@ async function handlerJurisConversar(req, res, body, deps) {
 
     const processo = processo_id != null ? acharProcesso(deps.processos, processo_id) : null;
 
-    // Injeta movimentos PJe temporariamente para enriquecer o contexto
+    // Injeta andamentos importados temporariamente para enriquecer o contexto
     let processoParaCtx = processo;
     if (processo && Array.isArray(movimentos_pje) && movimentos_pje.length > 0) {
       processoParaCtx = Object.assign({}, processo, {
@@ -1267,9 +1298,9 @@ async function handlerJurisConversar(req, res, body, deps) {
       ? '\n\nCONTEXTO DO PROCESSO EM ANÁLISE:\n' + montarContextoProcesso(processoParaCtx)
       : '';
 
-    // Instrução de cruzamento PJe x jurisprudência
+    // Instrução de cruzamento de andamentos importados x jurisprudência
     const instrucaoPje = (Array.isArray(movimentos_pje) && movimentos_pje.length > 0)
-      ? '\n\nMOVIMENTOS PJe PARA CRUZAR COM JURISPRUDÊNCIA:\n' +
+      ? '\n\nANDAMENTOS IMPORTADOS PARA CRUZAR COM JURISPRUDÊNCIA (confira a fonte):\n' +
         movimentos_pje.map((m, i) => {
           if (!m) return '';
           const dt   = m.dataHora || m.data || '?';
@@ -1338,7 +1369,8 @@ async function exportarDadosAgente(processo_id, deps) {
     processo: null,
     perfil_juiz: null,
     acoes: [],
-    pronto_para_pje: false,
+    pronto_para_consulta_publica: false,
+    consulta_publica: null,
     fonte: {}
   };
   if (!processo_id) return out;
@@ -1383,43 +1415,41 @@ async function exportarDadosAgente(processo_id, deps) {
     }
   } catch (e) { /* opcional */ }
 
-  // Flag de prontidao pra PJe (correcao #8)
-  out.pje = prepararParaPJe(out.processo);
-  out.pronto_para_pje = !!(out.pje && out.pje.pronto);
+  // Prontidão técnica apenas para consulta pública/assistida.
+  out.consulta_publica = prepararParaConsultaPublica(out.processo);
+  out.pronto_para_consulta_publica = !!(out.consulta_publica && out.consulta_publica.pronto);
 
   return out;
 }
 
 // =====================================================================
-// INTEGRACAO PJe - PREPARACAO (correcao #8)
-// Monta o payload base que sera consumido futuramente pelo conector PJe
-// (REST/CNJ/PDPJ-br). Aqui NAO chamamos o PJe ainda - so deixamos os
-// dados normalizados e os hooks prontos para quando o conector existir.
+// PRONTIDAO PARA CONSULTA PUBLICA / CAPTURA ASSISTIDA
+// Isto NAO autentica no PJe, NAO baixa autos e NAO protocola documentos.
+// Apenas normaliza CNJ e tribunal para os fluxos que realmente existem.
 // =====================================================================
-function prepararParaPJe(processo) {
+function prepararParaConsultaPublica(processo) {
   if (!processo) return { pronto: false, motivo: 'processo ausente' };
   const cnj = processo.cnj || processo.numero || '';
   const cnjLimpo = String(cnj).replace(/\D/g, '');
-  // Formato CNJ valido tem 20 digitos: NNNNNNN-DD.AAAA.J.TR.OOOO
   const cnjValido = cnjLimpo.length === 20;
   const tribunal = (processo.tribunal || '').trim();
   const pronto = cnjValido && !!tribunal;
 
   return {
     pronto,
-    motivo: pronto ? 'pronto para consulta PJe' : (!cnjValido ? 'CNJ invalido/incompleto' : 'tribunal ausente'),
+    motivo: pronto ? 'CNJ e tribunal presentes para consulta publica/assistida' : (!cnjValido ? 'CNJ invalido/incompleto' : 'tribunal ausente'),
     cnj,
     cnj_limpo: cnjLimpo,
     tribunal,
     instancia: processo.instancia || null,
     vara: processo.vara || null,
     partes: processo.partes || null,
-    // Hooks a serem implementados pelo conector PJe:
-    hooks: {
-      consultar_processo: 'pje.consultarProcesso(cnj_limpo, tribunal)',
-      baixar_andamentos:  'pje.baixarAndamentos(cnj_limpo, tribunal)',
-      protocolar_peca:    'pje.protocolarPeca(cnj_limpo, peca, assinador)',
-      baixar_decisao:     'pje.baixarUltimaDecisao(cnj_limpo, tribunal)'
+    capacidades: {
+      consulta_publica: pronto,
+      captura_assistida: pronto,
+      autenticacao_pje: false,
+      baixar_autos: false,
+      protocolar_peca: false
     }
   };
 }
@@ -1484,8 +1514,7 @@ async function tratarRota(req, res, url, deps) {
   if (!urlLimpa || !urlLimpa.startsWith('/api/vivo')) return false;
   url = urlLimpa;
 
-  const CORS = deps.CORS || {
-    'Access-Control-Allow-Origin': '*',
+  const CORS = deps.CORS && typeof deps.CORS === 'object' ? deps.CORS : {
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Aparelho-Id'
   };
@@ -1503,8 +1532,8 @@ async function tratarRota(req, res, url, deps) {
       jsonResponse(res, 400, { error: 'Informe o ID do processo: /api/vivo/exportar/{id}' }, CORS);
       return true;
     }
-    const exportado = exportarDadosAgente(procId, deps);
-    jsonResponse(res, exportado.ok ? 200 : 404, exportado, CORS);
+    const exportado = await exportarDadosAgente(procId, deps);
+    jsonResponse(res, exportado.processo ? 200 : 404, exportado, CORS);
     return true;
   }
 
@@ -1520,7 +1549,6 @@ async function tratarRota(req, res, url, deps) {
         juiz:          { modelo: deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR, endpoint: '/api/vivo/juiz/conversar' },
         jurisprudencia:{ modelo: deps.MODELO_PESQUISADOR || MODELO_PESQUISADOR, endpoint: '/api/vivo/juris/conversar' }
       },
-      processos_em_memoria: (deps.processos || []).length,
       supabase_conectado: null,
       supabase_adapter_disponivel: typeof deps.sbGet === 'function',
       integracoes_verificadas: false,
@@ -1601,4 +1629,4 @@ async function _capturarResultadoEspecialista(handler, body, deps) {
 async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
 async function executarPesquisaJulgador(body,deps){return _capturarResultadoEspecialista(handlerJuizConversar,body,deps)}
 
-module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };
+module.exports = { tratarRota, montarContextoProcesso, exportarDadosAgente, prepararParaConsultaPublica, requiresProcessContext, executarPesquisaJuris, executarPesquisaJulgador };
