@@ -27,11 +27,10 @@ test('concierge preserva banco processual, 9 setores e especialistas essenciais'
   const src=fs.readFileSync('lex2-coordinator-ui.js','utf8');
   assert.match(src,/Banco processual/);
   for(const setor of ['Recepção','Cadastro','Iniciais','Processos','Prazos','Peças','Perícia','Revisão','Concluídos'])assert.match(src,new RegExp(setor));
-  assert.match(src,/Análise processual \/ Assessor/);
-  assert.match(src,/Perfil do magistrado/);
-  assert.match(src,/Jurisprudência/);
-  assert.match(src,/Redator de peças/);
-  assert.match(src,/PJe \/ fontes oficiais/);
+  for(const agente of ['Roteador','Cadastrador / Autuação','Cobrador','Assessor','Jurídico judicial','Jurídico administrativo','Pesquisa decisória','Pericial','PJe','Coordenador','Redação','Revisão','Controladoria','Documental'])assert.ok(src.includes(agente),agente+' está ausente');
+  assert.match(src,/14 agentes do LEX/);
+  assert.match(src,/Análise do processo/);
+  assert.match(src,/Perfil \/ padrão decisório do magistrado/);
   assert.match(src,/window\.lexHome=render/,'Início abre o LEX coordenador');
   assert.match(src,/window\.lexMais=settings/,'Mais vira infraestrutura, não carteira antiga');
 });
@@ -83,4 +82,14 @@ test('perfil do magistrado e jurisprudência explicam pausa por crédito sem err
       assert.match(out.body.texto,/processo permanece intacto/i);
     }
   }finally{if(old===undefined)delete process.env.LEX_AI_NO_CREDIT;else process.env.LEX_AI_NO_CREDIT=old}
+});
+
+test('backend registra exatamente os 14 agentes exibidos pelo concierge',()=>{
+  const bot=fs.readFileSync('bot.js','utf8');
+  const regs=[...bot.matchAll(/Lex\.registrar\(new\s+(Agente\w+)\(\)\)/g)].map(m=>m[1]);
+  assert.deepEqual(regs,[
+    'AgenteRoteador','AgenteCadastrador','AgenteCobrador','AgenteAssessor','AgenteJudicial','AgenteAdministrativo',
+    'AgentePesquisaDecisoria','AgentePericial','AgentePJe','AgenteCoordenador','AgenteRedacao','AgenteRevisao',
+    'AgenteControladoria','AgenteDocumental'
+  ]);
 });
