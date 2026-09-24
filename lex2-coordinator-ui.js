@@ -18,6 +18,17 @@ const LEX_SPECIALISTS=[
   ['Controladoria','Prazos, DJEN, expedientes, conferência e organização das pendências processuais.',false],
   ['Documental','Organiza documentos, autos, anexos e material vinculado ao processo.',false]
 ];
+const OFFICE_SECTORS=[
+  ['recepcao','Recepção','Recebe clientes e mensagens, identifica a demanda e encaminha.'],
+  ['cadastro','Cadastro','Confere cliente, processo, documentos e dados faltantes.'],
+  ['iniciais','Iniciais','Prepara o caso conferido para distribuição ou protocolo.'],
+  ['processos','Processos','Mantém a carteira distribuída: partes, vara, tribunal, andamentos e situação.'],
+  ['prazos','Prazos','Controladoria de DJEN, expedientes e prazos confirmados.'],
+  ['pecas','Peças','Produz petições, contestações, recursos e minutas.'],
+  ['pericia','Perícia','Cuida de cálculos, quesitos, pareceres e material técnico.'],
+  ['revisao','Revisão','Confere entregas, devolve correções e libera a próxima etapa.'],
+  ['concluidos','Concluídos','Encerra o fluxo sem apagar o histórico nem o banco do processo.']
+];
 function stageOf(p){
   const s=String(p?.office_stage||p?.fluxo_setor||p?.setor_fluxo||'').toLowerCase();
   if(OFFICE_SECTORS.some(([code])=>code===s))return s;
@@ -58,7 +69,7 @@ function consumeContext(selectedId){
 }
 function dock(){return '<nav class="lex-dock"><button onclick="lexHome()"><b>⌂</b><span>Início</span></button><button onclick="lexProcessos()"><b>▣</b><span>Processos</span></button><button class="lex-main on" onclick="lexChat()"><b>◉</b><span>LEX</span></button><button onclick="lexPrazos()"><b>◷</b><span>Prazos</span></button><button onclick="lexMais()"><b>☰</b><span>Mais</span></button></nav>'}
 function chips(id){
-  if(!id)return '<nav class="lex2-context-chips" aria-label="Ações do escritório"><button type="button" onclick="lex2Prefill(\'O que precisa de mim agora?\')">O que precisa de mim</button><button type="button" onclick="lexProcessos()">Banco de processos</button><button type="button" onclick="lexPrazos()">Prazos</button><button type="button" onclick="lexChannel(\'all\')">Mensagens</button><button type="button" onclick="lex2Prefill(\'Explique os setores do escritório e o que cada um tem para fazer agora.\')">Setores</button></nav>';
+  if(!id)return '<nav class="lex2-context-chips" aria-label="Ações do escritório"><button type="button" onclick="lex2Prefill(\'O que precisa de mim agora?\')">O que precisa de mim</button><button type="button" onclick="lexProcessos()">Processos</button><button type="button" onclick="lexPrazos()">Prazos</button><button type="button" onclick="lexChannel(\'all\')">Mensagens</button><button type="button" onclick="lex2Prefill(\'Quero cadastrar cliente, caso ou processo. Diga o que falta e encaminhe ao Cadastro.\')">Cadastros</button><button type="button" onclick="lex2Prefill(\'Explique os setores do escritório e o que cada um tem para fazer agora.\')">Setores</button></nav>';
   const c=[
     ['Análise do processo','Analise integralmente o processo selecionado: situação, últimos andamentos, pontos fortes e fracos, pendências, risco e próximos passos. Não invente fato nem prazo.'],
     ['Perfil do magistrado','Analise o perfil/padrão decisório do magistrado deste processo usando somente decisões identificadas e fontes verificáveis. Mostre fundamentos recorrentes, provas valorizadas, teses acolhidas/rejeitadas e os limites da amostra.'],
@@ -84,7 +95,7 @@ function render(selectedId){
   document.body.classList.add('lex-commercial','lex2-core','lex2-coordinator');
   host.innerHTML='<main class="lex-screen lex2-lex">'
     +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
-    +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'PORTA DO ESCRITÓRIO')+'</small><h1>'+(p?'Vamos resolver este processo.':'Dê a ordem. Eu cuido do caminho.')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'O banco de processos permanece no centro. Eu identifico o assunto, escolho entre os 9 setores oficiais, encaminho e devolvo o resultado aqui.')+'</p></section>'
+    +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'PORTA DO ESCRITÓRIO')+'</small><h1>'+(p?'Vamos resolver este processo.':'O que precisamos resolver?')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'Dê a ordem. O banco de processos permanece no centro; eu identifico o assunto, escolho entre os 9 setores oficiais, encaminho e devolvo o resultado aqui.')+'</p></section>'
     +'<section class="lex2-office-tools">'+officeMap()+specialistMap()+'<div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div>'+chips(id)+'</section>'
     +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+history(id)+'</section>'
     +'<form class="lex2-command" onsubmit="return lexSendChat(event)">'
