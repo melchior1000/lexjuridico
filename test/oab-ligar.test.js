@@ -30,7 +30,7 @@ test('pelo WhatsApp: advogado liga a OAB e recebe o resumo do Diário; secretari
   assert.match(sec.message,/não tem permissão/);assert.equal(calls.length,0);
   const out=await executeNaturalOfficeCommand(deps,{text:'minha OAB é 123456/MG',profile:'advogado'});
   assert.deepEqual(calls[0],[{oab:'123456',uf:'MG'}]);
-  assert.match(out.message,/OAB 123456\/MG ligada ao LEX\. Li o DJEN agora: 12/);
+  assert.match(out.message,/OAB 123456\/MG ligada ao DJEN \(Diário\)\. Li agora: 12/);
   assert.match(out.message,/9 entraram nos seus processos/);
   assert.match(out.message,/3 são de processos que não estão no LEX/);
   assert.match(out.message,/só vale depois da sua confirmação/);
@@ -38,6 +38,13 @@ test('pelo WhatsApp: advogado liga a OAB e recebe o resumo do Diário; secretari
 
 test('tela tem "Ligar ao tribunal" no menu Mais',()=>{
   const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','office-ui-v2.js'),'utf8');
-  assert.match(ui,/onclick="lexOab\(\)">⚖<span>Ligar ao tribunal \(OAB\)/);
+  assert.match(ui,/onclick="lexOab\(\)">⚖<span>Diário e PJe \(conexões\)/);
   assert.match(ui,/lexApi\('\/api\/escritorio\/oab',\{method:'POST'/);
+});
+
+test('mensagem deixa claro que a OAB liga só o Diário, não o PJe',async()=>{
+  const {oabMessage}=require('../lib/office-queries');
+  const msg=oabMessage({oabs:[{oab:'1',uf:'MG'}],djen:{ok:true,consultadas:0}});
+  assert.match(msg,/Isto liga só o Diário/);
+  assert.match(msg,/teste o PJe/);
 });
