@@ -38,109 +38,77 @@ function home(api,processes=[]){
   const nodes={};for(const key of ['h1','p','.lex-today-feedback','.lex-today-list'])nodes[key]={textContent:'',innerHTML:'',appendChild(){},addEventListener(type,fn){this[type]=fn}};
   nodes['.lex-today-head']={querySelector:key=>nodes[key]};
   const surface={isConnected:true,querySelector:key=>nodes[key]};
-  const host={firstElementChild:surface,innerHTML:''};const opened=[];
+  const host={firstElementChild:surface,innerHTML:''};
   const window=boot('lex2-interface-core.js',{
-    window:{lexTarefas:id=>opened.push(id)},lexApi:api,getProcs:()=>processes,
+    window:{},lexApi:api,getProcs:()=>processes,
     document:{readyState:'complete',body:{classList:{add(){}}},getElementById:()=>host,createElement:()=>({})}
   });
-  return{window,nodes,surface,opened};
+  return{window,nodes,surface};
 }
-test('pendência mostra motivo e abre exatamente a tarefa indicada',async()=>{
-  const h=home(async path=>path==='/api/trabalho'?{tarefas:[{id:'t-2',status:'aguardando_revisao',processo_nome:'Cliente B',pendencia:'Conferir minuta'}]}:{contatos:[]});
-  await h.window.lexHome();assert.match(h.nodes['.lex-today-list'].innerHTML,/Cliente B/);assert.match(h.nodes['.lex-today-list'].innerHTML,/Conferir minuta/);
-  h.nodes['.lex-today-list'].click({target:{closest:()=>({dataset:{todayAction:'0'}})}});
-  await Promise.resolve();assert.deepEqual(h.opened,['t-2']);
+
+test('Home é conversa do LEX e não parede de cartões',async()=>{
+  const ps=[
+    {id:'legacy',nome:'CEF — Execução vs. Pessoa Errada',numero:'6002060-50.2025.4.06.3818',partes:'CEF vs. Pessoa Errada',status:'URGENTE',prazo:'27/03/2026'},
+    {id:'ok',nome:'Caso confirmado',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',last_court_sync_at:'2026-09-24T10:00:00Z',partes_verificadas_em:'2026-09-24T10:00:00Z'}
+  ];
+  const h=home(async path=>{
+    if(path==='/api/trabalho')return{tarefas:[],prazos:{cunhar:[],correndo:[]}};
+    if(path==='/api/escritorio/oab')return{oabs:[],pje:{configurado:false,tribunais:[]}};
+    return{contatos:[]};
+  },ps);
+  await h.window.lexHome();
+  const html=h.nodes['.lex-today-list'].innerHTML;
+  assert.match(h.nodes.h1.textContent,/conferindo/i);
+  assert.match(html,/2 processos/);
+  assert.match(html,/1 tem leitura oficial/);
+  assert.match(html,/1 processo com dados antigos ou manuais/);
+  assert.doesNotMatch(html,/CEF — Execução vs\. Pessoa Errada|CEF vs\. Pessoa Errada/,'Home não repete identidade sem fonte oficial');
+  assert.doesNotMatch(html,/<article|assuntos precisam de você|Prazo cadastrado vencido/);
 });
-test('falha ao consultar tarefas não aparece como tudo resolvido',async()=>{
-  const h=home(async path=>{if(path==='/api/trabalho')throw new Error('indisponível');return{contatos:[]}});
-  await h.window.lexHome();assert.match(h.nodes.h1.textContent,/Não foi possível/);assert.match(h.nodes['.lex-today-feedback'].textContent,/incompleta/);assert.doesNotMatch(h.nodes['.lex-today-list'].innerHTML,/Você está em dia/);
+
+test('Home deixa claro quando PJe e DJEN não estão ligados',async()=>{
+  const h=home(async path=>{
+    if(path==='/api/trabalho')return{tarefas:[],prazos:{cunhar:[],correndo:[]}};
+    if(path==='/api/escritorio/oab')return{oabs:[],pje:{configurado:false,faltando:['PJE_MNI_CPF','PJE_MNI_SENHA']}};
+    return{contatos:[]};
+  },[]);
+  await h.window.lexHome();
+  const html=h.nodes['.lex-today-list'].innerHTML;
+  assert.match(html,/PJe\/eproc ainda não está ligado/);
+  assert.match(html,/Diário \(DJEN\) ainda não está ligado/);
+  assert.match(html,/não vou fingir/i);
 });
+
+test('Home relata somente prazos do servidor e publicações pendentes como conferência',async()=>{
+  const h=home(async path=>{
+    if(path==='/api/trabalho')return{tarefas:[{id:'r1',status:'aguardando_revisao'}],prazos:{cunhar:[{djen_id:'d1'}],correndo:[{case_id:'p1',prazo:'2026-09-30',days_to_due:6}]}};
+    if(path==='/api/escritorio/oab')return{oabs:[{oab:'123456',uf:'MG'}],pje:{configurado:true,tribunais:['TJMG']}};
+    return{contatos:[{id:'c1',status:'novo'}]};
+  },[]);
+  await h.window.lexHome();
+  const html=h.nodes['.lex-today-list'].innerHTML;
+  assert.match(html,/1 prazo oficial em acompanhamento/);
+  assert.match(html,/1 publicação aguardando conferência de prazo/);
+  assert.match(html,/1 entrega está aguardando sua revisão/);
+  assert.match(html,/1 conversa de cliente está em andamento/);
+  assert.match(html,/PJe\/eproc está configurado para: TJMG/);
+  assert.match(html,/Diário \(DJEN\) está ligado/);
+});
+
+test('falha de leitura não vira mensagem de escritório em dia',async()=>{
+  const h=home(async()=>{throw new Error('indisponível')},[]);
+  await h.window.lexHome();
+  assert.match(h.nodes['.lex-today-feedback'].textContent,/Não consegui ler/);
+  assert.match(h.nodes['.lex-today-feedback'].textContent,/Não vou interpretar ausência de dado como ausência de problema/);
+  assert.doesNotMatch(h.nodes['.lex-today-list'].innerHTML,/Tudo em dia|Você está em dia/);
+});
+
 test('resposta tardia da Home não atualiza tela abandonada',async()=>{
   let finish;const deferred=new Promise(r=>{finish=r});
-  const second=home(()=>deferred);const pending=second.window.lexHome();second.surface.isConnected=false;
-  finish({tarefas:[],contatos:[]});await pending;assert.equal(second.nodes.h1.textContent,'');
+  const h=home(()=>deferred);const pending=h.window.lexHome();h.surface.isConnected=false;
+  finish({tarefas:[],prazos:{cunhar:[],correndo:[]}});await pending;assert.equal(h.nodes.h1.textContent,'');
 });
 
-
-test('Home mostra intimação DJEN sem prazo na fila Precisa de você',async()=>{
-  const h=home(async path=>path==='/api/trabalho'?{
-    tarefas:[],
-    prazos:{cunhar:[{djen_id:'dj1',processo_id:'p1',cnj:'5000000-00.2026.8.13.0001',data_disponibilizacao:'2026-09-20',tipo:'Intimação',texto:'Manifestar em prazo legal.'}],correndo:[]}
-  }:{contatos:[]});
-  await h.window.lexHome();
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/Intimação sem prazo confirmado/);
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/Ler e confirmar prazo/);
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/5000000-00\.2026\.8\.13\.0001/);
-});
-
-test('Home mostra somente prazo confirmado vindo da mesa do servidor',async()=>{
-  const h=home(async path=>path==='/api/trabalho'?{
-    tarefas:[],
-    prazos:{cunhar:[],correndo:[{case_id:'p1',prazo:'2026-09-21',days_to_due:1,titulo:'Caso prazo',djen_id_origem:'dj2'}]}
-  }:{contatos:[]});
-  await h.window.lexHome();
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/Prazo confirmado vence amanhã/);
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/DJEN dj2/);
-});
-
-
-test('Home denuncia DJEN sem OAB como bloqueio crítico',async()=>{
-  const h=home(async path=>path==='/api/trabalho'?{
-    tarefas:[],prazos:{cunhar:[],correndo:[],vigia:{status:'blocked',djen_status:'not_configured'}}
-  }:{contatos:[]});
-  await h.window.lexHome();
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/Diário ainda não configurado/);
-  assert.match(h.nodes['.lex-today-list'].innerHTML,/não tem uma OAB definida/);
-});
-
-
-test('Home mostra sugestão sem tratá-la como prazo confirmado',async()=>{
-  const h=home(async path=>path==='/api/trabalho'?{
-    tarefas:[],
-    prazos:{cunhar:[{
-      djen_id:'dj-s1',processo_id:'p1',cnj:'5000000-00.2026.8.13.0001',data_disponibilizacao:'2026-09-21',tipo:'Intimação',
-      texto:'Manifeste-se no prazo de 5 dias úteis.',
-      prazo_sugestao:{status:'proposta_calculada',legal_truth:false,dias:5,modo:'uteis',regime:'cpc',due_at_proposto:'2026-09-29',trecho:'Manifeste-se no prazo de 5 dias úteis.',calendario_verificado:false}
-    }],correndo:[]}
-  }:{contatos:[]});
-  await h.window.lexHome();
-  const html=h.nodes['.lex-today-list'].innerHTML;
-  assert.match(html,/Prazo sugerido — falta sua confirmação/);
-  assert.match(html,/Vencimento sugerido: 2026-09-29/);
-  assert.match(html,/Confirmar 2026-09-29/);
-  assert.match(html,/Corrigir/);
-  assert.doesNotMatch(html,/Prazo confirmado vence/);
-});
-
-test('Home agrupa assuntos repetidos, mostra no máximo 3 e aponta número CNJ errado',async()=>{
-  const ontem=new Date(Date.now()-2*86400000).toISOString().slice(0,10);
-  const ps=[...Array.from({length:8},(_,i)=>({id:'v'+i,nome:'Vencido '+i,numero:'5004158-61.2024.8.13.0704',status:'ATIVO',prazo:ontem})),
-    {id:'x',nome:'Sem número',numero:'',status:'ATIVO'},{id:'y',nome:'Dígito errado',numero:'5004158-62.2024.8.13.0704',status:'ATIVO'},{id:'adm',nome:'Administrativo',numero:'',tipo:'administrativo',status:'ATIVO'}];
-  const contatos=Array.from({length:5},(_,i)=>({id:'c'+i,nome:'Cliente '+i,origem:'whatsapp',status:'novo'}));
-  const tarefas=[{id:'t1',status:'aguardando_revisao',processo_nome:'Minuta A'},{id:'t2',status:'aguardando_revisao',processo_nome:'Minuta B'}];
-  const h=home(async path=>path==='/api/trabalho'?{tarefas}:{contatos},ps);
-  await h.window.lexHome();
-  const html=h.nodes['.lex-today-list'].innerHTML;
-  assert.equal((html.match(/<article/g)||[]).length,3,'no máximo 3 cartões');
-  assert.match(html,/8 processos[\s\S]*Prazos cadastrados vencidos[\s\S]*Resolver agora/);
-  assert.match(html,/Ver os outros 2/);
-  assert.match(h.nodes.h1.textContent,/^5 assuntos precisam de você/);
-  h.nodes['.lex-today-list'].click({target:{closest:sel=>sel==='[data-today-more]'?{dataset:{todayMore:''}}:null}});
-  await new Promise(r=>setTimeout(r,0));
-  const all=h.nodes['.lex-today-list'].innerHTML;
-  assert.match(all,/2 processos[\s\S]*Números CNJ faltando ou errados[\s\S]*Corrigir agora/);
-  assert.match(all,/5 clientes[\s\S]*Aguardando sua resposta/);
-});
-
-test('Home diz quando o Diário foi lido e oferece marcar prazo vencido como cumprido',async()=>{
-  const ontem=new Date(Date.now()-2*86400000).toISOString().slice(0,10);
-  const ps=[{id:'v1',nome:'Caso Vencido',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',prazo:ontem}];
-  const h=home(async path=>path==='/api/trabalho'?{tarefas:[],prazos:{cunhar:[],correndo:[],vigia:{date:'x',status:'ok',djen_status:'ok',executado_em:new Date().toISOString()}}}:{contatos:[]},ps);
-  await h.window.lexHome();
-  assert.match(h.nodes.p.textContent,/^Acompanho 1 processo\. Diário lido hoje às \d{2}:\d{2}\.$/);
-  const html=h.nodes['.lex-today-list'].innerHTML;
-  assert.match(html,/Prazo cadastrado vencido[\s\S]*Confira no tribunal se foi cumprido[\s\S]*Já foi cumprido\?[\s\S]*Abrir/);
-});
 
 test('folha de prazos vencidos marca cumprido com um toque e desfaz',()=>{
   const ontem=new Date(Date.now()-2*86400000);const br=ontem.toLocaleDateString('pt-BR');
@@ -151,7 +119,7 @@ test('folha de prazos vencidos marca cumprido com um toque e desfaz',()=>{
     window:{},getProcs:()=>data,saveProcs:ps=>{data=ps;saved.push(structuredClone(ps))},lexApi:async()=>({}),
     document:{readyState:'complete',body:{classList:{add(){}},appendChild(x){sheetEl=x}},querySelector:()=>null,getElementById:()=>null,createElement:()=>el()}
   });
-  window.lexPrazosVencidos();
+  window.lexPrazosVencidos(['v1']);
   const body=sheetEl.body;
   assert.match(body.innerHTML,/Caso Vencido[\s\S]*Prazo anotado: /);
   const click=attr=>body.listeners.click({target:{closest:sel=>sel==='['+attr+']'?{dataset:{[attr==='data-done'?'done':'undo']:'v1'}}:null}});
