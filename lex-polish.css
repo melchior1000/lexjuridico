@@ -42,3 +42,45 @@ body.lex-commercial .lex-legacy-top{margin:0 -2px 12px}
 body.lex-commercial .lex-legacy-top strong{font-size:22px}
 body.lex-commercial #content.lex-legacy-framed .fi,body.lex-commercial #content.lex-legacy-framed input,body.lex-commercial #content.lex-legacy-framed select{font-size:15px!important;min-height:42px}
 body.lex-commercial #content.lex-legacy-framed button{min-height:38px}
+
+/* Carteira por cliente: urgência no topo, clientes recolhidos, linhas de uma linha. */
+body.lex-commercial .lex-proc-urgent{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;margin:0 0 12px}
+body.lex-commercial .lex-proc-urgent button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:64px;padding:10px 12px;border:1px solid var(--line);border-left-width:4px;border-radius:12px;background:var(--card);color:var(--text);text-align:left;cursor:pointer}
+body.lex-commercial .lex-proc-urgent button b{font-size:22px;line-height:1.1}
+body.lex-commercial .lex-proc-urgent button span{font-size:11px;color:var(--muted)}
+body.lex-commercial .lex-proc-urgent .late{border-left-color:#e5484d}body.lex-commercial .lex-proc-urgent .late b{color:#e5484d}
+body.lex-commercial .lex-proc-urgent .urgent{border-left-color:#f76b15}body.lex-commercial .lex-proc-urgent .urgent b{color:#f76b15}
+body.lex-commercial .lex-proc-urgent .soon{border-left-color:#d4a017}body.lex-commercial .lex-proc-urgent .soon b{color:#c28f00}
+body.lex-commercial .lex-proc-urgent .muted{border-left-color:var(--muted)}
+body.lex-commercial .lex-proc-urgent button.on{background:var(--card2,var(--card));box-shadow:inset 0 0 0 2px currentColor}
+body.lex-commercial .lex-view-toggle{display:flex;width:max-content;align-self:flex-start;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+body.lex-commercial .lex-view-toggle button{min-height:38px;padding:0 12px;border:0;background:var(--card);color:var(--muted);font-size:12px;cursor:pointer}
+body.lex-commercial .lex-view-toggle button.on{background:#0b70ff;color:#fff}
+body.lex-commercial .lex-list-summary .link{border:0;background:none;padding:0;color:#0b70ff;font:inherit;text-decoration:underline;cursor:pointer}
+body.lex-commercial #lex-proc-list{display:block!important;border-top:0!important}
+body.lex-commercial .lex-proc-group{border:1px solid var(--line);border-radius:12px;background:var(--card);margin:0 0 8px;overflow:hidden}
+body.lex-commercial .lex-proc-group.hot{border-left:4px solid #e5484d}
+body.lex-commercial .lex-proc-group>.head{display:grid;grid-template-columns:38px minmax(0,1fr) auto 18px;align-items:center;gap:10px;width:100%;min-height:60px;padding:8px 12px;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+body.lex-commercial .lex-proc-group .ava{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:color-mix(in srgb,#0b70ff 14%,transparent);color:#0b70ff;font-weight:800;font-size:13px}
+body.lex-commercial .lex-proc-group .who strong{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.lex-commercial .lex-proc-group .who small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+body.lex-commercial .lex-proc-group .head .chips{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;margin:0}
+body.lex-commercial .lex-proc-group .head>b{color:var(--muted);font-size:14px}
+body.lex-commercial .lex-proc-group .rows{border-top:1px solid var(--line)}
+body.lex-commercial .lex-proc-group .more{width:100%;min-height:44px;border:0;border-top:1px solid var(--line);background:transparent;color:#0b70ff;font-size:12px;cursor:pointer}
+body.lex-commercial .lex-proc-flat{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+body.lex-commercial .lex-proc-line{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:52px;padding:7px 12px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;cursor:pointer}
+body.lex-commercial .lex-proc-line:last-child{border-bottom:0}
+body.lex-commercial .lex-proc-line:hover{background:var(--card2,transparent)}
+body.lex-commercial .lex-proc-line .dot{width:8px;height:8px;border-radius:50%;background:#2fb67c}
+body.lex-commercial .lex-proc-line .dot.late{background:#e5484d}body.lex-commercial .lex-proc-line .dot.urgent{background:#f76b15}body.lex-commercial .lex-proc-line .dot.soon{background:#d4a017}body.lex-commercial .lex-proc-line .dot.done{background:var(--muted)}
+body.lex-commercial .lex-proc-line strong{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.lex-commercial .lex-proc-line small{display:block;font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.lex-commercial .lex-proc-line code{font-family:inherit;font-variant-numeric:tabular-nums;color:var(--muted)}
+body.lex-commercial .lex-proc-line .nocnj{color:#c28f00}
+body.lex-commercial .lex-proc-line .chips{margin:0}
+@media(max-width:620px){body.lex-commercial .lex-process-toolbar{flex-direction:column;align-items:stretch;gap:0}body.lex-commercial .lex-view-toggle{align-self:flex-start;margin:0 0 10px}body.lex-commercial .lex-proc-urgent button{min-height:58px;padding:8px 9px}body.lex-commercial .lex-proc-urgent button b{font-size:19px}body.lex-commercial .lex-proc-urgent button span{font-size:10px}body.lex-commercial .lex-proc-group .head .chips em:nth-child(n+2){display:none}}
+body.lex-commercial .lex-process-toolbar .lex-sort select{max-width:180px}
+body.lex-commercial.lex-day .chips em.late,body.lex-commercial.lex-day .chips em.urgent{color:#b4232a!important;background:#fde8e8!important}
+body.lex-commercial.lex-day .chips em.soon{color:#7a5a00!important;background:#fbf1d3!important}
+body.lex-commercial.lex-day .chips em.ok{color:#146c43!important;background:#e3f5ec!important}

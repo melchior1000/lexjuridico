@@ -10,8 +10,9 @@ const openProc=id=>{if(typeof abrirProc==='function')abrirProc(id)};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,day]=raw.split('-');d=new Date(+y,+m-1,+day)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000)};
 const active=p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''));
 const CHAT_HISTORY_LIMIT=20;
-let procTab='todos',procQuery='',procSort='recentes',procPage=1,prazoTab='todos',prazoPage=1,deadlineServerState=[];
+let procTab='todos',procQuery='',procSort='recentes',procPage=1,procView='clientes',procOpen=new Set(),procGroupShow={},prazoTab='todos',prazoPage=1,deadlineServerState=[];
 const PROC_PAGE_SIZE=40,DEADLINE_PAGE_SIZE=40;
+const PROC_GROUP_PAGE=25,PROC_GROUP_ROWS=30;
 let navCurrent=null,navTrail=[],navRestoring=false;
 function navMark(view){
   if(navRestoring){navCurrent=view;navRestoring=false;return}
@@ -67,24 +68,60 @@ function syncLegacyThemeButton(){
 function dock(on){return '<nav class="lex-dock"><button '+(on==='home'?'class="on"':'')+' onclick="lexHome()"><b>⌂</b><span>Início</span></button><button '+(on==='processos'?'class="on"':'')+' onclick="lexProcessos()"><b>▣</b><span>Processos</span></button><button class="lex-main '+(on==='lex'?'on':'')+'" onclick="lexChat()"><b>◉</b><span>LEX</span></button><button '+(on==='prazos'?'class="on"':'')+' onclick="lexPrazos()"><b>◷</b><span>Prazos</span></button><button '+(on==='mais'?'class="on"':'')+' onclick="lexMais()"><b>☰</b><span>Mais</span></button></nav>'}
 function shell(title,body,on){const host=$('#content');if(!host)return;document.body.classList.add('lex-commercial');const back=navCurrent&&navCurrent!=='home'?'<button class="lex-shell-back" onclick="lexBack()" aria-label="Voltar">‹</button>':'';host.innerHTML='<main class="lex-screen"><header class="lex-top"><div class="lex-brand">'+back+'<div><strong>LEX</strong><small>ESCRITÓRIO VIRTUAL INTELIGENTE</small></div></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="typeof toggleSidebar===\'function\'&&toggleSidebar()">☰</button></div></header>'+body+dock(on)+'</main>';const t=$('#page-title');if(t)t.textContent=title}
 function badge(d){if(d===9999)return '';if(d<0)return '<em class="late">Vencido</em>';if(d===0)return '<em class="urgent">Prazo hoje</em>';if(d<=2)return '<em class="urgent">'+d+' dias</em>';if(d<=7)return '<em class="soon">'+d+' dias</em>';return '<em class="ok">Em curso</em>'}
-function procRows(list){return list.map(p=>'<button class="lex-proc-row" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><span class="bar"></span><span><code>'+esc(p.numero||'sem número')+'</code><strong>'+esc(p.nome||p.partes||'Processo')+'</strong><small>'+esc(p.tribunal||p.area||p.assunto||'')+'</small><span class="chips">'+badge(days(p))+'</span></span><b>›</b></button>').join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>'}
+function procRows(list,opts){return list.map(p=>procLine(p,opts)).join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>'}
+// Carteira: cliente é o campo cliente ou o que vem antes de " — " / " x " no nome.
+const PROC_SEP=/\s+[—–-]\s+|\s+(?:x|×|vs\.?|versus)\s+/i;
+function procClient(p){const c=String((globalThis.lexFixText||String)(p?.cliente||'')).trim();if(c)return c;const n=String((globalThis.lexFixText||String)(p?.nome||'')).trim(),m=n.split(PROC_SEP);return m.length>1&&m[0].trim().length>=2?m[0].trim():''}
+function procKey(name){return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim()}
+function procTitle(p,client){const n=String((globalThis.lexFixText||String)(p.nome||p.partes||'Processo')).trim();if(!client)return n;const rest=n.slice(0,client.length).toLowerCase()===client.toLowerCase()?n.slice(client.length).replace(/^\s*(?:[—–-]|x|×|vs\.?|versus)\s+/i,'').trim():n;return rest||n}
+function procShortNum(p){const m=String(p.numero||'').match(/^\s*(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);return m?m[1]:''}
+function procLine(p,opts){const d=days(p),num=procShortNum(p),where=p.tribunal||p.vara||p.area||'',tone=d<0?'late':d<=2?'urgent':d<=7?'soon':active(p)?'ok':'done';
+  return '<button class="lex-proc-line" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><i class="dot '+tone+'"></i><span class="txt"><strong>'+esc(procTitle(p,opts?.client))+'</strong><small>'+(num?'<code>'+esc(num)+'</code>':'<span class="nocnj">sem nº CNJ</span>')+(where?' · '+esc(where):'')+'</small></span>'+(d<9999?'<span class="chips">'+badge(d)+'</span>':'')+'</button>'}
+function procUrgency(list){const r={vencidos:0,hoje:0,semana:0};for(const p of list){if(!active(p))continue;const d=days(p);if(d<0)r.vencidos++;else if(d===0)r.hoje++;else if(d<=7)r.semana++}return r}
+function procGroups(list){const map=new Map();for(const p of list){const name=procClient(p),key=procKey(name)||'~';if(!map.has(key))map.set(key,{key,name:name||'Sem cliente identificado',items:[]});map.get(key).items.push(p)}
+  const groups=[],single=[];for(const g of map.values()){if(g.key!=='~'&&g.items.length>1)groups.push(g);else single.push(...g.items)}
+  const byUrgency=(a,b)=>(active(a)?days(a):99999)-(active(b)?days(b):99999);
+  for(const g of groups){g.u=procUrgency(g.items);g.items.sort(byUrgency)}
+  groups.sort((a,b)=>b.u.vencidos-a.u.vencidos||b.u.hoje-a.u.hoje||b.u.semana-a.u.semana||b.items.length-a.items.length||a.name.localeCompare(b.name,'pt-BR'));
+  if(single.length)single.sort(byUrgency),groups.push({key:'~outros',name:groups.length?'Demais clientes':'Processos',items:single,u:procUrgency(single),rest:true});
+  return groups}
+function initials(n){return String(n||'?').replace(/[^\p{L}\p{N}\s]/gu,'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'}
+function procGroupHtml(g){const open=procOpen.has(g.key),u=g.u,chips=(u.vencidos?'<em class="late">'+u.vencidos+' vencido'+(u.vencidos>1?'s':'')+'</em>':'')+(u.hoje?'<em class="urgent">'+u.hoje+' hoje</em>':'')+(u.semana?'<em class="soon">'+u.semana+' na semana</em>':'');
+  const show=procGroupShow[g.key]||PROC_GROUP_ROWS,rows=open?g.items.slice(0,show):[];
+  return '<section class="lex-proc-group'+(open?' open':'')+(u.vencidos||u.hoje?' hot':'')+'"><button class="head" aria-expanded="'+open+'" onclick="lexToggleProcGroup(\''+esc(g.key)+'\')"><span class="ava">'+(g.rest?'＋':esc(initials(g.name)))+'</span><span class="who"><strong>'+esc(g.name)+'</strong><small>'+g.items.length+' processo'+(g.items.length>1?'s':'')+'</small></span><span class="chips">'+chips+'</span><b>'+(open?'⌃':'⌄')+'</b></button>'
+    +(open?'<div class="rows">'+procRows(rows,{client:g.rest?'':g.name})+(g.items.length>show?'<button class="more" onclick="lexMoreProcGroup(\''+esc(g.key)+'\')">Mostrar mais '+Math.min(PROC_GROUP_ROWS,g.items.length-show)+' de '+(g.items.length-show)+' restantes</button>':'')+'</div>':'')+'</section>'}
+function procListHtml(list){
+  if(procView==='clientes'&&!procQuery&&!['vencidos','hoje','semana','semcnj'].includes(procTab)){
+    const groups=procGroups(list),meta=pageSlice(groups,procPage,PROC_GROUP_PAGE);procPage=meta.page;
+    if(groups.length===1&&!procOpen.has(groups[0].key))procOpen.add(groups[0].key);
+    return meta.items.map(procGroupHtml).join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>';
+  }
+  const meta=pageSlice(list,procPage,PROC_PAGE_SIZE);procPage=meta.page;
+  return '<div class="lex-proc-flat">'+procRows(meta.items)+'</div>'+pagerHtml(meta,'lexSetProcPage')}
+function procGroupPager(list){if(procView!=='clientes'||procQuery||['vencidos','hoje','semana','semcnj'].includes(procTab))return'';const meta=pageSlice(procGroups(list),procPage,PROC_GROUP_PAGE);return meta.pages>1?pagerHtml({...meta,total:meta.total},'lexSetProcPage').replace(' de '+meta.total+'</span>',' de '+meta.total+' clientes</span>'):''}
 function processUpdatedAt(p){const raw=p?.atualizado_em||p?.ultima_atualizacao||p?.updated_at||p?.criado_em||'';const ms=Date.parse(raw);return Number.isFinite(ms)?ms:0}
 function filteredProcesses(){
   let list=procs();
   if(procTab==='ativos')list=list.filter(active);
   else if(procTab==='prazos')list=list.filter(p=>days(p)<9999);
   else if(procTab==='arquivados')list=list.filter(p=>!active(p));
+  else if(procTab==='vencidos')list=list.filter(p=>active(p)&&days(p)<0);
+  else if(procTab==='hoje')list=list.filter(p=>active(p)&&days(p)===0);
+  else if(procTab==='semana')list=list.filter(p=>active(p)&&days(p)>0&&days(p)<=7);
+  else if(procTab==='semcnj')list=list.filter(p=>active(p)&&!procShortNum(p));
   if(procQuery)list=list.filter(p=>[p.nome,p.numero,p.partes,p.assunto,p.area,p.tribunal,p.status,p.responsavel,p.cliente].join(' ').toLowerCase().includes(procQuery));
   if(procSort==='nome')list=[...list].sort((a,b)=>String(a.nome||a.partes||'').localeCompare(String(b.nome||b.partes||''),'pt-BR'));
   else if(procSort==='numero')list=[...list].sort((a,b)=>String(a.numero||'').localeCompare(String(b.numero||''),'pt-BR'));
   else list=[...list].sort((a,b)=>processUpdatedAt(b)-processUpdatedAt(a)||String(a.nome||a.partes||'').localeCompare(String(b.nome||b.partes||''),'pt-BR'));
+  // Filtros de prazo: o mais atrasado primeiro.
+  if(['prazos','vencidos','hoje','semana'].includes(procTab))list.sort((a,b)=>days(a)-days(b));
   return list
 }
 function renderProcessList(){
   const h=$('#lex-proc-list');if(!h)return;
-  const list=filteredProcesses(),meta=pageSlice(list,procPage,PROC_PAGE_SIZE);procPage=meta.page;
-  h.innerHTML=procRows(meta.items)+pagerHtml(meta,'lexSetProcPage');
-  const summary=$('#lex-proc-summary');if(summary)summary.textContent=list.length+' processo'+(list.length===1?'':'s')+' neste filtro';
+  const list=filteredProcesses();
+  h.innerHTML=procListHtml(list)+procGroupPager(list);
+  const summary=$('#lex-proc-summary');if(summary)summary.innerHTML=procSummary(list,['vencidos','hoje','semana','semcnj'].includes(procTab));
 }
 function setDeadlineServerState(work){deadlineServerState=Array.isArray(work?.prazos?.todos)?work.prazos.todos.filter(x=>x?.deadline_legal_truth===true&&x?.case_id!=null):[]}
 function deadlineTruthMap(){return new Map(deadlineServerState.map(x=>[String(x.case_id),x]))}
@@ -148,16 +185,26 @@ function officeBoardHtml(counts){
 window.lexHome=function(){navMark('home');return home()};
 window.lexProcessos=function(){
   navMark('processos');
-  const all=procs(),filtered=filteredProcesses(),meta=pageSlice(filtered,procPage,PROC_PAGE_SIZE);procPage=meta.page;
+  const all=procs(),filtered=filteredProcesses(),u=procUrgency(all),semcnj=all.filter(p=>active(p)&&!procShortNum(p)).length,urgentTab=['vencidos','hoje','semana','semcnj'].includes(procTab);
+  const tile=(tab,n,label,tone)=>'<button class="'+tone+(procTab===tab?' on':'')+'" onclick="lexSetProcFilter(\''+(procTab===tab?'todos':tab)+'\')"><b>'+n+'</b><span>'+label+'</span></button>';
   const body='<div class="lex-page-head"><div><small>Carteira jurídica</small><h1>Processos</h1></div><button onclick="goLex(\'autuacao\')" aria-label="Cadastrar processo">＋</button></div>'
+    +'<div class="lex-proc-urgent">'+tile('vencidos',u.vencidos,'Vencidos','late')+tile('hoje',u.hoje,'Prazo hoje','urgent')+tile('semana',u.semana,'Próximos 7 dias','soon')+(semcnj?tile('semcnj',semcnj,'Sem nº CNJ','muted'):'')+'</div>'
     +'<div class="lex-search"><span>⌕</span><input id="lex-q" value="'+esc(procQuery)+'" placeholder="Buscar número, cliente, parte, assunto..." oninput="lexFilterProc(this.value)"></div>'
     +'<div class="lex-process-toolbar"><div class="lex-tabs"><button class="'+(procTab==='todos'?'on':'')+'" onclick="lexSetProcFilter(\'todos\')">Todos <b>'+all.length+'</b></button><button class="'+(procTab==='ativos'?'on':'')+'" onclick="lexSetProcFilter(\'ativos\')">Ativos <b>'+all.filter(active).length+'</b></button><button class="'+(procTab==='prazos'?'on':'')+'" onclick="lexSetProcFilter(\'prazos\')">Com prazo <b>'+all.filter(x=>days(x)<9999).length+'</b></button><button class="'+(procTab==='arquivados'?'on':'')+'" onclick="lexSetProcFilter(\'arquivados\')">Encerrados <b>'+all.filter(x=>!active(x)).length+'</b></button></div>'
-    +'<label class="lex-sort">Ordenar <select onchange="lexSetProcSort(this.value)"><option value="recentes" '+(procSort==='recentes'?'selected':'')+'>Atualizados</option><option value="nome" '+(procSort==='nome'?'selected':'')+'>Nome</option><option value="numero" '+(procSort==='numero'?'selected':'')+'>Número</option></select></label></div>'
-    +'<div class="lex-list-summary" id="lex-proc-summary">'+filtered.length+' processo'+(filtered.length===1?'':'s')+' neste filtro</div>'
-    +'<div id="lex-proc-list">'+procRows(meta.items)+pagerHtml(meta,'lexSetProcPage')+'</div>';
+    +'<div class="lex-view-toggle" role="group" aria-label="Modo de exibição"><button class="'+(procView==='clientes'?'on':'')+'" onclick="lexSetProcView(\'clientes\')">Por cliente</button><button class="'+(procView==='lista'?'on':'')+'" onclick="lexSetProcView(\'lista\')">Lista</button></div>'
+    +(procView==='lista'?'<label class="lex-sort">Ordenar <select onchange="lexSetProcSort(this.value)"><option value="recentes" '+(procSort==='recentes'?'selected':'')+'>Atualizados</option><option value="nome" '+(procSort==='nome'?'selected':'')+'>Nome</option><option value="numero" '+(procSort==='numero'?'selected':'')+'>Número</option></select></label>':'')+'</div>'
+    +'<div class="lex-list-summary" id="lex-proc-summary">'+procSummary(filtered,urgentTab)+'</div>'
+    +'<div id="lex-proc-list">'+procListHtml(filtered)+procGroupPager(filtered)+'</div>';
   shell('Processos',body,'processos')
 };
-window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos','arquivados'].includes(tab)?tab:'todos';procPage=1;window.lexProcessos()};
+function procSummary(list,urgentTab){const label={vencidos:'com prazo vencido',hoje:'com prazo hoje',semana:'com prazo nos próximos 7 dias',semcnj:'sem número CNJ — informe o número para o LEX acompanhar no tribunal'}[procTab];
+  if(label)return list.length+' processo'+(list.length===1?'':'s')+' '+label+' · <button class="link" onclick="lexSetProcFilter(\'todos\')">ver todos</button>';
+  if(procView==='clientes'&&!procQuery&&!urgentTab){const g=procGroups(list);const n=g.filter(x=>!x.rest).length;return list.length+' processo'+(list.length===1?'':'s')+(n?' · '+n+' cliente'+(n===1?'':'s')+' · toque para abrir':'')}
+  return list.length+' processo'+(list.length===1?'':'s')+(procQuery?' encontrados':' neste filtro')}
+window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos','arquivados','vencidos','hoje','semana','semcnj'].includes(tab)?tab:'todos';procPage=1;window.lexProcessos()};
+window.lexSetProcView=view=>{procView=view==='lista'?'lista':'clientes';procPage=1;window.lexProcessos()};
+window.lexToggleProcGroup=key=>{const k=String(key);if(procOpen.has(k))procOpen.delete(k);else procOpen.add(k);renderProcessList()};
+window.lexMoreProcGroup=key=>{const k=String(key);procGroupShow[k]=(procGroupShow[k]||PROC_GROUP_ROWS)+PROC_GROUP_ROWS;renderProcessList()};
 window.lexSetProcSort=value=>{procSort=['recentes','nome','numero'].includes(value)?value:'recentes';procPage=1;renderProcessList()};
 window.lexSetProcPage=page=>{procPage=Math.max(1,Number(page)||1);renderProcessList();window.scrollTo?.({top:0,behavior:'smooth'})};
 window.lexFilterProc=q=>{procQuery=String(q||'').toLowerCase();procPage=1;renderProcessList()};
