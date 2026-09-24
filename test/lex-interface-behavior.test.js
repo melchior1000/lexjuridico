@@ -137,7 +137,8 @@ test('folha inclui deadline_truth real e baixa/desfaz pelo servidor, sem salvar 
     document:{readyState:'complete',activeElement:null,body:{classList:{add(){}},appendChild(x){sheetEl=x}},querySelector:()=>null,getElementById:()=>null,createElement:()=>el()}
   });
   window.lexPrazosVencidos();
-  const body=sheetEl.body;
+  const body=bodyNode;
+  assert.ok(sheetEl,'folha foi anexada ao DOM');
   assert.match(body.innerHTML,/Caso Vencido[\s\S]*Prazo confirmado:/,'deadline_truth objeto entra na folha');
   const event=attr=>({target:{closest:sel=>sel==='['+attr+']'?{dataset:{[attr==='data-done'?'done':'undo']:'v1'},disabled:false}:null}});
   await body.listeners.click(event('data-done'));
