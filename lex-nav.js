@@ -21,7 +21,7 @@
   // primeiro e a antiga como reserva, para nunca abrir tela em branco.
   const ROTAS = [
     // Dia a dia
-    {id: 'painel',          titulo: 'Início',                 grupo: 'dia',      icone: '◈', tela: () => call('lexHome') || call('renderPainel')},
+    {id: 'painel',          titulo: 'LEX',                    grupo: 'dia',      icone: '◈', tela: () => call('lexChat') || call('lexHome') || call('renderPainel')},
     {id: 'trabalho',        titulo: 'Tarefas',                grupo: 'dia',      icone: '☑', tela: () => call('lexTarefas') || call('renderTrabalho')},
     {id: 'recepcao',        titulo: 'Recepção',               grupo: 'dia',      icone: '📥', tela: () => call('renderRecepcaoLex')},
     {id: 'processos',       titulo: 'Processos',              grupo: 'dia',      icone: '⊞', tela: () => call('lexProcessos') || call('renderProcessos')},
