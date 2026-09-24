@@ -67,6 +67,36 @@ function consumeContext(selectedId){
   window.__lexDossierContext=null;
   return requested&&procs().some(p=>String(p.id)===requested)?requested:'';
 }
+function processSearchText(p){
+  return [p?.numero,p?.nome,p?.nome_oficial,p?.partes,p?.cliente,p?.grupo,p?.assunto,p?.tribunal,p?.vara]
+    .filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+function recentProcessIds(){
+  try{const a=JSON.parse(localStorage.getItem('lex_recent_processes')||'[]');return Array.isArray(a)?a.map(String).slice(0,8):[]}catch{return[]}
+}
+function rememberProcess(id){
+  const sid=String(id||'');if(!sid)return;
+  try{const next=[sid,...recentProcessIds().filter(x=>x!==sid)].slice(0,8);localStorage.setItem('lex_recent_processes',JSON.stringify(next))}catch{}
+}
+function searchProcesses(query,limit=12){
+  const rows=procs(),q=String(query||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  if(!q){
+    const recent=recentProcessIds().map(id=>rows.find(p=>String(p.id)===id)).filter(Boolean);
+    const fallback=[...rows].sort((a,b)=>String(b?.atualizado_em||b?.updated_at||'').localeCompare(String(a?.atualizado_em||a?.updated_at||''))).slice(0,limit);
+    const seen=new Set(),out=[];for(const p of [...recent,...fallback]){const id=String(p.id);if(seen.has(id))continue;seen.add(id);out.push(p);if(out.length>=limit)break}return out;
+  }
+  return rows.filter(p=>processSearchText(p).includes(q)).slice(0,limit);
+}
+function processPickerHtml(id){
+  const p=procs().find(x=>String(x.id)===String(id||''));
+  return '<div class="lex2-process-picker">'
+    +'<label for="lex-process-search">Processo da conversa</label>'
+    +(p?'<div class="lex2-process-selected"><span><b>'+esc(safeLabel(p))+'</b><small>'+esc(p.numero||'sem número')+'</small></span><button type="button" onclick="lexClearProcessContext()" aria-label="Remover processo do contexto">×</button></div>':'')
+    +'<div class="lex2-process-search"><span>⌕</span><input id="lex-process-search" type="search" autocomplete="off" placeholder="'+(p?'Trocar processo…':'Buscar por CNJ, cliente, parte ou nome…')+'" oninput="lexSearchProcessContext(this.value)" onfocus="lexSearchProcessContext(this.value)"></div>'
+    +'<input id="lex-chat-process" type="hidden" value="'+esc(String(id||''))+'">'
+    +'<div id="lex-process-results" class="lex2-process-results" role="listbox" aria-label="Resultados da busca"></div>'
+    +'</div>';
+}
 function dock(){return '<nav class="lex-dock"><button onclick="lexHome()"><b>⌂</b><span>Início</span></button><button onclick="lexProcessos()"><b>▣</b><span>Processos</span></button><button class="lex-main on" onclick="lexChat()"><b>◉</b><span>LEX</span></button><button onclick="lexPrazos()"><b>◷</b><span>Prazos</span></button><button onclick="lexMais()"><b>☰</b><span>Mais</span></button></nav>'}
 function chips(id){
   if(!id)return '<nav class="lex2-context-chips" aria-label="Ações do escritório"><button type="button" onclick="lex2Prefill(\'O que precisa de mim agora?\')">O que precisa de mim</button><button type="button" onclick="lexProcessos()">Processos</button><button type="button" onclick="lexPrazos()">Prazos</button><button type="button" onclick="lexChannel(\'all\')">Mensagens</button><button type="button" onclick="lex2Prefill(\'Quero cadastrar cliente, caso ou processo. Diga o que falta e encaminhe ao Cadastro.\')">Cadastros</button><button type="button" onclick="lex2Prefill(\'Explique os setores do escritório e o que cada um tem para fazer agora.\')">Setores</button></nav>';
@@ -91,7 +121,7 @@ function history(id){
 function render(selectedId){
   const id=consumeContext(selectedId),p=procs().find(x=>String(x.id)===id);
   const host=document.getElementById('content');if(!host)return;
-  window.lexSelectChatProcess?.(id);
+  window.lexSelectChatProcess?.(id);if(id)rememberProcess(id);
   document.body.classList.add('lex-commercial','lex2-core','lex2-coordinator');
   host.innerHTML='<main class="lex-screen lex2-lex">'
     +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
@@ -99,7 +129,7 @@ function render(selectedId){
     +'<section class="lex2-office-tools">'+officeMap()+specialistMap()+'<div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div>'+chips(id)+'</section>'
     +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+history(id)+'</section>'
     +'<form class="lex2-command" onsubmit="return lexSendChat(event)">'
-    +'<label for="lex-chat-process">Processo da conversa</label><select id="lex-chat-process" aria-label="Processo" onchange="lexSwitchChatProcess(this.value)"><option value="">Escritório geral — nenhum processo</option>'+procs().map(x=>'<option value="'+esc(String(x.id))+'" '+(String(x.id)===id?'selected':'')+'>'+esc((x.numero||'sem número')+' · '+safeLabel(x))+'</option>').join('')+'</select>'
+    +processPickerHtml(id)
     +'<div class="lex2-command-row"><button class="lex2-attach" data-lex-attachment type="button" aria-label="Anexar documento ao processo">＋</button><textarea id="lex-chat-input" aria-label="Sua ordem ao LEX" rows="2" placeholder="Dê uma ordem ao LEX…"></textarea><button class="lex2-send" type="submit" aria-label="Enviar">↑</button></div>'
     +'<small class="lex2-command-note">Ex.: “LEX, quero X no processo Y, faça desse jeito Z”. O banco processual é preservado; eu encaminho internamente. Atos críticos continuam sujeitos à autorização humana.</small></form>'
     +dock()+'</main>';
@@ -119,6 +149,15 @@ async function refreshOperationalStatus(){
   }catch(e){box.innerHTML='<b>LEX</b><span>Não consegui ler o estado do escritório agora. O banco não foi alterado.</span>'}
 }
 window.lex2Prefill=function(text){const i=document.getElementById('lex-chat-input');if(!i)return;i.value=text;i.focus()};
+window.lexSearchProcessContext=function(query){
+  const box=document.getElementById('lex-process-results');if(!box)return;
+  const rows=searchProcesses(query,12);
+  box.innerHTML=rows.map(p=>'<button type="button" role="option" onclick="lexChooseProcessContext(\''+esc(String(p.id))+'\')"><span><b>'+esc(safeLabel(p))+'</b><small>'+esc([p.numero,p.cliente||p.tribunal||p.vara].filter(Boolean).join(' · '))+'</small></span></button>').join('')
+    +(procs().length>12?'<small class="lex2-process-result-note">Mostrando no máximo 12 resultados. Refine a busca para localizar outro processo.</small>':'');
+  box.classList.toggle('open',rows.length>0);
+};
+window.lexChooseProcessContext=function(id){rememberProcess(id);window.lexSelectChatProcess?.(id);render(id)};
+window.lexClearProcessContext=function(){window.lexSelectChatProcess?.('');render('')};
 function settings(){
   const host=document.getElementById('content');if(!host)return;
   host.innerHTML='<main class="lex-screen lex2-settings"><header class="lex-top"><div><strong>Ajustes do escritório</strong><small>INFRAESTRUTURA</small></div><div class="lex-top-actions"><button onclick="lexChat()" aria-label="Voltar ao LEX">‹</button></div></header>'
