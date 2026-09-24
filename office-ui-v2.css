@@ -159,16 +159,16 @@ body.lex-commercial .lex-home-command b{display:grid;place-items:center;width:34
 .lex2-office-map summary small,.lex2-specialists summary small{font-size:9px;color:var(--muted);line-height:1.35}
 .lex2-office-map summary strong,.lex2-specialists summary strong{font-size:9px;color:#56afff}
 .lex2-database{padding:0 10px 9px}
-.lex2-database button,.lex2-sector-grid button,.lex2-specialist-grid button,.lex2-settings-grid button{width:100%;border:1px solid var(--line);border-radius:11px;background:var(--card2);color:var(--text);text-align:left}
+.lex2-database button,.lex2-sector-grid button,.lex2-specialist-card,.lex2-settings-grid button{width:100%;border:1px solid var(--line);border-radius:11px;background:var(--card2);color:var(--text);text-align:left}
 .lex2-database button{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 12px}
-.lex2-database span,.lex2-sector-grid span,.lex2-specialist-grid span{display:grid;gap:3px;min-width:0}
-.lex2-database b,.lex2-sector-grid b,.lex2-specialist-grid b,.lex2-settings-grid b{font-size:10px}
-.lex2-database small,.lex2-sector-grid small,.lex2-specialist-grid small,.lex2-settings-grid small{font-size:8px;color:var(--muted);line-height:1.35}
-.lex2-database em,.lex2-sector-grid em,.lex2-specialist-grid em{font-style:normal;font-size:8px;font-weight:800;color:#56afff}
+.lex2-database span,.lex2-sector-grid span,.lex2-specialist-card span{display:grid;gap:3px;min-width:0}
+.lex2-database b,.lex2-sector-grid b,.lex2-specialist-card b,.lex2-settings-grid b{font-size:10px}
+.lex2-database small,.lex2-sector-grid small,.lex2-specialist-card small,.lex2-settings-grid small{font-size:8px;color:var(--muted);line-height:1.35}
+.lex2-database em,.lex2-sector-grid em,.lex2-specialist-card em{font-style:normal;font-size:8px;font-weight:800;color:#56afff}
 .lex2-sector-grid,.lex2-specialist-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:0 10px 10px}
-.lex2-sector-grid button,.lex2-specialist-grid button{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start;padding:10px}
-.lex2-specialist-grid em{padding:3px 6px;border-radius:999px;border:1px solid var(--line)}
-.lex2-specialist-grid em.needs-ai{color:#f5b642}.lex2-specialist-grid em.operational{color:#6ed6a8}
+.lex2-sector-grid button,.lex2-specialist-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start;padding:10px}
+.lex2-specialist-card em{padding:3px 6px;border-radius:999px;border:1px solid var(--line)}
+.lex2-specialist-card em.needs-ai{color:#f5b642}.lex2-specialist-card em.operational{color:#6ed6a8}
 .lex2-operational-status{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card2);font-size:9px}
 .lex2-operational-status b{font-size:10px}.lex2-operational-status span{color:var(--muted);line-height:1.4}
 .lex2-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}
