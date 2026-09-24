@@ -3,10 +3,10 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {createKeepAlive}=require('../lib/keep-alive');
 
-test('visita /health do próprio endereço a cada 10 min, 24 h',async()=>{
+test('visita /health do próprio endereço a cada 5 min, 24 h',async()=>{
   const urls=[];let agendado=null;
   const k=createKeepAlive({url:'https://lex-juridico.onrender.com/',fetchImpl:async u=>{urls.push(u);return{ok:true}},setTimer:(fn,ms)=>{agendado={fn,ms};return{}},clearTimer:()=>{}});
-  assert.equal(k.start(),true);assert.equal(agendado.ms,10*60*1000);
+  assert.equal(k.start(),true);assert.equal(agendado.ms,5*60*1000);
   await agendado.fn();await new Promise(r=>setImmediate(r));
   assert.deepEqual(urls,['https://lex-juridico.onrender.com/health']);
   assert.equal(k.start(),false,'não duplica');
