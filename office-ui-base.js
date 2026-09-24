@@ -127,7 +127,7 @@ function renderFontesProcessos() {
 }
 async function lexConnectorCode(){try{const d=await lexApi('/api/conector/parear',{method:'POST',body:'{}'});document.getElementById('connector-code').value=d.token;document.getElementById('connector-notice').textContent='Código gerado. O código anterior foi invalidado.';}catch(e){document.getElementById('connector-notice').textContent=e.message;}}
 async function lexDownloadConnector(){try{const r=await fetchComTimeout(SERVIDOR+'/api/conector/download',{headers:{Authorization:'Bearer '+getAuthToken()}},30000);if(!r.ok)throw new Error('Conector não disponível nesta versão do servidor.');const u=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=u;a.download='LEX_conector_navegador.zip';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}catch(e){toast(e.message,'erro');}}
-async function lexQueryPublic(){const el=document.getElementById('datajud-notice');el.textContent='Consultando…';try{const d=await lexApi('/api/pje/sincronizar',{method:'POST',body:'{}'});el.textContent='Consulta concluída. '+(d.processos||[]).length+' processos consultados. Confira as datas dos movimentos.';}catch(e){el.textContent=e.message;}}
+async function lexQueryPublic(){const el=document.getElementById('datajud-notice');el.textContent='Consultando…';try{const d=await lexApi('/api/pje/sincronizar',{method:'POST',body:'{}',timeoutMs:180000});el.textContent='Consulta concluída. '+(d.resumo||((d.processos||[]).length+' processos consultados.'))+((d.erros||[]).length?' Falhas: '+d.erros.slice(0,3).map(e=>(e.numero||e.processo_id)+' ('+e.erro+')').join('; '):'');}catch(e){el.textContent=e.message;}}
 
 function lexReceptionTime(value){
   if(!value) return 'sem horário';
