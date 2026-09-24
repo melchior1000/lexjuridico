@@ -92,3 +92,12 @@ test('botão "Atualizar do tribunal" usa o servidor do LEX com login (antes cham
   assert.match(src,/lexApi\('\/api\/escritorio\/datajud',\{method:'POST',body:JSON\.stringify\(\{processo_id/);
   assert.doesNotMatch(src,/fetch\('\/api\/escritorio\/datajud'/);
 });
+
+test('ordem pelo CNJ da execução não confunde com o agravo "vinculado a" o mesmo número',()=>{
+  const {resolveCase}=require('../lib/task-engine');
+  const {pickChoice}=require('../lib/office-queries');
+  const ps=[{id:'ag',nome:'COFCO — Agravo',numero:'A confirmar — vinculado a 5004158-61.2024.8.13.0704'},{id:'ep',nome:'COFCO — Execução Principal',numero:'5004158-61.2024.8.13.0704'},{id:'k',nome:'Kleuber',numero:KLEUBER}];
+  assert.equal(resolveCase(ps,{instrucao:'faça a contestação do processo 5004158-61.2024.8.13.0704'}).process?.id,'ep');
+  assert.equal(resolveCase(ps,{instrucao:'analise o processo 6002846-94.2025.4.06.3818'}).process?.id,'k','CNJ dos embargos acha o caso');
+  assert.equal(pickChoice('5004158-61.2024.8.13.0704',ps.slice(0,2)).id,'ep');
+});
