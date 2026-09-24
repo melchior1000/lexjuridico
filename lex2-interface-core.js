@@ -66,11 +66,23 @@ function diarioLine(v){
 // Folha de ação: o LEX executa ali mesmo, sem abrir o chat.
 function sheet(title,onClose){
  document.querySelector?.('.lex-sheet')?.remove?.();
+ const previous=document.activeElement;
  const el=document.createElement('div');el.className='lex-sheet';
- el.innerHTML='<div class="lex-sheet-card" role="dialog" aria-modal="true" aria-label="'+esc(title)+'"><header><strong>'+esc(title)+'</strong><button class="lex-sheet-x" aria-label="Fechar">×</button></header><div class="lex-sheet-body"><p class="lex-sheet-lead">Conferindo…</p></div></div>';
- const close=()=>{el.remove();if(onClose)onClose()};
+ el.innerHTML='<div class="lex-sheet-card" role="dialog" aria-modal="true" aria-label="'+esc(title)+'" tabindex="-1"><header><strong>'+esc(title)+'</strong><button type="button" class="lex-sheet-x" aria-label="Fechar">×</button></header><div class="lex-sheet-body"><p class="lex-sheet-lead">Conferindo…</p></div></div>';
+ let closed=false;
+ const close=()=>{if(closed)return;closed=true;el.remove();previous?.focus?.();if(onClose)onClose()};
  el.addEventListener('click',e=>{if(e.target===el||e.target.closest?.('.lex-sheet-x'))close()});
+ el.addEventListener('keydown',e=>{
+   if(e.key==='Escape'){e.preventDefault?.();close();return}
+   if(e.key!=='Tab')return;
+   const focusables=[...(el.querySelectorAll?.('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')||[])].filter(x=>x.offsetParent!==null||x===document.activeElement);
+   if(!focusables.length)return;
+   const first=focusables[0],last=focusables[focusables.length-1];
+   if(e.shiftKey&&document.activeElement===first){e.preventDefault?.();last.focus?.()}
+   else if(!e.shiftKey&&document.activeElement===last){e.preventDefault?.();first.focus?.()}
+ });
  document.body.appendChild(el);
+ setTimeout(()=>{(el.querySelector?.('.lex-sheet-x')||el.querySelector?.('.lex-sheet-card'))?.focus?.()},0);
  return{el,body:el.querySelector('.lex-sheet-body'),close};
 }
 async function pullProcs(){try{if(typeof verificarESincronizar==='function')await verificarESincronizar()}catch{/* a sincronização periódica traz depois */}}
@@ -93,7 +105,7 @@ async function fixCnj(){
   +'<p class="lex-sheet-msg" role="status"></p>';
  const msg=s.body.querySelector('.lex-sheet-msg');
  const post=(id,numero)=>lexApi('/api/escritorio/processos/numero',{method:'POST',body:JSON.stringify({processo_id:id,numero}),timeoutMs:90000});
- const said=out=>[out.publicacoes?out.publicacoes+' publicação(ões) do Diário':null,out.tribunal==='atualizado'?'tribunal atualizado':null].filter(Boolean).join(', ');
+ const said=out=>[out.publicacoes?out.publicacoes+' publicação(ões) do Diário':null,out.diario_erro?'Diário com falha: '+out.diario_erro:null,out.tribunal==='atualizado'?'tribunal atualizado':null].filter(Boolean).join(', ');
  s.body.addEventListener('click',async e=>{
   const apply=e.target.closest?.('[data-fix-apply]'),save=e.target.closest?.('[data-fix-save]');
   if(apply){
@@ -118,30 +130,55 @@ async function fixCnj(){
   }
  });
 }
-// Prazo anotado vencido: um toque marca como cumprido (com Desfazer) ou abre o processo.
-function prazoOf(p){const v=String(p?.prazoReal||p?.prazo||p?.dataPrazo||'');const m=v.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'/'+m[2]+'/'+m[1]:v}
+// Prazo confirmado vencido: baixa/Desfazer são atômicos no servidor.
+function deadlineTruthDue(p){
+ const t=p?.deadline_truth;
+ if(t&&typeof t==='object'&&t.legal_truth===true&&t.due_at)return String(t.due_at);
+ if(t===true)return String(p?.prazoReal||p?.prazo||p?.dataPrazo||p?.next_action_due_at||'');
+ return'';
+}
+function formatPrazo(v){const raw=String(v||'');const m=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'/'+m[2]+'/'+m[1]:raw}
+function prazoOf(p){return formatPrazo(deadlineTruthDue(p)||p?.prazoReal||p?.prazo||p?.dataPrazo||p?.next_action_due_at||'')}
+function deadlineDays(p){
+ const raw=deadlineTruthDue(p);if(!raw)return 9999;
+ const copy={prazoReal:raw};return days(copy);
+}
 function prazosSheet(ids){
- const s=sheet(ids.length>1?'Prazos vencidos':'Prazo vencido',refreshHome),undo={};
+ const s=sheet(ids.length>1?'Prazos vencidos':'Prazo vencido',refreshHome),marked=new Set();
  const render=()=>{
-  const rows=procs().filter(p=>ids.includes(String(p.id))||undo[String(p.id)]);
-  s.body.innerHTML='<p class="lex-sheet-lead">O prazo anotado no LEX já passou. Confira no tribunal se foi cumprido; se sim, toque em <b>Cumprido</b>: tiro o alerta e registro no histórico do processo.</p>'
-   +rows.map(p=>{const id=String(p.id),done=!!undo[id];return'<div class="lex-fix-row'+(done?' done':'')+'"><span><b>'+esc(p.nome||p.partes||p.numero||'Processo')+'</b><small>'+(done?'✓ Cumprido · registrado no histórico':'Prazo anotado: '+esc(prazoOf(p)||'—'))+'</small></span><div class="lex-row-actions">'
-     +(done?'<button data-undo="'+esc(id)+'">Desfazer</button>':'<button class="ok" data-done="'+esc(id)+'">Cumprido</button><button data-open="'+esc(id)+'">Abrir</button>')+'</div></div>'}).join('');
+  const rows=procs().filter(p=>ids.includes(String(p.id)));
+  s.body.innerHTML='<p class="lex-sheet-lead">Este prazo foi confirmado no LEX e já venceu. Confira no tribunal se foi cumprido; a baixa e o Desfazer são gravados no servidor sem sobrescrever outros dados do processo.</p>'
+   +rows.map(p=>{const id=String(p.id),done=marked.has(id)||p?.prazo_baixa?.ativa===true;return'<div class="lex-fix-row'+(done?' done':'')+'"><span><b>'+esc(safeCaseLabel(p))+'</b><small>'+(done?'✓ Cumprido · registrado no histórico':'Prazo confirmado: '+esc(prazoOf(p)||'—'))+'</small></span><div class="lex-row-actions">'
+     +(done?'<button type="button" data-undo="'+esc(id)+'">Desfazer baixa</button>':'<button type="button" class="ok" data-done="'+esc(id)+'">Cumprido</button><button type="button" data-open="'+esc(id)+'">Abrir</button>')+'</div></div>'}).join('')
+   +'<p class="lex-sheet-msg" role="status" aria-live="polite"></p>';
  };
  render();
- s.body.addEventListener('click',e=>{
+ s.body.addEventListener('click',async e=>{
   const done=e.target.closest?.('[data-done]'),back=e.target.closest?.('[data-undo]'),open=e.target.closest?.('[data-open]');
   if(open){s.close();window.lexOpenProc?.(open.dataset.open);return}
-  if(typeof saveProcs!=='function')return;
-  const ps=procs();
-  if(done){const id=done.dataset.done,i=ps.findIndex(x=>String(x.id)===id);if(i<0)return;const p=ps[i],was=prazoOf(p),hoje=new Date().toLocaleDateString('pt-BR');
-   undo[id]=p;ps[i]={...p,prazo:'',prazoReal:'',dataPrazo:'',prazo_cumprido:was,prazo_cumprido_em:hoje,andamentos:[{data:hoje,txt:'[LEX] Prazo de '+was+' marcado como cumprido pelo advogado.'},...list(p.andamentos)]};saveProcs(ps);render();return}
-  if(back){const id=back.dataset.undo,i=ps.findIndex(x=>String(x.id)===id);if(i>=0&&undo[id]){ps[i]=undo[id];saveProcs(ps)}delete undo[id];render()}
+  const msg=s.body.querySelector?.('.lex-sheet-msg');
+  if(done){
+   const id=done.dataset.done;done.disabled=true;
+   try{
+     await lexApi('/api/escritorio/prazos/cumprido',{method:'POST',body:JSON.stringify({processo_id:id,acao:'marcar'})});
+     marked.add(id);await pullProcs();render();
+   }catch(err){done.disabled=false;if(msg)msg.textContent=err.message||'Não consegui marcar o prazo como cumprido.'}
+   return;
+  }
+  if(back){
+   const id=back.dataset.undo;
+   if(typeof confirm==='function'&&!confirm('Desfazer somente a baixa deste prazo? Outros andamentos do processo serão preservados.'))return;
+   back.disabled=true;
+   try{
+     await lexApi('/api/escritorio/prazos/cumprido',{method:'POST',body:JSON.stringify({processo_id:id,acao:'desfazer'})});
+     marked.delete(id);await pullProcs();render();
+   }catch(err){back.disabled=false;if(msg)msg.textContent=err.message||'Não consegui desfazer a baixa.'}
+  }
  });
 }
 function processOfficial(p){return !!(p?.last_court_sync_at||p?.partes_verificadas_em||p?.cadastro_conferido==='tribunal'||p?.numero_verificado_fonte==='pje')}
 function safeCaseLabel(p){if(processOfficial(p))return p?.nome_oficial||p?.partes||p?.nome||p?.numero||'Processo';const m=String(p?.numero||'').match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);return m?'Processo '+m[0]+' — dados a conferir':'Processo — dados a conferir'}
-function vencidosIds(){return procs().filter(p=>processOfficial(p)&&p.deadline_truth===true&&days(p)<0&&!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''))).map(p=>String(p.id))}
+function vencidosIds(){return procs().filter(p=>processOfficial(p)&&deadlineTruthDue(p)&&!p?.prazo_baixa?.ativa&&!p?.deadline_truth_resolvido_em&&deadlineDays(p)<0&&!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''))).map(p=>String(p.id))}
 window.lexFixCnj=fixCnj;
 window.lexPrazosVencidos=ids=>prazosSheet(Array.isArray(ids)&&ids.length?ids.map(String):vencidosIds());
 async function today(){
