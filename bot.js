@@ -93,6 +93,7 @@ const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
 const {pickChoice,dailyBriefText} = require('./lib/office-queries');
 const {createMorningBrief} = require('./lib/morning-brief');
+const {createPjeMonitor} = require('./lib/pje-monitor');
 const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
@@ -821,6 +822,15 @@ const deadlineScheduler=createDeadlineScheduler({
     }
   }),
   notify:text=>notificationDigest.enqueue(text,CHAT_ID||'central'),
+  log:msg=>console.warn(msg)
+});
+// Vigia do PJe (MNI): lista expedientes pendentes, nunca abre teor sozinho.
+const pjeMonitor = createPjeMonitor({
+  records:recordStore,processStore,
+  notify:async text=>{
+    await envTelegram(text,null,CHAT_ID).catch(()=>false);
+    if(process.env.LEX_OPERATOR_WHATSAPP) await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false);
+  },
   log:msg=>console.warn(msg)
 });
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
@@ -5993,7 +6003,7 @@ async function processarMensagem(ctx, dados) {
     }
     try {
       const execution=await executeNaturalOfficeCommand({
-        records:recordStore,engine:taskEngine,processStore,
+        records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,
         log:msg=>console.warn('[LEX Core]',msg)
       },{
         text:choice?choice.texto:txt,processo_id:choice?.processo_id,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
@@ -10377,7 +10387,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
-    await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,
+    await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,pje:typeof pjeMonitor==='undefined'?null:pjeMonitor,
       engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox:typeof channelOutbox==='undefined'?null:channelOutbox,
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
@@ -13103,13 +13113,15 @@ deadlineScheduler.start();
 const morningBrief=createMorningBrief({
   records:recordStore,
   hour:Number(process.env.LEX_BOM_DIA_HORA)||7,
-  compose:now=>dailyBriefText({records:recordStore,engine:taskEngine,processStore},{
+  compose:now=>dailyBriefText({records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor},{
     now,workQueue:()=>executeNaturalOfficeCommand({records:recordStore,engine:taskEngine,processStore,log:()=>{}},{text:'veja o que precisa de mim',profile:'admin'})
   }).then(text=>'☀️ Bom dia! '+text),
   deliver:text=>envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP),
   log:msg=>console.warn(msg)
 });
 if(process.env.LEX_OPERATOR_WHATSAPP && process.env.LEX_BOM_DIA!=='0') morningBrief.start();
+if(pjeMonitor.config.configurado){pjeMonitor.start();console.log('[LEX] Vigia do PJe (MNI) ativa: '+pjeMonitor.config.tribunais.map(t=>t.sigla).join(', '));}
+else console.log('[LEX] Vigia do PJe (MNI) desligada: '+(pjeMonitor.config.erro||'faltam '+pjeMonitor.config.faltando.join(', ')));
 console.log('[LEX] Vigia de prazos agendada — DJEN diário + alertas persistentes');
 
 
@@ -13211,9 +13223,9 @@ class AgentePJe extends AgenteBase {
   constructor() {
     super({
       nome: 'PJe',
-      descricao: 'Importa andamentos pelo CNJ exato, preservando prazos. Conector de acesso ao tribunal pendente de implantação.',
-      status: 'pendente',  // pendente até lex-agente.js estar testado
-      ferramentas: ['receberAndamento']
+      descricao: 'Vigia os expedientes pendentes no PJe (MNI), calcula a ciência tácita e só abre teor com autorização do advogado. Importa andamentos pelo CNJ exato.',
+      status: pjeMonitor.config.configurado ? 'pronto' : 'pendente',
+      ferramentas: ['receberAndamento','sincronizarExpedientes','listarExpedientes']
     });
   }
 
@@ -13226,6 +13238,8 @@ class AgentePJe extends AgenteBase {
     return {sucesso:true, duplicado:result.duplicado, proc_nome:result.processo.nome};
   }
 
+  sincronizarExpedientes(){ return pjeMonitor.tick(); }
+  listarExpedientes(){ return pjeMonitor.list(); }
 }
 
 class AgenteJudicial extends AgenteAssessor {

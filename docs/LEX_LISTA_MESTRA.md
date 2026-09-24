@@ -92,3 +92,7 @@ Evidência: `test/office-queries.test.js` (13 testes). Estados das etapas 6 e 15
 - "Bom dia" automático no WhatsApp do titular a partir das 7h (`lib/morning-brief.js`): uma vez por dia, marcado só após confirmação do provedor; `LEX_BOM_DIA=0` desliga.
 
 Evidência: `test/office-queries.test.js`, `test/morning-brief.test.js`. Sem homologação real nos canais ainda.
+
+## Registro 24/09/2026 (3) — PJe pelo MNI (etapa 14)
+
+Implementado o cliente MNI 2.2.2 (`lib/pje-mni.js`) e a vigia de expedientes (`lib/pje-monitor.js`). A vigia lista avisos pendentes sem dar ciência, casa pelo CNJ, calcula a ciência tácita (Lei 11.419/2006, art. 5º, §3º) e avisa nos canais. A abertura de teor exige "CONFIRMO CIENCIA SIGLA ID" do advogado. Detalhes e limites: `docs/PJE_MNI.md`. Evidência: `test/pje-mni.test.js` (10 testes, incluindo "a vigia nunca chama consultarTeorComunicacao"). A etapa 14 segue 🟡 até a leitura real com credenciais do advogado em cada tribunal.
