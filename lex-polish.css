@@ -97,3 +97,13 @@ body.lex-commercial .lex-proc-says .chips-row .on{background:color-mix(in srgb,c
 body.lex-commercial .lex-proc-says>button{flex:none;min-height:38px;padding:0 12px;border:0;border-radius:10px;background:#0b70ff;color:#fff;font-size:12px;font-weight:700;cursor:pointer}
 @media(max-width:620px){body.lex-commercial .lex-proc-says{flex-direction:column;align-items:stretch}body.lex-commercial .lex-says{flex-wrap:wrap}body.lex-commercial .lex-says>button{width:100%}}
 body.lex-commercial .lex-today-more{width:100%;min-height:44px;margin-top:4px;border:1px dashed var(--line);border-radius:12px;background:transparent;color:#0b70ff;font-size:13px;cursor:pointer}
+/* Ligar ao tribunal (OAB) */
+body.lex-commercial .lex-oab{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+body.lex-commercial .lex-oab p{margin:0;font-size:13px;line-height:1.45;color:var(--muted)}
+body.lex-commercial .lex-oab label{font-size:12px;font-weight:700}
+body.lex-commercial .lex-oab input{min-height:48px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg,transparent);color:var(--text);font-size:16px}
+body.lex-commercial .lex-oab .lex-oab-go{min-height:48px;border:0;border-radius:10px;background:#0b70ff;color:#fff;font-weight:800;font-size:14px;cursor:pointer}
+body.lex-commercial .lex-oab .lex-oab-sec{min-height:44px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
+body.lex-commercial .lex-oab-out{white-space:pre-line;font-size:13px;line-height:1.45}
+body.lex-commercial .lex-oab-out.ok{color:#2fb67c}body.lex-commercial .lex-oab-out.erro{color:#e5484d}
+body.lex-commercial .lex-oab hr{border:0;border-top:1px solid var(--line);margin:4px 0}

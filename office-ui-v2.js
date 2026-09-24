@@ -158,6 +158,28 @@ function cnjOk(d){d=String(d||'').replace(/\D/g,'');if(d.length!==20||typeof Big
 function judicial(p){return !/administr|extrajud|consult/i.test(String(p?.tipo||'')+' '+String(p?.setor||''))}
 function cnjProblem(p){if(!active(p)||!judicial(p))return false;const n=procShortNum(p);return !n||!cnjOk(n)}
 window.lexAskLex=function(text){try{window.lexSelectChatProcess?.('')}catch{}if(typeof window.lexChat!=='function')return;window.lexChat('');setTimeout(()=>{const input=document.getElementById('lex-chat-input');if(!input)return;input.value=String(text||'');const form=input.closest('form');if(form&&typeof form.requestSubmit==='function')form.requestSubmit();else if(typeof window.lexSendChat==='function')window.lexSendChat({preventDefault(){}})},100)};
+// Ligar ao tribunal: o advogado digita a OAB e o LEX já busca o Diário (DJEN).
+window.lexOab=async function(){
+  navMark('mais');let atuais=[];
+  try{const d=await lexApi('/api/escritorio/oab');atuais=Array.isArray(d.oabs)?d.oabs:[]}catch{}
+  const lista=atuais.map(o=>o.oab+'/'+o.uf).join(', ');
+  const body='<div class="lex-page-head"><div><small>Ligar ao tribunal</small><h1>Sua OAB</h1></div></div>'
+    +'<section class="lex-oab"><p>Digite a OAB. O LEX passa a ler o Diário de Justiça (DJEN) todos os dias e traz as publicações para os seus processos.</p>'
+    +'<label for="lex-oab-in">OAB</label><input id="lex-oab-in" inputmode="text" autocomplete="off" placeholder="123456/MG — mais de uma: separe por vírgula" value="'+esc(lista)+'">'
+    +'<button class="lex-oab-go" onclick="lexOabSave()">'+(lista?'Atualizar e buscar publicações':'Ligar e buscar publicações')+'</button>'
+    +'<div id="lex-oab-out" class="lex-oab-out" role="status">'+(lista?'Ligada: '+esc(lista):'')+'</div>'
+    +'<hr><p><b>Intimações no painel do PJe/eproc</b> precisam do acesso ao sistema (CPF e senha). Depois de configurado, teste aqui:</p>'
+    +'<button class="lex-oab-sec" onclick="lexAskLex(\'teste o PJe\')">Testar conexão com o tribunal</button></section>';
+  shell('Ligar ao tribunal',body,'mais');
+};
+window.lexOabSave=async function(){
+  const input=$('#lex-oab-in'),out=$('#lex-oab-out'),btn=$('.lex-oab-go');const v=String(input?.value||'').trim();
+  if(!v){if(out)out.textContent='Digite a OAB, por exemplo 123456/MG.';return}
+  if(btn){btn.disabled=true;btn.textContent='Ligando e lendo o Diário…'}
+  try{const d=await lexApi('/api/escritorio/oab',{method:'POST',body:JSON.stringify({oab:v}),timeoutMs:120000});if(out){out.textContent=d.mensagem||'OAB ligada.';out.className='lex-oab-out ok'}}
+  catch(e){if(out){out.textContent='Não liguei: '+(e?.message||'erro');out.className='lex-oab-out erro'}}
+  finally{if(btn){btn.disabled=false;btn.textContent='Atualizar e buscar publicações'}}
+};
 window.lexOpenProc=id=>openProc(id);
 
 async function home(){
@@ -392,7 +414,7 @@ window.lexArchiveChannelContact=async function(origem,id){
   catch(err){if(typeof window.toast==='function')window.toast(err.message||'Não foi possível arquivar','erro')}
 };
 
-window.lexMais=function(){navMark('mais');const body='<div class="lex-page-head"><div><small>Funções complementares</small><h1>Mais</h1></div><button onclick="lexToggleTheme()">◐</button></div><div class="lex-menu"><button onclick="goLex(\'agenda\')">👥<span>Clientes / Contatos</span><b>›</b></button><button onclick="goLex(\'calendario\')">📅<span>Agenda</span><b>›</b></button><button onclick="goLex(\'autuacao\')">📄<span>Documentos / Autuação</span><b>›</b></button><button disabled title="Módulo financeiro ainda não possui rota comercial própria">＄<span>Financeiro · em breve</span><b>·</b></button><button onclick="goLex(\'estatisticas\')">▥<span>Relatórios / Estatísticas</span><b>›</b></button><button onclick="lexEscritorio()">▦<span>Escritório / Setores</span><b>›</b></button><button onclick="goLex(\'escritorio\')">⚙<span>Configurações do escritório</span><b>›</b></button></div><h2 class="lex-channel-title">Canais de comunicação</h2><div class="lex-channels"><button onclick="lexChannel(\'whatsapp\')">🟢<span>WhatsApp</span></button><button onclick="lexChannel(\'telegram\')">🔵<span>Telegram</span></button><button onclick="lexChannel(\'all\')">✉️<span>Mensagens</span></button><button onclick="goLex(\'pje\')">Pe<span>PJe</span></button></div>';shell('Mais',body,'mais')};
+window.lexMais=function(){navMark('mais');const body='<div class="lex-page-head"><div><small>Funções complementares</small><h1>Mais</h1></div><button onclick="lexToggleTheme()">◐</button></div><div class="lex-menu"><button onclick="lexOab()">⚖<span>Ligar ao tribunal (OAB)</span><b>›</b></button><button onclick="goLex(\'agenda\')">👥<span>Clientes / Contatos</span><b>›</b></button><button onclick="goLex(\'calendario\')">📅<span>Agenda</span><b>›</b></button><button onclick="goLex(\'autuacao\')">📄<span>Documentos / Autuação</span><b>›</b></button><button disabled title="Módulo financeiro ainda não possui rota comercial própria">＄<span>Financeiro · em breve</span><b>·</b></button><button onclick="goLex(\'estatisticas\')">▥<span>Relatórios / Estatísticas</span><b>›</b></button><button onclick="lexEscritorio()">▦<span>Escritório / Setores</span><b>›</b></button><button onclick="goLex(\'escritorio\')">⚙<span>Configurações do escritório</span><b>›</b></button></div><h2 class="lex-channel-title">Canais de comunicação</h2><div class="lex-channels"><button onclick="lexChannel(\'whatsapp\')">🟢<span>WhatsApp</span></button><button onclick="lexChannel(\'telegram\')">🔵<span>Telegram</span></button><button onclick="lexChannel(\'all\')">✉️<span>Mensagens</span></button><button onclick="goLex(\'pje\')">Pe<span>PJe</span></button></div>';shell('Mais',body,'mais')};
 window.goLex=p=>go(p);
 window.renderPainel=home;window.renderTrabalho=window.lexTarefas;window.renderProcessos=window.lexProcessos;window.renderPrazos=window.lexPrazos;window.lexFocusV2=window.lexChat;
 function hook(){themeInit();disableLegacySweep();syncLegacyThemeButton();if(typeof window.ir==='function'&&!window.ir.__commercial){const old=window.ir;window.ir=function(page){if(page==='painel'){home();return}if(page==='trabalho'){window.lexTarefas();return}if(page==='processos'){window.lexProcessos();return}if(page==='prazos'){window.lexPrazos();return}return old.apply(this,arguments)};window.ir.__commercial=true}setTimeout(()=>{disableLegacySweep();syncLegacyThemeButton();const c=$('#content');if(c&&c.offsetParent!==null&&!$('.lex-screen',c))window.lexHome()},120)}
