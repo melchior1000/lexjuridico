@@ -8,7 +8,9 @@ const css=fs.readFileSync('office-ui-v2.css','utf8');
 test('LEX coordenador consome contexto do dossie uma unica vez e valida processo',()=>{
   assert.match(ui,/window\.__lexDossierContext=null/);
   assert.match(ui,/procs\(\)\.some\(p=>String\(p\.id\)===requested\)/);
-  assert.match(ui,/Escritório geral — nenhum processo/);
+  assert.match(ui,/Buscar por CNJ, cliente, parte ou nome/);
+  assert.match(ui,/searchProcesses\(query,12\)/);
+  assert.doesNotMatch(ui,/<select id="lex-chat-process"/);
 });
 
 test('LEX coordenador nao abre conversa vazia nem esconde a ordem principal',()=>{
