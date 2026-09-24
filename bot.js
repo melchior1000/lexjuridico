@@ -768,6 +768,8 @@ const _PJE_INTERVALO_PADRAO_HORAS = 6;
 // ════════════════════════════════════════════════════════════════════════════
 // SUPABASE — REST helpers (com tratamento real de erro, não silencioso)
 // ════════════════════════════════════════════════════════════════════════════
+// Modo comercial: um processo = um escritório, banco com RLS. Não liga fora disso.
+require('./lib/tenant-guard').enforceTenantBoot();
 const sbRaw = createSupabaseRequest({url: SB_URL, key: SB_KEY, https});
 const processStore = new ProcessStore(sbRaw, {onCommit:(rows,version,device)=>{
   processos.splice(0,processos.length,...rows);

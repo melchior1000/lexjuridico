@@ -96,3 +96,7 @@ Evidência: `test/office-queries.test.js`, `test/morning-brief.test.js`. Sem hom
 ## Registro 24/09/2026 (3) — PJe pelo MNI (etapa 14)
 
 Implementado o cliente MNI 2.2.2 (`lib/pje-mni.js`) e a vigia de expedientes (`lib/pje-monitor.js`). A vigia lista avisos pendentes sem dar ciência, casa pelo CNJ, calcula a ciência tácita (Lei 11.419/2006, art. 5º, §3º) e avisa nos canais. A abertura de teor exige "CONFIRMO CIENCIA SIGLA ID" do advogado. Detalhes e limites: `docs/PJE_MNI.md`. Evidência: `test/pje-mni.test.js` (10 testes, incluindo "a vigia nunca chama consultarTeorComunicacao"). A etapa 14 segue 🟡 até a leitura real com credenciais do advogado em cada tribunal.
+
+## Registro 24/09/2026 (4) — isolamento entre escritórios (gate SaaS)
+
+Auditoria: 12 tabelas usadas pelo LEX estavam fora da muralha (contatos, sessões do WhatsApp, documentos, mensagens, auditoria, cobranças, checkpoints etc.) e o código deixava tabela não declarada passar sem filtro. Corrigido em três camadas: código recusa tabela não isolada; migração `20260924120000` leva RLS às 12 tabelas e cria `ativar_multi_escritorio()`, que remove o padrão "primeiro escritório" e as chaves globais legadas; trava de inicialização do modo comercial. Evidência: `test/tenant-migrations-pglite.test.js` (A/B em PostgreSQL real, todas as tabelas) e `test/tenant-guard.test.js`. Falta aplicar em produção e homologar A/B com dados sintéticos (§9).
