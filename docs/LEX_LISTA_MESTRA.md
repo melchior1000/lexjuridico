@@ -76,3 +76,11 @@ Não exigir escolha de IA/setor ou comandos decorados. Exemplos de aceite: “re
 Fechar a lista funcional não autoriza vender o sistema se o isolamento entre escritórios não estiver comprovado. Antes da declaração comercial, cumprir o gate SaaS de AGENTS.md: identidade por usuário/escritório, isolamento de dados/ferramentas, RLS ou mecanismo equivalente comprovado, teste A/B, segredos, documentos/versionamento, backup/restore, limites, observabilidade, onboarding, rollback e billing isolado quando habilitado.
 
 Nenhum novo ✅ deve ser atribuído apenas por CI, mock, PR ou preview.
+
+## Registro 24/09/2026 — consultas do dia a dia pelos canais (etapas 6 e 15)
+
+Antes: das 18 frases típicas do advogado testadas, só 2 viravam ação no Core; "prazos de hoje", "tem intimação nova?", "andamento do processo X" e "resumo do dia" caíam na conversa livre da IA, que não pode ser fonte de prazo.
+
+Agora (`lib/office-queries.js`, ligado em `executeNaturalOfficeCommand`): prazos (hoje/amanhã/semana/quinzena/mês/vencidos) via `DeadlineWatch.watchlist`, com "NÃO confirmado" para prazo sem autorização oficial; intimações do DJEN a partir de `djen_comunicacoes`, com órfãs (processo não cadastrado) e alerta de leitura atrasada; andamento por nome ou CNJ, com opções listadas no texto quando há ambiguidade; resumo do dia; ajuda. Banco indisponível falha fechado ("isso NÃO significa que não há intimações"). Pergunta jurídica em tese ("qual o prazo para contestar?") deixa de abrir tarefa de contestação e segue para o assessor.
+
+Evidência: `test/office-queries.test.js` (13 testes). Estados das etapas 6 e 15 não mudam até homologação real nos canais.
