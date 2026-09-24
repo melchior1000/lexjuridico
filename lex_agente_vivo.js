@@ -58,6 +58,11 @@ async function tratarRota(req, res, url, deps) {
     }
 
     const specialist=specializedIntent(body.mensagem);
+    if(process.env.LEX_AI_NO_CREDIT==='1'&&specialist){
+      const nome=specialist==='julgador'?'Perfil / padrão decisório do magistrado':'Pesquisa de jurisprudência';
+      jsonResponse(res,200,{ok:true,texto:nome+' está pausado porque o provedor de IA está sem crédito. O processo permanece intacto no banco. Posso continuar com atualização de fontes conectadas, prazos, cadastro, mensagens e demais rotinas operacionais.',ia_estado:'sem_credito',especialista:specialist},nextDeps.CORS);
+      return true;
+    }
     if(specialist==='jurisprudencia'){
       const selected=processById(nextDeps.processos,processoId);
       const specialistBody={
@@ -101,6 +106,11 @@ async function tratarRota(req, res, url, deps) {
         return true;
       }
     }
+  }
+
+  if(cleanUrl==='/api/vivo/conversar'&&req&&req.method==='POST'&&process.env.LEX_AI_NO_CREDIT==='1'){
+    jsonResponse(res,200,{ok:true,texto:'A IA jurídica está sem crédito neste momento. O LEX continua operacional para banco de processos, cadastro, prazos, mensagens, fontes já conectadas e movimentação do escritório. Para análise jurídica livre, redação, jurisprudência, perícia analítica ou perfil do magistrado, recarregue o provedor e repita a ordem.',ia_estado:'sem_credito'},nextDeps.CORS);
+    return true;
   }
 
   return core.tratarRota(req, res, url, nextDeps);
