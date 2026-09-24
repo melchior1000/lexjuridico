@@ -3,31 +3,20 @@
 const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const LEX_SPECIALISTS=[
-  ['Roteador','Identifica qual processo é qual e resolve ambiguidades entre casos parecidos.',false],
-  ['Cadastrador / Autuação','Recebe novos clientes, abre o caso e cobra documentos pendentes.',false],
-  ['Cobrador','Monitora processos e tarefas sem atualização e cobra a pendência.',false],
-  ['Assessor','Análise do processo: diagnóstico, estratégia, redação assistida e red team.',true],
-  ['Jurídico judicial','Analisa processos judiciais e prepara minutas para revisão.',true],
-  ['Jurídico administrativo','Analisa procedimentos administrativos e prepara minutas.',true],
-  ['Pesquisa decisória','Perfil / padrão decisório do magistrado com fontes e limites da amostra.',true],
-  ['Pericial','Laudos, cálculos, quesitos e pareceres técnicos.',true],
-  ['PJe','Expedientes, partes e andamentos nas integrações oficiais disponíveis.',false],
-  ['Coordenador','Registra a ordem, confere o caso e acompanha execução e entrega.',false],
-  ['Redação','Produz minutas a partir da triagem e das fontes do caso.',true],
-  ['Revisão','Mantém a versão da minuta e registra a revisão profissional.',true],
-  ['Controladoria','Confere contagens e prazos sem inventar prazo processual.',false],
-  ['Documental','Recupera entregas e gera documentos para revisão.',false]
-]
-const OFFICE_SECTORS=[
-  ['recepcao','Recepção','Recebe clientes e mensagens, identifica a demanda e encaminha.'],
-  ['cadastro','Cadastro','Confere cliente, processo, documentos e dados faltantes.'],
-  ['iniciais','Iniciais','Prepara o caso conferido para distribuição ou protocolo.'],
-  ['processos','Processos','Mantém a carteira distribuída: partes, vara, tribunal, andamentos e situação.'],
-  ['prazos','Prazos','Controladoria de DJEN, expedientes e prazos confirmados.'],
-  ['pecas','Peças','Produz petições, contestações, recursos e minutas.'],
-  ['pericia','Perícia','Cuida de cálculos, quesitos, pareceres e material técnico.'],
-  ['revisao','Revisão','Confere entregas, devolve correções e libera a próxima etapa.'],
-  ['concluidos','Concluídos','Encerra o fluxo sem apagar o histórico nem o banco do processo.']
+  ['Roteador','Entende a ordem, identifica o processo e decide para onde encaminhar.',false],
+  ['Cadastrador / Autuação','Organiza cliente, processo, documentos e dados faltantes.',false],
+  ['Cobrador','Acompanha tarefas e pendências que precisam voltar para a equipe.',false],
+  ['Assessor','Análise do processo: diagnóstico, estratégia, risco, pontos fortes/fracos e próximos passos.',true],
+  ['Jurídico judicial','Trabalho jurídico de processos judiciais e apoio às peças e providências.',true],
+  ['Jurídico administrativo','Trabalho jurídico de processos e demandas administrativas.',true],
+  ['Pesquisa decisória','Perfil/padrão decisório do magistrado com decisões identificadas, fundamentos, provas e limites da amostra.',true],
+  ['Pericial','Cálculos, quesitos, pareceres e análise técnica.',true],
+  ['PJe','Fontes oficiais: número, partes, andamentos e expedientes nas integrações disponíveis.',false],
+  ['Coordenador','Coordena o escritório inteiro, distribui ordens e acompanha a execução.',true],
+  ['Redação','Produz petições, contestações, recursos e outras minutas para revisão.',true],
+  ['Revisão','Confere entregas antes da liberação e devolve correções quando necessário.',true],
+  ['Controladoria','Prazos, DJEN, expedientes, conferência e organização das pendências processuais.',false],
+  ['Documental','Organiza documentos, autos, anexos e material vinculado ao processo.',false]
 ];
 function stageOf(p){
   const s=String(p?.office_stage||p?.fluxo_setor||p?.setor_fluxo||'').toLowerCase();
