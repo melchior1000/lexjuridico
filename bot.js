@@ -13892,7 +13892,7 @@ async function bootInicio() {
   if(process.env.LEX_KEEPALIVE!=='0'){
     const {createKeepAlive}=require('./lib/keep-alive');
     global._lexKeepAlive=createKeepAlive({url:process.env.LEX_KEEPALIVE_URL||process.env.RENDER_EXTERNAL_URL,log:m=>console.warn(m)});
-    if(global._lexKeepAlive.start())console.log('[Lex] keep-alive ativo: visita /health a cada 10 min.');
+    if(global._lexKeepAlive.start())console.log('[Lex] keep-alive ativo: visita /health a cada 5 min.');
   }
 
   const urg = getPrazos(3).filter(a=>a.dias<=3);
