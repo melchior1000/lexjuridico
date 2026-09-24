@@ -33,8 +33,8 @@ function sectorCounts(){
   return counts;
 }
 function specialistMap(){
-  return '<details class="lex2-specialists"><summary><span><b>14 agentes do LEX</b><small>Análise do processo, perfil do magistrado, redação, perícia, controladoria, PJe e demais especialistas registrados no backend</small></span><strong>Ver agentes</strong></summary>'
-    +'<div class="lex2-specialist-grid">'+LEX_SPECIALISTS.map(([name,desc,needsAi])=>'<button type="button" onclick="lex2Prefill(\'Quero usar '+esc(name)+'. Explique o que você precisa de mim e execute no contexto desta conversa.\')"><span><b>'+esc(name)+'</b><small>'+esc(desc)+'</small></span><em class="'+(needsAi?'needs-ai':'operational')+'">'+(needsAi?'IA':'OP')+'</em></button>').join('')+'</div>'
+  return '<details class="lex2-specialists"><summary><span><b>14 agentes do LEX</b><small>Funcionários internos que o LEX aciona automaticamente. Você não precisa escolher agente.</small></span><strong>Ver agentes</strong></summary>'
+    +'<div class="lex2-specialist-grid">'+LEX_SPECIALISTS.map(([name,desc,needsAi])=>'<div class="lex2-specialist-card"><span><b>'+esc(name)+'</b><small>'+esc(desc)+'</small></span><em class="'+(needsAi?'needs-ai':'operational')+'">'+(needsAi?'IA':'OP')+'</em></div>').join('')+'</div>'
     +'</details>';
 }
 function officeMap(){
