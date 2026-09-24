@@ -82,7 +82,7 @@ function procLine(p,opts){const d=trustedDeadline(p)?days(p):9999,num=procShortN
 function procUrgency(list){const r={vencidos:0,hoje:0,semana:0};for(const p of list){if(!active(p)||!trustedDeadline(p))continue;const d=days(p);if(d<0)r.vencidos++;else if(d===0)r.hoje++;else if(d<=7)r.semana++}return r}
 function procGroups(list){const map=new Map();for(const p of list){const name=procClient(p),key=procKey(name)||'~';if(!map.has(key))map.set(key,{key,name:name||'Sem cliente identificado',items:[]});map.get(key).items.push(p)}
   const groups=[],single=[];for(const g of map.values()){if(g.key!=='~'&&g.items.length>1)groups.push(g);else single.push(...g.items)}
-  const byUrgency=(a,b)=>(active(a)?days(a):99999)-(active(b)?days(b):99999);
+  const byUrgency=(a,b)=>(active(a)&&trustedDeadline(a)?days(a):99999)-(active(b)&&trustedDeadline(b)?days(b):99999);
   for(const g of groups){g.u=procUrgency(g.items);g.items.sort(byUrgency)}
   groups.sort((a,b)=>b.u.vencidos-a.u.vencidos||b.u.hoje-a.u.hoje||b.u.semana-a.u.semana||b.items.length-a.items.length||a.name.localeCompare(b.name,'pt-BR'));
   if(single.length)single.sort(byUrgency),groups.push({key:'~outros',name:groups.length?'Demais clientes':'Processos',items:single,u:procUrgency(single),rest:true});
