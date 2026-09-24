@@ -31,3 +31,18 @@ test('takeover explicito remove webhook, confirma e inicia polling',async()=>{
   assert.equal(calls.filter(x=>x.includes('getWebhookInfo')).length,2);
   assert.equal(t.q.length,1);
 });
+
+test('409 por mais de 5 minutos explica a causa uma vez só, com a solução',async()=>{
+  const t=timers();const s=store({update_id:3});const erros=[],avisos=[];let agora=1_000_000;const real=Date.now;Date.now=()=>agora;
+  try{
+    const p=createTelegramPoller({token:'x',requestJson:async url=>{if(url.includes('getWebhookInfo'))return {ok:true,result:{url:''}};const e=new Error('HTTP 409 Conflict');e.status=409;throw e;},
+      adapter:async()=>{},records:s,setTimer:t.set,clearTimer:t.clear,baseDelayMs:100,maxDelayMs:1000,logger:{warn:m=>avisos.push(m),error:m=>erros.push(m)}});
+    await p.start();
+    await t.q.shift().fn();                     // primeiro 409: aviso normal
+    agora+=6*60*1000;await t.q.shift().fn();    // passou de 5 min: explica
+    agora+=60*1000;await t.q.shift().fn();      // não repete
+    assert.equal(erros.length,1);
+    assert.match(erros[0],/outro programa está lendo este mesmo bot[\s\S]*TELEGRAM_TOKEN/);
+    assert.equal(p.state().running,true,'continua tentando');
+  }finally{Date.now=real}
+});
