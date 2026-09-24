@@ -83,9 +83,9 @@ function history(id){
   try{
     const saved=JSON.parse(sessionStorage.getItem('lex_chat_history_'+(id?'process_'+id:'general'))||'[]');
     const rows=(Array.isArray(saved)?saved:[]).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string').slice(-20);
-    if(!rows.length)return '<div class="lex-msg bot lex2-welcome"><b>Eu recebo a ordem na porta do escritório.</b><br>Diga o que quer, para qual cliente ou processo e como quer que eu execute. Eu consulto o banco processual, escolho o setor certo, encaminho e acompanho. Você não precisa procurar agente ou departamento. Se faltar algum dado ou autorização, eu peço somente o necessário para continuar.</div>';
+    if(!rows.length)return '<div class="lex-msg bot lex2-welcome"><b>Eu recebo a ordem na porta do escritório.</b><br>Estou aqui. Dê a ordem em linguagem normal. Diga o que quer, para qual cliente ou processo e como quer que eu execute. Eu consulto o banco processual, escolho o setor certo, encaminho e acompanho. Você não precisa procurar agente ou departamento. Se eu precisar de uma decisão sua, vou dizer exatamente quem, o quê e qual ação está pendente.</div>';
     return rows.map(m=>'<div class="lex-msg '+(m.role==='user'?'me':'bot')+'">'+esc(m.content)+'</div>').join('')
-  }catch{return '<div class="lex-msg bot lex2-welcome">Estou aqui. Dê a ordem; eu localizo o processo no banco e coordeno o setor responsável.</div>'}
+  }catch{return '<div class="lex-msg bot lex2-welcome">Estou aqui. Dê a ordem em linguagem normal; eu localizo o processo no banco e coordeno o setor responsável. Se eu precisar de uma decisão sua, vou dizer exatamente quem, o quê e qual ação está pendente.</div>'}
 }
 function render(selectedId){
   const id=consumeContext(selectedId),p=procs().find(x=>String(x.id)===id);
