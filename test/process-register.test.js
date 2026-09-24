@@ -29,7 +29,7 @@ test('cadastra com dados do tribunal e publicações do Diário, último andamen
   const msg=registerMessage(r,TJMG);
   assert.match(msg,/Cadastrei 5004158-61\.2024\.8\.13\.0704 \(TJMG\): COFCO INTERNATIONAL x FAZENDA SANTA LUZIA/);
   assert.match(msg,/Último andamento: 22\/09\/2026 — Intimação/);
-  assert.match(msg,/Fonte: tribunal \(PJe\) e 1 publicação/);
+  assert.match(msg,/Fonte: tribunal \(TJMG\) e 1 publicação/);
 });
 
 test('não duplica processo já cadastrado',async()=>{

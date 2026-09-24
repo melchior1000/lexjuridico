@@ -171,10 +171,10 @@ window.lexOab=async function(){
     +'<label for="lex-oab-in">OAB</label><input id="lex-oab-in" inputmode="text" autocomplete="off" placeholder="123456/MG — mais de uma: separe por vírgula" value="'+esc(lista)+'">'
     +'<button class="lex-oab-go" onclick="lexOabSave()">'+(lista?'Atualizar OAB e buscar publicações':'Ligar OAB e buscar publicações')+'</button>'
     +'<div id="lex-oab-out" class="lex-oab-out" role="status"></div></section>'
-    +'<section class="lex-oab"><h2>PJe (acesso autenticado)</h2>'+st(pje.configurado,pje.configurado?'PJe configurado: '+(pje.tribunais||[]).join(', '):'PJe não configurado')
+    +'<section class="lex-oab"><h2>PJe e eproc (acesso autenticado)</h2>'+st(pje.configurado,pje.configurado?'Tribunais ligados: '+(pje.tribunais||[]).join(', '):'PJe/eproc não configurado')
     +'<p>Expedientes, intimações e citações pendentes, partes e andamentos. Precisa do CPF e da senha (ou certificado) do advogado no servidor. A consulta não dá ciência.</p>'
     +(pje.configurado?'':'<p class="lex-conn-miss">Falta no servidor: '+esc((pje.faltando||[]).join(', '))+'</p>')
-    +((pje.eproc||[]).length?'<p class="lex-conn-miss">'+esc(pje.eproc.join(', '))+': sistema eproc, não PJe. Publicações chegam pelo Diário; o painel do eproc ainda não tem conector no LEX.</p>':'')
+    +((pje.eproc||[]).length?'<p class="lex-conn-miss">'+esc(pje.eproc.join(', '))+': sistema eproc, ainda não ligado. Falta PJE_MNI_EPROC no servidor (webservice do eproc). Publicações chegam pelo Diário.</p>':'')
     +'<button class="lex-oab-sec" onclick="lexAskLex(\'teste o PJe\')">Testar conexão com o PJe</button></section>';
   shell('Diário e PJe',body,'mais');
 };

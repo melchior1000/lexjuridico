@@ -230,7 +230,30 @@ test('TRF6 é eproc: sai da consulta do PJe e o LEX explica, sem mandar configur
   assert.match(M.diagnoseMessage({configurado:true,ok:true,tribunais:[{sigla:'TJMG',ok:true,avisos:0}],eproc:['TRF6']}),/TRF6: sistema eproc, não PJe/);
   const {syncReportMessage}=require('../lib/pje-process-sync');
   const msg=syncReportMessage({atualizados:[],falhas:[],sem_cnj:[],nao_consta:[],sem_tribunal:[{tribunal:'TRF6'},{tribunal:'TJSP'}],novos_andamentos:0,partes_atualizadas:0});
-  assert.match(msg,/TRF6 usa eproc, não PJe/);
+  assert.match(msg,/TRF6 usa eproc e ainda não está ligado: configure o webservice do eproc \(PJE_MNI_EPROC\)/);
   assert.match(msg,/Tribunal não conectado: TJSP/);
   assert.doesNotMatch(msg,/Tribunal não conectado: TRF6/);
+});
+
+test('TRF6 ligado pelo MNI do eproc: endereço com ?srv=, credencial própria e consulta real',async()=>{
+  const M=require('../lib/pje-mni');
+  const env={PJE_MNI_TRIBUNAIS:'TJMG=https://pje.tjmg.jus.br/pje/intercomunicacao;TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao',
+    PJE_MNI_CPF:'12345678901',PJE_MNI_SENHA:'senhaPje',
+    PJE_MNI_EPROC:'TRF6=https://eproc1g.trf6.jus.br/eproc/ws/controlador_ws.php?srv=intercomunicacao2.2',
+    PJE_MNI_EPROC_CPF:'98765432100',PJE_MNI_EPROC_SENHA:'senhaEproc'};
+  const c=M.mniConfig(env);
+  assert.equal(c.configurado,true);
+  assert.deepEqual(c.tribunais.map(t=>t.sigla+':'+t.sistema),['TJMG:pje','TRF6:eproc'],'a URL antiga do PJe do TRF6 é descartada');
+  assert.equal(c.tribunais[1].endpoint,'https://eproc1g.trf6.jus.br/eproc/ws/controlador_ws.php?srv=intercomunicacao2.2');
+  assert.deepEqual([...c.eproc],[]);
+  const sent=[];
+  const transport=async(url,body)=>{sent.push({url,body});return{status:200,body:'<Envelope><Body><consultarAvisosPendentesResposta><sucesso>true</sucesso><mensagem>ok</mensagem></consultarAvisosPendentesResposta></Body></Envelope>'}};
+  const client=M.createMniClient(c,{transport});
+  await client.consultarAvisosPendentes('TRF6');
+  assert.equal(sent[0].url,c.tribunais[1].endpoint);
+  assert.match(sent[0].body,/98765432100/);assert.match(sent[0].body,/senhaEproc/);assert.doesNotMatch(sent[0].body,/senhaPje/);
+  const d=await M.diagnoseMni(client,c);
+  assert.match(M.diagnoseMessage(d),/TRF6 \(eproc\): conectado/);
+  const sem=M.mniConfig({...env,PJE_MNI_EPROC_CPF:'',PJE_MNI_EPROC_SENHA:''});
+  assert.equal(sem.tribunais.find(t=>t.sigla==='TRF6').credenciais.cpf,'12345678901','sem credencial própria usa a do PJe');
 });
