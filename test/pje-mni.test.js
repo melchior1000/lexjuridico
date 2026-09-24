@@ -219,3 +219,18 @@ test('teste do PJe explica em português por que não conectou',async()=>{
   assert.match(msg,/TJMG: conectado \(2 expediente/);
   assert.match(msg,/TRF6: não conectou — o tribunal recusou o CPF\/senha/);
 });
+
+test('TRF6 é eproc: sai da consulta do PJe e o LEX explica, sem mandar configurar como PJe',()=>{
+  const M=require('../lib/pje-mni');
+  const env={PJE_MNI_TRIBUNAIS:'TJMG=https://pje.tjmg.jus.br/pje/intercomunicacao;TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao',PJE_MNI_CPF:'12345678901',PJE_MNI_SENHA:'x'};
+  const c=M.mniConfig(env);
+  assert.deepEqual(c.tribunais.map(t=>t.sigla),['TJMG']);
+  assert.deepEqual([...c.eproc],['TRF6']);
+  assert.deepEqual(M.mniConfig({...env,PJE_MNI_LEGADO:'TRF6'}).tribunais.map(t=>t.sigla),['TJMG','TRF6'],'PJe legado só se pedido');
+  assert.match(M.diagnoseMessage({configurado:true,ok:true,tribunais:[{sigla:'TJMG',ok:true,avisos:0}],eproc:['TRF6']}),/TRF6: sistema eproc, não PJe/);
+  const {syncReportMessage}=require('../lib/pje-process-sync');
+  const msg=syncReportMessage({atualizados:[],falhas:[],sem_cnj:[],nao_consta:[],sem_tribunal:[{tribunal:'TRF6'},{tribunal:'TJSP'}],novos_andamentos:0,partes_atualizadas:0});
+  assert.match(msg,/TRF6 usa eproc, não PJe/);
+  assert.match(msg,/Tribunal não conectado: TJSP/);
+  assert.doesNotMatch(msg,/Tribunal não conectado: TRF6/);
+});
