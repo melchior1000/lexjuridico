@@ -85,10 +85,7 @@ function render(selectedId){
   host.innerHTML='<main class="lex-screen lex2-lex">'
     +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
     +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'PORTA DO ESCRITÓRIO')+'</small><h1>'+(p?'Vamos resolver este processo.':'Dê a ordem. Eu cuido do caminho.')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'O banco de processos permanece no centro. Eu identifico o assunto, escolho entre os 9 setores oficiais, encaminho e devolvo o resultado aqui.')+'</p></section>'
-    +officeMap()
-    +specialistMap()
-    +'<div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div>'
-    +chips(id)
+    +'<section class="lex2-office-tools">'+officeMap()+specialistMap()+'<div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div>'+chips(id)+'</section>'
     +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+history(id)+'</section>'
     +'<form class="lex2-command" onsubmit="return lexSendChat(event)">'
     +'<label for="lex-chat-process">Processo da conversa</label><select id="lex-chat-process" aria-label="Processo" onchange="lexSwitchChatProcess(this.value)"><option value="">Escritório geral — nenhum processo</option>'+procs().map(x=>'<option value="'+esc(String(x.id))+'" '+(String(x.id)===id?'selected':'')+'>'+esc((x.numero||'sem número')+' · '+safeLabel(x))+'</option>').join('')+'</select>'
