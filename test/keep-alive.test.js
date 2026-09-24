@@ -25,5 +25,5 @@ test('servidor liga o keep-alive com RENDER_EXTERNAL_URL e a rotina do GitHub co
   assert.match(bot,/createKeepAlive\(\{url:process\.env\.LEX_KEEPALIVE_URL\|\|process\.env\.RENDER_EXTERNAL_URL/);
   assert.match(bot,/global\._lexKeepAlive\?\.stop\?\.\(\);/);
   const wf=fs.readFileSync(path.join(__dirname,'..','.github','workflows','manter-servidor-acordado.yml'),'utf8');
-  assert.match(wf,/cron: '\*\/10 \* \* \* \*'/);
+  assert.match(wf,/cron: '\*\/5 \* \* \* \*'/);
 });
