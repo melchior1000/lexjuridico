@@ -123,24 +123,27 @@ test('resposta tardia da Home não atualiza tela abandonada',async()=>{
 });
 
 
-test('folha de prazos vencidos marca cumprido com um toque e desfaz',()=>{
-  const ontem=new Date(Date.now()-2*86400000);const br=ontem.toLocaleDateString('pt-BR');
-  let data=[{id:'v1',nome:'Caso Vencido',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',prazo:br,andamentos:[{data:'01/09/2026',txt:'antigo'}]}];
-  const saved=[];let sheetEl;
-  const el=()=>{const e={className:'',innerHTML:'',listeners:{},addEventListener(t,f){this.listeners[t]=f},remove(){this.removed=true},querySelector:sel=>sel==='.lex-sheet-body'?(e.body=e.body||{innerHTML:'',listeners:{},addEventListener(t,f){this.listeners[t]=f},querySelector:()=>null}):null};return e};
+test('folha inclui deadline_truth real e baixa/desfaz pelo servidor, sem salvar snapshot local',async()=>{
+  const ontem=new Date(Date.now()-2*86400000).toISOString().slice(0,10);
+  const data=[{id:'v1',nome:'Caso Vencido',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',
+    last_court_sync_at:'2026-09-24T10:00:00Z',deadline_truth:{legal_truth:true,due_at:ontem},andamentos:[{data:'01/09/2026',txt:'antigo'}]}];
+  const calls=[];let sheetEl;
+  const bodyNode={innerHTML:'',listeners:{},addEventListener(t,f){this.listeners[t]=f},querySelector:()=>({textContent:''})};
+  const el=()=>({className:'',innerHTML:'',listeners:{},addEventListener(t,f){this.listeners[t]=f},remove(){this.removed=true},
+    querySelector:sel=>sel==='.lex-sheet-body'?bodyNode:null,querySelectorAll:()=>[]});
   const window=boot('lex2-interface-core.js',{
-    window:{},getProcs:()=>data,saveProcs:ps=>{data=ps;saved.push(structuredClone(ps))},lexApi:async()=>({}),
-    document:{readyState:'complete',body:{classList:{add(){}},appendChild(x){sheetEl=x}},querySelector:()=>null,getElementById:()=>null,createElement:()=>el()}
+    window:{},getProcs:()=>data,lexApi:async(path,opt)=>{calls.push({path,opt,body:opt?.body?JSON.parse(opt.body):null});return{ok:true}},
+    confirm:()=>true,
+    document:{readyState:'complete',activeElement:null,body:{classList:{add(){}},appendChild(x){sheetEl=x}},querySelector:()=>null,getElementById:()=>null,createElement:()=>el()}
   });
-  window.lexPrazosVencidos(['v1']);
-  const body=sheetEl.body;
-  assert.match(body.innerHTML,/Caso Vencido[\s\S]*Prazo anotado: /);
-  const click=attr=>body.listeners.click({target:{closest:sel=>sel==='['+attr+']'?{dataset:{[attr==='data-done'?'done':'undo']:'v1'}}:null}});
-  click('data-done');
-  assert.equal(data[0].prazo,'');assert.equal(data[0].prazo_cumprido,br);
-  assert.match(data[0].andamentos[0].txt,/Prazo de .* marcado como cumprido pelo advogado/);
-  assert.match(body.innerHTML,/✓ Cumprido · registrado no histórico[\s\S]*Desfazer/);
-  click('data-undo');
-  assert.equal(data[0].prazo,br);assert.equal(data[0].andamentos[0].txt,'antigo');
-  assert.equal(saved.length,2);
+  window.lexPrazosVencidos();
+  const body=bodyNode;
+  assert.ok(sheetEl,'folha foi anexada ao DOM');
+  assert.match(body.innerHTML,/Caso Vencido[\s\S]*Prazo confirmado:/,'deadline_truth objeto entra na folha');
+  const event=attr=>({target:{closest:sel=>sel==='['+attr+']'?{dataset:{[attr==='data-done'?'done':'undo']:'v1'},disabled:false}:null}});
+  await body.listeners.click(event('data-done'));
+  assert.equal(calls[0].path,'/api/escritorio/prazos/cumprido');assert.equal(calls[0].body.acao,'marcar');
+  assert.match(body.innerHTML,/✓ Cumprido · registrado no histórico[\s\S]*Desfazer baixa/);
+  await body.listeners.click(event('data-undo'));
+  assert.equal(calls[1].body.acao,'desfazer');
 });
