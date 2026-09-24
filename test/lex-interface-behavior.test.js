@@ -34,6 +34,19 @@ test('histórico acompanha seleção explícita e escapa conteúdo recebido',()=
   h.window.lexChat('a');assert.match(h.host.innerHTML,/A exclusivo/);assert.doesNotMatch(h.host.innerHTML,/B exclusivo/);
   h.window.lexChat('b');assert.equal(h.selected(),'b');assert.match(h.host.innerHTML,/&lt;script&gt;B exclusivo/);assert.doesNotMatch(h.host.innerHTML,/A exclusivo|<script>/);
 });
+test('chat não exibe identidade manual como se fosse oficial',()=>{
+  const host={innerHTML:''};
+  const window=boot('lex2-coordinator-ui.js',{
+    window:{lexSelectChatProcess(){}},
+    document:{readyState:'complete',body:{classList:{add(){}}},getElementById:id=>id==='content'?host:null},
+    getProcs:()=>[{id:'x',nome:'CEF — Execução vs. Pessoa Errada',partes:'CEF vs. Pessoa Errada',numero:'6002060-50.2025.4.06.3818'}],
+    sessionStorage:{getItem:()=>null}
+  });
+  window.lexChat('x');
+  assert.match(host.innerHTML,/Processo 6002060-50\.2025\.4\.06\.3818 — dados a conferir/);
+  assert.doesNotMatch(host.innerHTML,/CEF — Execução vs\. Pessoa Errada|CEF vs\. Pessoa Errada/);
+});
+
 function home(api,processes=[]){
   const nodes={};for(const key of ['h1','p','.lex-today-feedback','.lex-today-list'])nodes[key]={textContent:'',innerHTML:'',appendChild(){},addEventListener(type,fn){this[type]=fn}};
   nodes['.lex-today-head']={querySelector:key=>nodes[key]};
