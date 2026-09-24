@@ -58,3 +58,25 @@ test('só o advogado sênior gerencia a equipe; os demais não',async()=>{
   assert.match(src,/const podeGerir = perfilEq === 'admin' && \(!contaEq \|\| equipeLex\.senior\(contaEq\)\);/);
   assert.match(src,/Só o advogado sênior gerencia a equipe/);
 });
+
+test('login compartilhado só desliga com um sênior ativo; troca da própria senha confere a atual',async()=>{
+  let saved={lista:[]};
+  const x=U.createUserStore({load:async()=>structuredClone(saved),save:async v=>{saved=structuredClone(v)}});
+  await assert.rejects(x.desligarLoginCompartilhado(true),/Crie antes uma conta de advogado sênior/);
+  const s1=await x.criar({nome:'S',email:'s@x.com',papel:'admin',senha:'senha1234',senior:true});
+  assert.equal(await x.desligarLoginCompartilhado(true),true);
+  assert.equal(saved.opcoes.login_compartilhado_desligado,true,'fica gravado');
+  await x.carregar();assert.equal(x.perfilDesligado(),true);
+  await assert.rejects(x.trocarPropriaSenha(s1.id,'errada99','outra1234'),/Senha atual incorreta/);
+  await x.trocarPropriaSenha(s1.id,'senha1234','outra1234');
+  assert.ok(await x.autenticar('s@x.com','outra1234'));
+});
+
+test('servidor: senha compartilhada, login compartilhado e leitura da equipe',()=>{
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
+  assert.match(src,/if\(contaTs && !equipeLex\.senior\(contaTs\)\)/,'advogado comum não troca senha do perfil');
+  assert.match(src,/Login compartilhado desligado neste escritório/);
+  assert.match(src,/if\(!u && typeof equipeLex!=='undefined' && equipeLex\.perfilDesligado\(\)\) return null;/,'sessões antigas caem');
+  const get=src.indexOf("if(url==='/api/equipe' && req.method==='GET')"),bloq=src.indexOf("if(!podeGerir) { res.writeHead(403");
+  assert.ok(get>0&&bloq>get,'lista vem antes do bloqueio de escrita');
+});
