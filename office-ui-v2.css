@@ -181,3 +181,24 @@ body.lex-commercial .lex-home-command b{display:grid;place-items:center;width:34
 
 .lex2-office-tools{display:grid;gap:7px;min-height:0;max-height:34vh;overflow:auto;overscroll-behavior:contain;padding-right:1px}
 @media(max-width:620px){.lex2-office-tools{max-height:30vh}}
+
+
+/* Busca escalável de processo no contexto do LEX */
+.lex2-process-picker{display:grid;gap:7px;position:relative}
+.lex2-process-picker>label{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.lex2-process-selected{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:11px;background:var(--card2)}
+.lex2-process-selected span{display:grid;gap:2px;min-width:0}
+.lex2-process-selected b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lex2-process-selected small{font-size:8px;color:var(--muted)}
+.lex2-process-selected button{width:30px;height:30px;border:1px solid var(--line);border-radius:50%;background:transparent;color:var(--text);font-size:16px}
+.lex2-process-search{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 11px;border:1px solid var(--line);border-radius:11px;background:var(--card2)}
+.lex2-process-search span{color:var(--muted)}
+.lex2-process-search input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:13px}
+.lex2-process-results{display:none;position:absolute;left:0;right:0;bottom:calc(100% - 22px);z-index:30;max-height:42vh;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 16px 40px rgba(0,0,0,.32)}
+.lex2-process-results.open{display:grid;gap:5px}
+.lex2-process-results button{display:block;width:100%;padding:9px 10px;border:1px solid transparent;border-radius:9px;background:var(--card2);color:var(--text);text-align:left}
+.lex2-process-results button:hover,.lex2-process-results button:focus{border-color:#2e85ff}
+.lex2-process-results button span{display:grid;gap:2px}
+.lex2-process-results button b{font-size:10px}
+.lex2-process-results button small,.lex2-process-result-note{font-size:8px;color:var(--muted);line-height:1.35}
+.lex2-process-result-note{padding:5px 7px}
