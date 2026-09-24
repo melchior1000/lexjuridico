@@ -73,14 +73,16 @@ function procRows(list,opts){return list.map(p=>procLine(p,opts)).join('')||'<di
 const PROC_SEP=/\s+[—–-]\s+|\s+(?:x|×|vs\.?|versus)\s+/i;
 function procClient(p){const c=String((globalThis.lexFixText||String)(p?.cliente||(p?.grupo&&!/^outros$/i.test(p.grupo)?p.grupo:''))).trim();if(c)return c;const n=String((globalThis.lexFixText||String)(p?.nome||'')).trim(),m=n.split(PROC_SEP);return m.length>1&&m[0].trim().length>=2?m[0].trim():''}
 function procKey(name){return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim()}
-function procTitle(p,client){const n=String((globalThis.lexFixText||String)(p.nome||p.partes||'Processo')).trim();if(!client)return n;const rest=n.slice(0,client.length).toLowerCase()===client.toLowerCase()?n.slice(client.length).replace(/^\s*(?:[—–-]|x|×|vs\.?|versus)\s+/i,'').trim():n;return rest||n}
+function processOfficial(p){return !!(p?.last_court_sync_at||p?.partes_verificadas_em||p?.cadastro_conferido==='tribunal'||p?.numero_verificado_fonte==='pje')}
+function trustedDeadline(p){return p?.deadline_truth===true||p?.prazo_confirmado===true||deadlineConfirmed(p)}
+function procTitle(p,client){if(judicial(p)&&active(p)&&!processOfficial(p)){const num=procShortNum(p);return num?'Processo '+num+' — dados a conferir':'Processo — dados a conferir'}const n=String((globalThis.lexFixText||String)(p.nome_oficial||p.nome||p.partes||'Processo')).trim();if(!client)return n;const rest=n.slice(0,client.length).toLowerCase()===client.toLowerCase()?n.slice(client.length).replace(/^\s*(?:[—–-]|x|×|vs\.?|versus)\s+/i,'').trim():n;return rest||n}
 function procShortNum(p){const m=String(p.numero||'').match(/^\s*(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);return m?m[1]:''}
-function procLine(p,opts){const d=days(p),num=procShortNum(p),where=p.tribunal||p.vara||p.area||'',tone=d<0?'late':d<=2?'urgent':d<=7?'soon':active(p)?'ok':'done';
-  return '<button class="lex-proc-line" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><i class="dot '+tone+'"></i><span class="txt"><strong>'+esc(procTitle(p,opts?.client))+'</strong><small>'+(num?(cnjOk(num)||!judicial(p)?'<code>'+esc(num)+'</code>':'<span class="nocnj">nº CNJ inválido</span>'):'<span class="nocnj">'+(judicial(p)?'sem nº CNJ':'administrativo')+'</span>')+(where?' · '+esc(where):'')+'</small></span>'+(d<9999?'<span class="chips">'+badge(d)+'</span>':'')+'</button>'}
-function procUrgency(list){const r={vencidos:0,hoje:0,semana:0};for(const p of list){if(!active(p))continue;const d=days(p);if(d<0)r.vencidos++;else if(d===0)r.hoje++;else if(d<=7)r.semana++}return r}
+function procLine(p,opts){const d=trustedDeadline(p)?days(p):9999,num=procShortNum(p),where=p.tribunal||p.vara||p.area||'',unverified=judicial(p)&&active(p)&&!processOfficial(p),tone=unverified?'soon':d<0?'late':d<=2?'urgent':d<=7?'soon':active(p)?'ok':'done';
+  return '<button class="lex-proc-line" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><i class="dot '+tone+'"></i><span class="txt"><strong>'+esc(procTitle(p,opts?.client))+'</strong><small>'+(num?(cnjOk(num)||!judicial(p)?'<code>'+esc(num)+'</code>':'<span class="nocnj">nº CNJ inválido</span>'):'<span class="nocnj">'+(judicial(p)?'sem nº CNJ':'administrativo')+'</span>')+(where?' · '+esc(where):'')+(unverified?' · <span class="nocnj">dados não conferidos no tribunal</span>':'')+'</small></span>'+(d<9999?'<span class="chips">'+badge(d)+'</span>':'')+'</button>'}
+function procUrgency(list){const r={vencidos:0,hoje:0,semana:0};for(const p of list){if(!active(p)||!trustedDeadline(p))continue;const d=days(p);if(d<0)r.vencidos++;else if(d===0)r.hoje++;else if(d<=7)r.semana++}return r}
 function procGroups(list){const map=new Map();for(const p of list){const name=procClient(p),key=procKey(name)||'~';if(!map.has(key))map.set(key,{key,name:name||'Sem cliente identificado',items:[]});map.get(key).items.push(p)}
   const groups=[],single=[];for(const g of map.values()){if(g.key!=='~'&&g.items.length>1)groups.push(g);else single.push(...g.items)}
-  const byUrgency=(a,b)=>(active(a)?days(a):99999)-(active(b)?days(b):99999);
+  const byUrgency=(a,b)=>(active(a)&&trustedDeadline(a)?days(a):99999)-(active(b)&&trustedDeadline(b)?days(b):99999);
   for(const g of groups){g.u=procUrgency(g.items);g.items.sort(byUrgency)}
   groups.sort((a,b)=>b.u.vencidos-a.u.vencidos||b.u.hoje-a.u.hoje||b.u.semana-a.u.semana||b.items.length-a.items.length||a.name.localeCompare(b.name,'pt-BR'));
   if(single.length)single.sort(byUrgency),groups.push({key:'~outros',name:groups.length?'Demais clientes':'Processos',items:single,u:procUrgency(single),rest:true});
@@ -103,11 +105,11 @@ function processUpdatedAt(p){const raw=p?.atualizado_em||p?.ultima_atualizacao||
 function filteredProcesses(){
   let list=procs();
   if(procTab==='ativos')list=list.filter(active);
-  else if(procTab==='prazos')list=list.filter(p=>days(p)<9999);
+  else if(procTab==='prazos')list=list.filter(p=>trustedDeadline(p)&&days(p)<9999);
   else if(procTab==='arquivados')list=list.filter(p=>!active(p));
-  else if(procTab==='vencidos')list=list.filter(p=>active(p)&&days(p)<0);
-  else if(procTab==='hoje')list=list.filter(p=>active(p)&&days(p)===0);
-  else if(procTab==='semana')list=list.filter(p=>active(p)&&days(p)>0&&days(p)<=7);
+  else if(procTab==='vencidos')list=list.filter(p=>active(p)&&trustedDeadline(p)&&days(p)<0);
+  else if(procTab==='hoje')list=list.filter(p=>active(p)&&trustedDeadline(p)&&days(p)===0);
+  else if(procTab==='semana')list=list.filter(p=>active(p)&&trustedDeadline(p)&&days(p)>0&&days(p)<=7);
   else if(procTab==='semcnj')list=list.filter(cnjProblem);
   if(procQuery)list=list.filter(p=>[p.nome,p.numero,p.partes,p.assunto,p.area,p.tribunal,p.status,p.responsavel,p.cliente].join(' ').toLowerCase().includes(procQuery));
   if(procSort==='nome')list=[...list].sort((a,b)=>String(a.nome||a.partes||'').localeCompare(String(b.nome||b.partes||''),'pt-BR'));

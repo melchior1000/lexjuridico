@@ -66,6 +66,28 @@ test('atualiza andamentos e partes da carteira real, explicando o que não deu',
   assert.match(msg,/Tribunal não conectado: TJSP/);
 });
 
+
+test('dado legado conflitante perde prazo e urgência quando o tribunal traz as partes oficiais',async()=>{
+  const numero='60020605020254063818';
+  const db=store([{id:'cef',nome:'CEF — Execução vs. Pessoa Errada',numero:'6002060-50.2025.4.06.3818',
+    partes:'CEF vs. Pessoa Errada',prazo:'27/03/2026',status:'URGENTE',andamentos:[]}]);
+  const transport=async()=>({status:200,body:procXml(numero,{movs:[['20260922090000','Conclusos para decisão']]})});
+  const client=Mni.createMniClient(Mni.mniConfig({PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_LEGADO:'TRF6',PJE_MNI_TRIBUNAIS:'TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'}),{transport});
+  const now=new Date('2026-09-24T13:00:00Z');
+  await Sync.syncProcessesFromPje({client,processStore:db,now});
+  const p=db.snapshot()[0];
+  assert.equal(p.partes,'Autor: CAIXA ECONOMICA FEDERAL · Réu: KLEUBER DA SILVA');
+  assert.equal(p.partes_verificadas_fonte,'pje');
+  assert.equal(p.numero_verificado_fonte,'pje');
+  assert.equal(p.cadastro_conferido,'tribunal');
+  assert.equal(p.verificacao_conflito,true);
+  assert.equal(p.dados_anteriores_nao_confirmados.partes,'CEF vs. Pessoa Errada');
+  assert.equal(p.dados_anteriores_nao_confirmados.prazo,'27/03/2026');
+  assert.equal(p.prazo,'','prazo legado deixa de produzir alerta');
+  assert.equal(p.status,'ATIVO','urgência legada deixa de valer');
+  assert.equal(p.nome,'CAIXA ECONOMICA FEDERAL x KLEUBER DA SILVA','nome que afirmava partes é substituído pelo oficial');
+});
+
 test('falha de um tribunal não para os outros e é relatada',async()=>{
   const db=store([{id:'a',nome:'A',numero:'5004158-61.2024.8.13.0704'},{id:'b',nome:'B',numero:'6002060-50.2025.4.06.3818'}]);
   const transport=async endpoint=>endpoint.includes('tjmg')?Promise.reject(new Mni.MniError('timeout','O tribunal não respondeu a tempo.')):{status:200,body:procXml('60020605020254063818')};

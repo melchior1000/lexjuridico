@@ -62,20 +62,19 @@ test('perguntas jurídicas em tese não viram consulta nem tarefa',async()=>{
   assert.equal(isLegalQuestion('Quero uma contestação desse processo'),false);
 });
 
-test('prazos: ordena, inclui vencidos, ignora arquivados e marca não confirmados',async()=>{
+test('prazos: datas manuais não viram vencido/hoje sem legal truth',async()=>{
   const out=await run('prazos de hoje');
   assert.equal(out.handled,true);
-  const ids=out.result.itens.map(i=>i.case_id);
-  assert.deepEqual(ids,['p2','p1']);// vencido primeiro, arquivado fora, outubro fora
-  assert.match(out.message,/VENCIDO há 2 dias\) — João Souza/);
-  assert.match(out.message,/HOJE\) — Maria Silva/);
-  assert.match(out.message,/NÃO confirmado/);
-  assert.doesNotMatch(out.message,/Caso encerrado/);
+  assert.deepEqual(out.result.itens,[]);
+  assert.equal(out.result.manuais,3);
+  assert.match(out.message,/nenhum prazo oficial confirmado/);
+  assert.match(out.message,/3 data\(s\) anotada\(s\).*aguardam conferência oficial/);
+  assert.doesNotMatch(out.message,/VENCIDO|HOJE\)|Caso encerrado/);
 });
 
 test('prazos: janela sem itens diz isso sem inventar',async()=>{
   const out=await executeNaturalOfficeCommand({processStore:processStore([]),engine:engine(),log:()=>{}},{text:'prazos da semana',profile:'secretaria',now:NOW});
-  assert.match(out.message,/nenhum prazo registrado/);
+  assert.match(out.message,/nenhum prazo oficial confirmado/);
 });
 
 test('intimações: lista, aponta órfãs e leitura atrasada do DJEN',async()=>{
@@ -109,15 +108,18 @@ test('andamento: resolve por nome, mostra o mais recente primeiro',async()=>{
   assert.equal(out.result.processo_id,'p1');
   const first=out.message.indexOf('Intimação para contestar'),second=out.message.indexOf('Citação expedida');
   assert.ok(first>0&&second>first,'andamento mais novo deve vir antes');
+  assert.match(out.message,/dados não conferidos no tribunal/);
   assert.match(out.message,/Sem leitura oficial registrada/);
+  assert.doesNotMatch(out.message,/📁 Maria Silva x Banco Alfa/);
 });
 
 test('andamento: nome ambíguo lista as opções no texto e não escolhe sozinho',async()=>{
   const out=await run('como está o processo da Maria?');
   assert.equal(out.needs_input,true);
   assert.equal(out.result,undefined);
-  assert.match(out.message,/1\) Maria/);
-  assert.match(out.message,/2\) Maria/);
+  assert.match(out.message,/1\) Processo .*dados a conferir/);
+  assert.match(out.message,/2\) Processo .*dados a conferir/);
+  assert.doesNotMatch(out.message,/Maria Silva x Banco Alfa|Maria Oliveira inventário/);
 });
 
 test('andamento: por número CNJ',async()=>{
@@ -127,7 +129,8 @@ test('andamento: por número CNJ',async()=>{
 
 test('resumo do dia junta prazos, DJEN e pendências sem gravar nada',async()=>{
   const out=await run('bom dia',{sbReq:db({djen_comunicacoes:[],djen_sync_state:[{last_success_at:'2026-09-24T11:00:00Z'}]})});
-  assert.match(out.message,/Prazos \(7 dias\): 2 · 1 VENCIDO\(S\) · 1 HOJE/);
+  assert.match(out.message,/Prazos oficiais \(7 dias\): 0 · 3 data\(s\) manual\(is\) aguardando conferência/);
+  assert.doesNotMatch(out.message,/VENCIDO\(S\)| HOJE/);
   assert.match(out.message,/DJEN: Nenhuma intimação/);
   assert.match(out.message,/Precisa de você/);
 });
@@ -171,7 +174,8 @@ test('fluxo completo: pergunta ambígua, escolha e resposta do processo certo',a
   const pick=pickChoice('2',first.candidates);
   const second=await executeNaturalOfficeCommand({processStore:processStore(carteira),engine:engine(),receptionStore,log:()=>{}},{text:'como está o processo da Maria?',processo_id:pick.id,profile:'advogado',now:NOW});
   assert.equal(second.result.processo_id,'p3');
-  assert.match(second.message,/Maria Oliveira/);
+  assert.match(second.message,/dados não conferidos no tribunal/);
+  assert.doesNotMatch(second.message,/Maria Oliveira inventário/);
 });
 
 test('canal: áudio do operador é transcrito e a escolha pendente é usada',()=>{

@@ -2,6 +2,13 @@
 'use strict';
 const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
+function processOfficial(p){return !!(p?.last_court_sync_at||p?.partes_verificadas_em||p?.cadastro_conferido==='tribunal'||p?.numero_verificado_fonte==='pje')}
+function safeLabel(p){
+  if(!p)return'Processo';
+  if(processOfficial(p))return p.nome_oficial||p.nome||p.partes||p.numero||'Processo';
+  const m=String(p.numero||'').match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+  return m?'Processo '+m[0]+' — dados a conferir':'Processo — dados a conferir';
+}
 function consumeContext(selectedId){
   const requested=String((selectedId===undefined?window.__lexDossierContext?.case_id:selectedId)||'');
   window.__lexDossierContext=null;
@@ -34,11 +41,11 @@ function render(selectedId){
   document.body.classList.add('lex-commercial','lex2-core','lex2-coordinator');
   host.innerHTML='<main class="lex-screen lex2-lex">'
     +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
-    +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'ESCRITÓRIO')+'</small><h1>'+(p?'Vamos trabalhar neste processo.':'O que precisamos resolver?')+'</h1><p>'+(p?esc((p.nome||p.partes||'Processo')+(p.numero?' · '+p.numero:'')):'Dê a ordem. O LEX identifica o assunto, coordena o setor e devolve o resultado aqui.')+'</p></section>'
+    +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'ESCRITÓRIO')+'</small><h1>'+(p?'Vamos trabalhar neste processo.':'O que precisamos resolver?')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'Dê a ordem. O LEX identifica o assunto, coordena o setor e devolve o resultado aqui.')+'</p></section>'
     +chips(id)
     +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+history(id)+'</section>'
     +'<form class="lex2-command" onsubmit="return lexSendChat(event)">'
-    +'<label for="lex-chat-process">Processo da conversa</label><select id="lex-chat-process" aria-label="Processo" onchange="lexSwitchChatProcess(this.value)"><option value="">Escritório geral — nenhum processo</option>'+procs().map(x=>'<option value="'+esc(String(x.id))+'" '+(String(x.id)===id?'selected':'')+'>'+esc((x.numero||'sem número')+' · '+(x.nome||x.partes||'Processo'))+'</option>').join('')+'</select>'
+    +'<label for="lex-chat-process">Processo da conversa</label><select id="lex-chat-process" aria-label="Processo" onchange="lexSwitchChatProcess(this.value)"><option value="">Escritório geral — nenhum processo</option>'+procs().map(x=>'<option value="'+esc(String(x.id))+'" '+(String(x.id)===id?'selected':'')+'>'+esc((x.numero||'sem número')+' · '+safeLabel(x))+'</option>').join('')+'</select>'
     +'<div class="lex2-command-row"><button class="lex2-attach" data-lex-attachment type="button" aria-label="Anexar documento ao processo">＋</button><textarea id="lex-chat-input" aria-label="Sua ordem ao LEX" rows="2" placeholder="Dê uma ordem ao LEX…"></textarea><button class="lex2-send" type="submit" aria-label="Enviar">↑</button></div>'
     +'<small class="lex2-command-note">Fale normalmente. O LEX coordena os especialistas; atos críticos continuam sujeitos à autorização humana.</small></form>'
     +dock()+'</main>';
