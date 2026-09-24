@@ -13880,6 +13880,12 @@ async function bootInicio() {
   } catch(e) { console.error('Banco indisponível; sincronização bloqueada até recuperação.'); }
 
   await telegramPoller.start();
+  // Mantém o serviço acordado no plano gratuito do Render (24 h; LEX_KEEPALIVE=0 desliga).
+  if(process.env.LEX_KEEPALIVE!=='0'){
+    const {createKeepAlive}=require('./lib/keep-alive');
+    global._lexKeepAlive=createKeepAlive({url:process.env.LEX_KEEPALIVE_URL||process.env.RENDER_EXTERNAL_URL,log:m=>console.warn(m)});
+    if(global._lexKeepAlive.start())console.log('[Lex] keep-alive ativo: visita /health a cada 10 min.');
+  }
 
   const urg = getPrazos(3).filter(a=>a.dias<=3);
   if(urg.length) {
@@ -13981,6 +13987,7 @@ if(require.main !== module) {
 async function _gracefulShutdown(signal) {
   console.log('[Lex] '+signal+' recebido. Drenando Telegram...');
   deadlineScheduler.stop();
+  global._lexKeepAlive?.stop?.();
   await telegramPoller.stop();
   console.log('[Lex] Telegram drenado. Salvando dados...');
   const t = setTimeout(()=>{ console.error('[Lex] Timeout ao salvar dados no shutdown.'); process.exit(1); }, 10000);
