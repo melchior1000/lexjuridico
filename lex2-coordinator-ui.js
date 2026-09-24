@@ -3,19 +3,21 @@
 const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const LEX_SPECIALISTS=[
-  ['Roteador','Entende a ordem e localiza o processo/setor correto.',false],
-  ['Cadastro / Autuação','Organiza cliente, processo, documentos e dados faltantes.',false],
-  ['Cobrador de tarefas','Acompanha pendências e tarefas que precisam voltar para a equipe.',false],
-  ['Análise processual / Assessor','Diagnóstico do processo, estratégia, risco e próximos passos.',true],
-  ['Redator de peças','Petições, contestações, recursos e outras minutas.',true],
-  ['Pericial','Cálculos, quesitos, pareceres e análise técnica.',true],
-  ['PJe / fontes oficiais','Consulta de número, partes, andamentos e expedientes nas integrações disponíveis.',false],
-  ['Perfil do magistrado','Padrão decisório com decisões identificadas, fundamentos, provas e limites da amostra.',true],
-  ['Jurisprudência','Pesquisa de precedentes e fontes verificáveis.',true],
-  ['Secretaria / atendimento','Recebe, organiza e responde contatos conforme permissões e confirmação.',false],
-  ['Gestor vivo','Conversa geral do LEX, propõe e coordena ações sobre o banco do escritório.',true],
-  ['Motor proativo / alertas','Vigia pendências, eventos e alertas do escritório.',false]
-];
+  ['Roteador','Identifica qual processo é qual e resolve ambiguidades entre casos parecidos.',false],
+  ['Cadastrador / Autuação','Recebe novos clientes, abre o caso e cobra documentos pendentes.',false],
+  ['Cobrador','Monitora processos e tarefas sem atualização e cobra a pendência.',false],
+  ['Assessor','Análise do processo: diagnóstico, estratégia, redação assistida e red team.',true],
+  ['Jurídico judicial','Analisa processos judiciais e prepara minutas para revisão.',true],
+  ['Jurídico administrativo','Analisa procedimentos administrativos e prepara minutas.',true],
+  ['Pesquisa decisória','Perfil / padrão decisório do magistrado com fontes e limites da amostra.',true],
+  ['Pericial','Laudos, cálculos, quesitos e pareceres técnicos.',true],
+  ['PJe','Expedientes, partes e andamentos nas integrações oficiais disponíveis.',false],
+  ['Coordenador','Registra a ordem, confere o caso e acompanha execução e entrega.',false],
+  ['Redação','Produz minutas a partir da triagem e das fontes do caso.',true],
+  ['Revisão','Mantém a versão da minuta e registra a revisão profissional.',true],
+  ['Controladoria','Confere contagens e prazos sem inventar prazo processual.',false],
+  ['Documental','Recupera entregas e gera documentos para revisão.',false]
+]
 const OFFICE_SECTORS=[
   ['recepcao','Recepção','Recebe clientes e mensagens, identifica a demanda e encaminha.'],
   ['cadastro','Cadastro','Confere cliente, processo, documentos e dados faltantes.'],
@@ -42,7 +44,7 @@ function sectorCounts(){
   return counts;
 }
 function specialistMap(){
-  return '<details class="lex2-specialists"><summary><span><b>Especialistas do LEX</b><small>Análise processual, perfil do magistrado, jurisprudência, redação, perícia e rotinas operacionais</small></span><strong>Ver especialistas</strong></summary>'
+  return '<details class="lex2-specialists"><summary><span><b>14 agentes do LEX</b><small>Análise do processo, perfil do magistrado, redação, perícia, controladoria, PJe e demais especialistas registrados no backend</small></span><strong>Ver agentes</strong></summary>'
     +'<div class="lex2-specialist-grid">'+LEX_SPECIALISTS.map(([name,desc,needsAi])=>'<button type="button" onclick="lex2Prefill(\'Quero usar '+esc(name)+'. Explique o que você precisa de mim e execute no contexto desta conversa.\')"><span><b>'+esc(name)+'</b><small>'+esc(desc)+'</small></span><em class="'+(needsAi?'needs-ai':'operational')+'">'+(needsAi?'IA':'OP')+'</em></button>').join('')+'</div>'
     +'</details>';
 }
