@@ -2,6 +2,20 @@
 'use strict';
 const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
+const LEX_SPECIALISTS=[
+  ['Roteador','Entende a ordem e localiza o processo/setor correto.',false],
+  ['Cadastro / Autuação','Organiza cliente, processo, documentos e dados faltantes.',false],
+  ['Cobrador de tarefas','Acompanha pendências e tarefas que precisam voltar para a equipe.',false],
+  ['Análise processual / Assessor','Diagnóstico do processo, estratégia, risco e próximos passos.',true],
+  ['Redator de peças','Petições, contestações, recursos e outras minutas.',true],
+  ['Pericial','Cálculos, quesitos, pareceres e análise técnica.',true],
+  ['PJe / fontes oficiais','Consulta de número, partes, andamentos e expedientes nas integrações disponíveis.',false],
+  ['Perfil do magistrado','Padrão decisório com decisões identificadas, fundamentos, provas e limites da amostra.',true],
+  ['Jurisprudência','Pesquisa de precedentes e fontes verificáveis.',true],
+  ['Secretaria / atendimento','Recebe, organiza e responde contatos conforme permissões e confirmação.',false],
+  ['Gestor vivo','Conversa geral do LEX, propõe e coordena ações sobre o banco do escritório.',true],
+  ['Motor proativo / alertas','Vigia pendências, eventos e alertas do escritório.',false]
+];
 const OFFICE_SECTORS=[
   ['recepcao','Recepção','Recebe clientes e mensagens, identifica a demanda e encaminha.'],
   ['cadastro','Cadastro','Confere cliente, processo, documentos e dados faltantes.'],
@@ -26,6 +40,11 @@ function sectorCounts(){
   const counts=Object.fromEntries(OFFICE_SECTORS.map(([code])=>[code,0]));
   for(const p of procs())counts[stageOf(p)]=(counts[stageOf(p)]||0)+1;
   return counts;
+}
+function specialistMap(){
+  return '<details class="lex2-specialists"><summary><span><b>Especialistas do LEX</b><small>Análise processual, perfil do magistrado, jurisprudência, redação, perícia e rotinas operacionais</small></span><strong>Ver especialistas</strong></summary>'
+    +'<div class="lex2-specialist-grid">'+LEX_SPECIALISTS.map(([name,desc,needsAi])=>'<button type="button" onclick="lex2Prefill(\'Quero usar '+esc(name)+'. Explique o que você precisa de mim e execute no contexto desta conversa.\')"><span><b>'+esc(name)+'</b><small>'+esc(desc)+'</small></span><em class="'+(needsAi?'needs-ai':'operational')+'">'+(needsAi?'IA':'OP')+'</em></button>').join('')+'</div>'
+    +'</details>';
 }
 function officeMap(){
   const rows=procs(),counts=sectorCounts(),official=rows.filter(processOfficial).length;
@@ -75,6 +94,8 @@ function render(selectedId){
     +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
     +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'PORTA DO ESCRITÓRIO')+'</small><h1>'+(p?'Vamos resolver este processo.':'Dê a ordem. Eu cuido do caminho.')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'O banco de processos permanece no centro. Eu identifico o assunto, escolho entre os 9 setores oficiais, encaminho e devolvo o resultado aqui.')+'</p></section>'
     +officeMap()
+    +specialistMap()
+    +'<div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div>'
     +chips(id)
     +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+history(id)+'</section>'
     +'<form class="lex2-command" onsubmit="return lexSendChat(event)">'
@@ -82,9 +103,37 @@ function render(selectedId){
     +'<div class="lex2-command-row"><button class="lex2-attach" data-lex-attachment type="button" aria-label="Anexar documento ao processo">＋</button><textarea id="lex-chat-input" aria-label="Sua ordem ao LEX" rows="2" placeholder="Dê uma ordem ao LEX…"></textarea><button class="lex2-send" type="submit" aria-label="Enviar">↑</button></div>'
     +'<small class="lex2-command-note">Ex.: “LEX, quero X no processo Y, faça desse jeito Z”. O banco processual é preservado; eu encaminho internamente. Atos críticos continuam sujeitos à autorização humana.</small></form>'
     +dock()+'</main>';
-  setTimeout(()=>{const c=document.getElementById('lex-conversation');if(c)c.scrollTop=c.scrollHeight},40)
+  setTimeout(()=>{const conv=document.getElementById('lex-conversation');if(conv)conv.scrollTop=conv.scrollHeight;refreshOperationalStatus()},40)
+}
+async function refreshOperationalStatus(){
+  const box=document.getElementById('lex2-operational-status');if(!box)return;
+  try{
+    const d=await lexApi('/api/trabalho');
+    const sectors=d?.contagens?.setores||{},total=Number(d?.contagens?.total??procs().length);
+    const pending=(d?.tarefas||[]).filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
+    const ai=d?.ia_estado||((d?.ia_configurada===true)?'disponivel':'sem_chave');
+    const aiText=ai==='sem_credito'?'IA jurídica sem crédito: análise, redação, perfil do magistrado e jurisprudência estão pausados; banco e rotinas operacionais continuam funcionando.'
+      :ai==='disponivel'?'IA jurídica disponível para os especialistas que precisam dela.'
+      :'IA jurídica sem chave ativa: banco e rotinas operacionais continuam funcionando.';
+    box.innerHTML='<b>LEX operacional</b><span>'+esc(total)+' processo'+(total===1?'':'s')+' no banco · '+esc(pending)+' pendência'+(pending===1?'':'s')+' de tarefa. '+esc(aiText)+'</span>';
+  }catch(e){box.innerHTML='<b>LEX</b><span>Não consegui ler o estado do escritório agora. O banco não foi alterado.</span>'}
 }
 window.lex2Prefill=function(text){const i=document.getElementById('lex-chat-input');if(!i)return;i.value=text;i.focus()};
-function patch(){window.lexChat=render}
+function settings(){
+  const host=document.getElementById('content');if(!host)return;
+  host.innerHTML='<main class="lex-screen lex2-settings"><header class="lex-top"><div><strong>Ajustes do escritório</strong><small>INFRAESTRUTURA</small></div><div class="lex-top-actions"><button onclick="lexChat()" aria-label="Voltar ao LEX">‹</button></div></header>'
+    +'<section class="lex2-settings-grid">'
+    +'<button onclick="lexEquipe()"><b>Equipe e acessos</b><small>Contas, sênior, senhas e desligamento.</small></button>'
+    +'<button onclick="lexOab()"><b>Diário, PJe e eproc</b><small>Fontes oficiais e conexões judiciais.</small></button>'
+    +'<button onclick="lexChannel(\'all\')"><b>WhatsApp e Telegram</b><small>Conversas e atendimento do escritório.</small></button>'
+    +'<button onclick="goLex(\'escritorio\')"><b>Configurações</b><small>Dados e preferências do escritório.</small></button>'
+    +'</section>'+dock()+'</main>';
+}
+function patch(){
+  window.lexChat=render;
+  window.lexHome=render;
+  window.renderPainel=render;
+  window.lexMais=settings;
+}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(patch,0),{once:true});else setTimeout(patch,0);
 })();
