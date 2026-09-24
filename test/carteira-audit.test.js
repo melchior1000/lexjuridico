@@ -83,3 +83,41 @@ test('pelo WhatsApp: "confira os números" e "corrigir número de … para …"'
   assert.equal(fix.command.action,'cnj_fix');assert.match(fix.message,/gravado: 5001234-41\.2025\.4\.06\.3818/);
   assert.equal(s.rows.find(p=>p.id==='w').numero,WANDERSON);
 });
+
+test('corrigir o número já traz as publicações órfãs do Diário e diz que o tribunal não está ligado',async()=>{
+  const s=store([{id:'w',nome:'CEF — Execução vs. Wanderson',numero:'',status:'ATIVO',andamentos:[]}]);
+  const calls=[];
+  const sbReq=async(method,table,body,query)=>{calls.push({method,table,body,query});
+    if(method==='GET')return{ok:true,body:[{djen_id:'d1',cnj:WANDERSON.replace(/\D/g,''),tribunal:'TRF6',tipo:'Intimação',texto:'Manifeste-se sobre a penhora.',data_disponibilizacao:'2026-09-12',status:'orfa'}]};
+    return{ok:true,body:[{djen_id:'d1'}]}};
+  const out=await A.correctAndRefresh({processStore:s,processId:'w',numero:WANDERSON,now:NOW,dbReq:sbReq,pje:null});
+  assert.equal(out.publicacoes,1);
+  assert.equal(out.tribunal,'nao_conectado');
+  assert.equal(s.rows[0].numero,WANDERSON);
+  assert.ok(s.rows[0].andamentos.some(a=>/penhora/.test(a.txt)),'publicação entrou no processo');
+  const get=calls.find(c=>c.method==='GET');
+  assert.equal(get.query.status,'eq.orfa');assert.equal(get.query.cnj,'eq.'+WANDERSON.replace(/\D/g,''));
+  const patch=calls.find(c=>c.method==='PATCH');
+  assert.equal(patch.body.status,'casada');assert.equal(patch.body.processo_id,'w');
+  const msg=A.correctionMessage(out);
+  assert.match(msg,/gravado: 5001234-41\.2025\.4\.06\.3818/);
+  assert.match(msg,/Trouxe 1 publicação/);
+  assert.match(msg,/TRF6 ainda não está ligado ao LEX: o acompanhamento segue pelo Diário/);
+  assert.match(msg,/Último andamento: 12\/09\/2026/);
+});
+
+test('corrigir o número consulta o tribunal quando ele está ligado',async()=>{
+  const s=store([{id:'w',nome:'CEF — Execução vs. Wanderson',numero:'',status:'ATIVO',andamentos:[]}]);
+  const consultas=[];
+  const pje={config:{configurado:true},client:{tribunais:()=>['TRF6'],consultarProcesso:async(sigla,cnj)=>{consultas.push([sigla,cnj]);return{classe:'Execução',polos:[{polo:'AT',partes:['CAIXA ECONOMICA FEDERAL']},{polo:'PA',partes:['WANDERSON PEREIRA LIMA']}],movimentos:[{data:'2026-09-20',descricao:'Juntada de petição'}]}}}};
+  const out=await A.correctAndRefresh({processStore:s,processId:'w',numero:WANDERSON,now:NOW,dbReq:async()=>({ok:true,body:[]}),pje});
+  assert.deepEqual(consultas,[['TRF6',WANDERSON.replace(/\D/g,'')]]);
+  assert.equal(out.tribunal,'atualizado');
+  assert.match(A.correctionMessage(out),/Tribunal \(TRF6\): andamentos e partes atualizados/);
+});
+
+test('corrigir o número segue mesmo se o Diário estiver fora',async()=>{
+  const s=store([{id:'w',nome:'X',numero:'',status:'ATIVO'}]);
+  const out=await A.correctAndRefresh({processStore:s,processId:'w',numero:WANDERSON,now:NOW,dbReq:async()=>{throw new Error('supabase fora')}});
+  assert.equal(out.publicacoes,0);assert.equal(s.rows[0].numero,WANDERSON);
+});
