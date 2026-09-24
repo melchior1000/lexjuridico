@@ -71,7 +71,8 @@ function dock(){return '<nav class="lex-dock"><button onclick="lexHome()"><b>⌂
 function chips(id){
   if(!id)return '<nav class="lex2-context-chips" aria-label="Ações do escritório"><button type="button" onclick="lex2Prefill(\'O que precisa de mim agora?\')">O que precisa de mim</button><button type="button" onclick="lexProcessos()">Banco de processos</button><button type="button" onclick="lexPrazos()">Prazos</button><button type="button" onclick="lexChannel(\'all\')">Mensagens</button><button type="button" onclick="lex2Prefill(\'Explique os setores do escritório e o que cada um tem para fazer agora.\')">Setores</button></nav>';
   const c=[
-    ['Analisar','Analise o processo selecionado e diga o que exige atenção agora.'],
+    ['Análise do processo','Analise integralmente o processo selecionado: situação, últimos andamentos, pontos fortes e fracos, pendências, risco e próximos passos. Não invente fato nem prazo.'],
+    ['Perfil do magistrado','Analise o perfil/padrão decisório do magistrado deste processo usando somente decisões identificadas e fontes verificáveis. Mostre fundamentos recorrentes, provas valorizadas, teses acolhidas/rejeitadas e os limites da amostra.'],
     ['Peça','Prepare uma minuta de peça para minha revisão.'],
     ['Risco','Analise os riscos e próximos passos deste caso.'],
     ['Jurisprudência','Pesquise jurisprudência atual e relevante para este caso.'],
