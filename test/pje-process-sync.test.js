@@ -101,3 +101,15 @@ test('ordem pelo CNJ da execução não confunde com o agravo "vinculado a" o me
   assert.equal(resolveCase(ps,{instrucao:'analise o processo 6002846-94.2025.4.06.3818'}).process?.id,'k','CNJ dos embargos acha o caso');
   assert.equal(pickChoice('5004158-61.2024.8.13.0704',ps.slice(0,2)).id,'ep');
 });
+
+test('aponta processo em que a OAB do escritório não consta entre os advogados',async()=>{
+  const {officeInCase,syncReportMessage}=require('../lib/pje-process-sync');
+  const polos=[{polo:'AT',partes:['Caixa Econômica Federal'],advogados:[{nome:'Dr. Outro',inscricao:'MG999999'}]},{polo:'PA',partes:['Fulano'],advogados:[]}];
+  assert.equal(officeInCase(polos,[{oab:'123456',uf:'MG'}]),false);
+  assert.equal(officeInCase([{advogados:[{inscricao:'MG123456'}]}],[{oab:'123456',uf:'MG'}]),true);
+  assert.equal(officeInCase([{advogados:[]}],[{oab:'123456',uf:'MG'}]),null,'sem advogados no retorno não afirma nada');
+  const msg=syncReportMessage({atualizados:[],falhas:[],sem_cnj:[],sem_tribunal:[],novos_andamentos:0,partes_atualizadas:0,
+    nao_consta:[{nome:'CEF — Execução',cnj:'60020605020254063818',advogados:['Dr. Outro']}]});
+  assert.match(msg,/Você não consta como advogado no tribunal em 1/);
+  assert.match(msg,/6002060-50\.2025\.4\.06\.3818/);
+});
