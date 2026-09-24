@@ -122,12 +122,44 @@ test('Home agrupa assuntos repetidos, mostra no máximo 3 e aponta número CNJ e
   await h.window.lexHome();
   const html=h.nodes['.lex-today-list'].innerHTML;
   assert.equal((html.match(/<article/g)||[]).length,3,'no máximo 3 cartões');
-  assert.match(html,/8 processos[\s\S]*Prazos cadastrados vencidos[\s\S]*Resolver com o LEX/);
+  assert.match(html,/8 processos[\s\S]*Prazos cadastrados vencidos[\s\S]*Resolver agora/);
   assert.match(html,/Ver os outros 2/);
   assert.match(h.nodes.h1.textContent,/^5 assuntos precisam de você/);
   h.nodes['.lex-today-list'].click({target:{closest:sel=>sel==='[data-today-more]'?{dataset:{todayMore:''}}:null}});
   await new Promise(r=>setTimeout(r,0));
   const all=h.nodes['.lex-today-list'].innerHTML;
-  assert.match(all,/2 processos[\s\S]*Números CNJ faltando ou errados[\s\S]*Corrigir com o LEX/);
+  assert.match(all,/2 processos[\s\S]*Números CNJ faltando ou errados[\s\S]*Corrigir agora/);
   assert.match(all,/5 clientes[\s\S]*Aguardando sua resposta/);
+});
+
+test('Home diz quando o Diário foi lido e oferece marcar prazo vencido como cumprido',async()=>{
+  const ontem=new Date(Date.now()-2*86400000).toISOString().slice(0,10);
+  const ps=[{id:'v1',nome:'Caso Vencido',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',prazo:ontem}];
+  const h=home(async path=>path==='/api/trabalho'?{tarefas:[],prazos:{cunhar:[],correndo:[],vigia:{date:'x',status:'ok',djen_status:'ok',executado_em:new Date().toISOString()}}}:{contatos:[]},ps);
+  await h.window.lexHome();
+  assert.match(h.nodes.p.textContent,/^Acompanho 1 processo\. Diário lido hoje às \d{2}:\d{2}\.$/);
+  const html=h.nodes['.lex-today-list'].innerHTML;
+  assert.match(html,/Prazo cadastrado vencido[\s\S]*Confira no tribunal se foi cumprido[\s\S]*Já foi cumprido\?[\s\S]*Abrir/);
+});
+
+test('folha de prazos vencidos marca cumprido com um toque e desfaz',()=>{
+  const ontem=new Date(Date.now()-2*86400000);const br=ontem.toLocaleDateString('pt-BR');
+  let data=[{id:'v1',nome:'Caso Vencido',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',prazo:br,andamentos:[{data:'01/09/2026',txt:'antigo'}]}];
+  const saved=[];let sheetEl;
+  const el=()=>{const e={className:'',innerHTML:'',listeners:{},addEventListener(t,f){this.listeners[t]=f},remove(){this.removed=true},querySelector:sel=>sel==='.lex-sheet-body'?(e.body=e.body||{innerHTML:'',listeners:{},addEventListener(t,f){this.listeners[t]=f},querySelector:()=>null}):null};return e};
+  const window=boot('lex2-interface-core.js',{
+    window:{},getProcs:()=>data,saveProcs:ps=>{data=ps;saved.push(structuredClone(ps))},lexApi:async()=>({}),
+    document:{readyState:'complete',body:{classList:{add(){}},appendChild(x){sheetEl=x}},querySelector:()=>null,getElementById:()=>null,createElement:()=>el()}
+  });
+  window.lexPrazosVencidos();
+  const body=sheetEl.body;
+  assert.match(body.innerHTML,/Caso Vencido[\s\S]*Prazo anotado: /);
+  const click=attr=>body.listeners.click({target:{closest:sel=>sel==='['+attr+']'?{dataset:{[attr==='data-done'?'done':'undo']:'v1'}}:null}});
+  click('data-done');
+  assert.equal(data[0].prazo,'');assert.equal(data[0].prazo_cumprido,br);
+  assert.match(data[0].andamentos[0].txt,/Prazo de .* marcado como cumprido pelo advogado/);
+  assert.match(body.innerHTML,/✓ Cumprido · registrado no histórico[\s\S]*Desfazer/);
+  click('data-undo');
+  assert.equal(data[0].prazo,br);assert.equal(data[0].andamentos[0].txt,'antigo');
+  assert.equal(saved.length,2);
 });

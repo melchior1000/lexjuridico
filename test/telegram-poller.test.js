@@ -46,3 +46,20 @@ test('409 por mais de 5 minutos explica a causa uma vez só, com a solução',as
     assert.equal(p.state().running,true,'continua tentando');
   }finally{Date.now=real}
 });
+test('409 interrompido por outro erro recomeça a contagem; reinício volta a avisar',async()=>{
+  const t=timers();const s=store({update_id:3});const erros=[];let agora=1_000_000;const real=Date.now;Date.now=()=>agora;let modo='409';
+  try{
+    const p=createTelegramPoller({token:'x',requestJson:async url=>{if(url.includes('getWebhookInfo'))return {ok:true,result:{url:''}};const e=new Error(modo==='409'?'HTTP 409 Conflict':'rede fora');if(modo==='409')e.status=409;throw e;},
+      adapter:async()=>{},records:s,setTimer:t.set,clearTimer:t.clear,baseDelayMs:100,maxDelayMs:1000,logger:{warn(){},error:m=>erros.push(m)}});
+    await p.start();
+    await t.q.shift().fn();                               // 409 começa
+    modo='rede';agora+=4*60*1000;await t.q.shift().fn(); // outro erro: zera
+    modo='409';agora+=2*60*1000;await t.q.shift().fn();   // 409 novo, 6 min do primeiro
+    assert.equal(erros.length,0,'não soma os 409 separados por outro erro');
+    agora+=6*60*1000;await t.q.shift().fn();
+    assert.equal(erros.length,1);
+    await p.stop();await p.start();
+    await t.q.shift().fn();agora+=6*60*1000;await t.q.shift().fn();
+    assert.equal(erros.length,2,'nova sessão de polling avisa de novo');
+  }finally{Date.now=real}
+});

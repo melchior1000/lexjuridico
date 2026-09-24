@@ -40,7 +40,7 @@ test('com 500 processos a tela mostra clientes recolhidos, não 500 cartões',()
   assert.equal((html.match(/class="lex-proc-line"/g)||[]).length,0,'nada aberto de início');
   assert.doesNotMatch(html,/class="lex-proc-row"/);
   // Uma linha do LEX com o que exige ação (não um quadro de números) e o grupo mais urgente primeiro.
-  assert.match(html,/lex-proc-says[\s\S]*1 vencido<[\s\S]*1 hoje<[\s\S]*200 nº CNJ a corrigir[\s\S]*Resolver com o LEX/);
+  assert.match(html,/lex-proc-says[\s\S]*1 vencido<[\s\S]*1 hoje<[\s\S]*200 nº CNJ a corrigir[\s\S]*lexPrazosVencidos\(\)[\s\S]*Resolver agora/);
   assert.doesNotMatch(html,/CEF[^<]*<\/strong><small>[^<]*<\/small><\/span><span class="chips"><em class="late">1 vencido<\/em><\/span>[\s\S]*nº CNJ inválido/);
   assert.doesNotMatch(html,/lex-proc-urgent|lex-view-toggle/);
   assert.ok(html.indexOf('>CEF<')<html.indexOf('>Banco do Brasil<'));
