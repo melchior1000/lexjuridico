@@ -38,6 +38,7 @@ function provision({nome,slug,oab=[],id=crypto.randomUUID()}){
     'LEX_COMERCIAL=1',
     `LEX_ESCRITORIO_ID=${id}`,
     'LEX_TENANCY_REQUIRED=1',
+    'LEX_TENANCY_V2=1',
     'LEX_DB_MODE=postgres',
     'LEX_DATABASE_URL=postgresql://lex_runtime:SENHA@HOST:5432/postgres',
     `DJEN_OABS=${oab.map(o=>o.replace(/\s/g,'').toUpperCase()).join(',')}`,

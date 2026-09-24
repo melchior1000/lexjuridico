@@ -29,7 +29,7 @@ O script imprime (1) o SQL para rodar como administrador (cria o escritório e a
 
 ## Antes de vender o segundo escritório (checklist)
 
-1. Backup e aplicação da migração `20260924120000_tenantize_remaining_tables.sql` em produção.
+1. Backup e aplicação da migração `20260924120000_tenantize_remaining_tables.sql` em produção; depois, `LEX_TENANCY_V2=1` na instalação (antes disso as 12 tabelas novas se comportam como antes, para a publicação do código não quebrar o banco).
 2. Criar a senha da role `lex_runtime` e migrar a instalação atual para `LEX_DB_MODE=postgres` + `LEX_COMERCIAL=1`.
 3. Rodar `provision-office.js` para o segundo escritório (executa `ativar_multi_escritorio()`).
 4. Homologação real A/B com dados sintéticos nos dois escritórios (AGENTS.md §9), incluindo canais.

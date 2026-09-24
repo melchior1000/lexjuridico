@@ -6,12 +6,12 @@ const path=require('node:path');
 const {tenantBootCheck,enforceTenantBoot}=require('../lib/tenant-guard');
 const {TENANT_TABLES,GLOBAL_TABLES,createSupabaseRequest}=require('../lib/supabase');
 
-const OK={LEX_COMERCIAL:'1',LEX_ESCRITORIO_ID:'11111111-1111-4111-8111-111111111111',LEX_TENANCY_REQUIRED:'1',LEX_DB_MODE:'postgres',LEX_DATABASE_URL:'postgresql://lex_runtime:x@db.exemplo:5432/postgres'};
+const OK={LEX_TENANCY_V2:'1',LEX_COMERCIAL:'1',LEX_ESCRITORIO_ID:'11111111-1111-4111-8111-111111111111',LEX_TENANCY_REQUIRED:'1',LEX_DB_MODE:'postgres',LEX_DATABASE_URL:'postgresql://lex_runtime:x@db.exemplo:5432/postgres'};
 
 test('modo comercial só liga com escritório, tenancy obrigatória e banco com RLS',()=>{
   assert.equal(tenantBootCheck({}).ok,true,'instalação de um escritório segue como está');
   assert.equal(tenantBootCheck(OK).ok,true);
-  for(const [k,v,re] of [['LEX_ESCRITORIO_ID','',/UUID/],['LEX_ESCRITORIO_ID','abc',/UUID/],['LEX_TENANCY_REQUIRED','0',/TENANCY/],['LEX_DB_MODE','rest',/postgres/],['LEX_DATABASE_URL','',/lex_runtime/],['LEX_DATABASE_URL','postgresql://postgres:postgres@db:5432/postgres',/superusuário/]]){
+  for(const [k,v,re] of [['LEX_ESCRITORIO_ID','',/UUID/],['LEX_ESCRITORIO_ID','abc',/UUID/],['LEX_TENANCY_REQUIRED','0',/TENANCY/],['LEX_TENANCY_V2','',/V2/],['LEX_DB_MODE','rest',/postgres/],['LEX_DATABASE_URL','',/lex_runtime/],['LEX_DATABASE_URL','postgresql://postgres:postgres@db:5432/postgres',/superusuário/]]){
     const out=tenantBootCheck({...OK,[k]:v});
     assert.equal(out.ok,false,k+'='+v);
     assert.match(out.problemas.join(' '),re);
@@ -52,10 +52,22 @@ test('cadastro de escritório gera SQL seguro e configuração que passa na trav
   const out=provision({nome:"D'Ávila Advogados",slug:'davila',oab:['123456:mg']});
   assert.match(out.sql,/'D''Ávila Advogados'/);
   assert.match(out.sql,/ativar_multi_escritorio/);
-  const env=Object.fromEntries(out.env.split('\n').filter(l=>/^[A-Z_]+=/.test(l)).map(l=>[l.slice(0,l.indexOf('=')),l.slice(l.indexOf('=')+1)]));
+  const env=Object.fromEntries(out.env.split('\n').filter(l=>/^[A-Z0-9_]+=/.test(l)).map(l=>[l.slice(0,l.indexOf('=')),l.slice(l.indexOf('=')+1)]));
   assert.equal(env.DJEN_OABS,'123456:MG');
   assert.equal(tenantBootCheck(env).ok,true);
   assert.notEqual(provision({nome:'X',slug:'x2'}).env.match(/COURT_READING_INTEGRITY_KEY=(\w+)/)[1],provision({nome:'Y',slug:'y2'}).env.match(/COURT_READING_INTEGRITY_KEY=(\w+)/)[1],'segredos nunca repetem entre escritórios');
   assert.throws(()=>provision({nome:'X',slug:'X Y'}),/slug/);
   assert.throws(()=>provision({nome:'X',slug:'xx',oab:['12:MGX']}),/OAB/);
+});
+
+test('transição: antes da migração as 12 tabelas novas se comportam como antes; com V2, isoladas',async()=>{
+  const {activeTenantTables}=require('../lib/supabase');
+  assert.equal(activeTenantTables({}).has('contatos'),false);
+  assert.equal(activeTenantTables({LEX_TENANCY_V2:'1'}).has('contatos'),true);
+  assert.equal(activeTenantTables({}).has('processos_cache'),true,'tabelas da primeira fase seguem isoladas');
+  const calls=[];
+  const https={request(opts,cb){calls.push(opts.path);const res=new (require('node:events'))();res.statusCode=200;res.headers={};setImmediate(()=>{cb(res);res.emit('data',Buffer.from('[]'));res.emit('end')});return{on(){},setTimeout(){},write(){},end(){},destroy(){}}}};
+  const req=createSupabaseRequest({url:'https://db.invalid',key:'k',https,tenantId:OK.LEX_ESCRITORIO_ID,tenantTables:activeTenantTables({})});
+  await req('GET','contatos',null,{nome:'eq.x'});
+  assert.doesNotMatch(calls[0]||'',/escritorio_id/,'sem a migração, contatos não recebe filtro inexistente');
 });
