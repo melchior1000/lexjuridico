@@ -29,9 +29,22 @@ Ver `config/lex.env.example`: `PJE_MNI_TRIBUNAIS`, `PJE_MNI_CPF`, `PJE_MNI_SENHA
 - `npm run status:integracoes -- --live` testa o acesso em cada tribunal com `consultarAvisosPendentes`, que só lista e não dá ciência.
 - `GET /api/escritorio/pje/avisos` lista os expedientes para a interface. `POST /api/escritorio/pje/sincronizar` força uma leitura (advogado/admin).
 
+### TRF6 / eproc: credencial MNI não é login pessoal
+
+O TRF6 informa oficialmente que a integração via MNI atual usa a versão **2.2.3** e depende de **credenciamento institucional prévio**: o órgão/sistema solicitante envia ofício com identificação, IP público e gestor; depois a equipe técnica do tribunal fornece o **usuário e a senha de integração**.
+
+Por isso, no LEX:
+- `PJE_MNI_EPROC_USUARIO` e `PJE_MNI_EPROC_SENHA` são credenciais de **integração MNI fornecidas pelo tribunal**;
+- CPF, OAB, senha pessoal do eproc, certificado ou 2FA do advogado **não substituem** esse credenciamento;
+- `PJE_MNI_EPROC_NS_SERVICO` e `PJE_MNI_EPROC_NS_TIPOS` devem reproduzir os namespaces do WSDL homologado pelo tribunal;
+- sem esse conjunto, o TRF6 permanece `não configurado` e o LEX não chama dado local de “conferido”;
+- consulta pública e DJEN podem servir como fontes oficiais de leitura básica enquanto a integração MNI não é credenciada, respeitados sigilo e disponibilidade do tribunal.
+
+Fonte oficial: portal do TRF6, “Modelo Nacional de Interoperabilidade - Integração”.
+
 ## Limites conhecidos — homologar por tribunal
 
-1. **Acesso do advogado ao MNI varia por tribunal.** Uns aceitam CPF e senha, outros exigem certificado (TLS mútuo) ou cadastro prévio do sistema. Confirmar com o tribunal antes de ativar.
+1. **MNI é integração de sistema, não presunção de login pessoal.** Cada tribunal define credenciais e onboarding. No TRF6/eproc, o portal oficial exige credenciamento institucional e fornece usuário/senha próprios.
 2. **Namespaces e endereço** seguem a versão 2.2.2 publicada pelo CNJ. Se o WSDL do tribunal divergir, ajustar `PJE_MNI_NS_SERVICO`/`PJE_MNI_NS_TIPOS`. O parser não depende de prefixo.
 3. O ambiente de desenvolvimento não alcança `*.jus.br`. Os testes usam respostas no formato do MNI 2.2.2, e a primeira leitura real precisa ser feita com o advogado, conferindo a lista no painel do PJe.
 4. **Protocolo/peticionamento** (`entregarManifestacaoProcessual`) não foi implementado de propósito: exige assinatura com certificado e revisão humana.
