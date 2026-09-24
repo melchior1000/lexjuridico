@@ -110,16 +110,20 @@ test('avisos agrupados: um resumo por destinatário por dia, inclusive após rei
   const digest=new NotificationDigest(records,send),now=new Date('2026-09-09T12:00:00Z');
   await digest.enqueue('Novo documento recebido','admin');await digest.enqueue('Novo documento recebido','admin');
   await digest.flush('admin',[caseA],{now});await new NotificationDigest(new RecordStore(db.request),send).flush('admin',[caseA],{now});
-  assert.equal(sent.length,1);assert.match(sent[0].text,/Caso bancário Alfa/);assert.match(sent[0].text,/Novo documento/);
+  assert.equal(sent.length,1);assert.doesNotMatch(sent[0].text,/Caso bancário Alfa|prazo|urgente/,'cadastro manual não vira alerta jurídico');assert.match(sent[0].text,/Novo documento/);
 });
 test('timeout de envio fica registrado e não repete automaticamente o resumo',async()=>{
   const db=database(),records=new RecordStore(db.request);let sends=0;
   const digest=new NotificationDigest(records,async()=>{sends++;throw new Error('timeout');});
-  const now=new Date('2026-09-09T12:00:00Z');await digest.flush('admin',[caseA],{now});await digest.flush('admin',[caseA],{now});
+  const now=new Date('2026-09-09T12:00:00Z');await digest.enqueue('Evento confirmado para teste','admin');await digest.flush('admin',[caseA],{now});await digest.flush('admin',[caseA],{now});
   assert.equal(sends,1);assert.equal((await records.read('lex_digest:admin:2026-09-09')).value.status,'envio_incerto');
 });
-test('resumo preserva prazo mesmo com atualização hoje e respeita limite do Telegram',()=>{
-  const now=new Date('2026-09-09T12:00:00Z');const list=digestItems([{...caseA,prazo:'09/09/2026',atualizado_em:'2026-09-09'}],now);assert.match(list[0].text,/prazo hoje/);
+test('resumo não transforma prazo ou urgência manual em alerta e respeita limite do Telegram',()=>{
+  const now=new Date('2026-09-09T12:00:00Z');
+  const list=digestItems([{...caseA,prazo:'09/09/2026',atualizado_em:'2026-09-09'}],now);
+  assert.equal(list.length,0,'sem legal truth e leitura oficial não há alerta de prazo/urgência');
+  const stale=digestItems([{...caseA,prazo:'09/09/2026',atualizado_em:'2026-08-01'}],now);
+  assert.equal(stale.length,1);assert.match(stale[0].text,/dados a conferir/);assert.doesNotMatch(stale[0].text,/Caso bancário Alfa|prazo hoje|urgente/);
   assert.ok(formatDigest(Array.from({length:200},(_,i)=>({text:'Caso '+i+' — '+'x'.repeat(600)}))).length<=4096);
 });
 test('motor persiste ordem, valida instrumento, gera entrega e recupera o resultado após reinício',async()=>{
