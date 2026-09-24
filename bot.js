@@ -10498,7 +10498,7 @@ const server = http.createServer(async (req, res) => {
         const tokenConta = gerarToken(conta.papel, conta.id);
         global._sessaoAtividade.set(tokenConta, Date.now());
         res.writeHead(200, corsHeaders(req));
-        res.end(JSON.stringify({ok:true, token:tokenConta, perfil:conta.papel, conta:{id:conta.id,nome:conta.nome,email:conta.email}, ...PERMS[conta.papel]}));
+        res.end(JSON.stringify({ok:true, token:tokenConta, perfil:conta.papel, conta:{id:conta.id,nome:conta.nome,email:conta.email,senior:conta.senior}, ...PERMS[conta.papel]}));
         return;
       }
       if(typeof b.perfil !== 'string' || !Object.hasOwn(PERMS, b.perfil) || typeof b.senha !== 'string' || !b.senha) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil ou senha invalidos'})); return; }
@@ -10535,7 +10535,10 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/equipe' || url.startsWith('/api/equipe/')) {
     const perfilEq = validarToken(getToken(req));
     if(!perfilEq) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
-    if(perfilEq !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só o administrador gerencia a equipe'})); return; }
+    // Gerencia a equipe: o titular (login do perfil administrador) ou conta de advogado sênior.
+    const contaEq = contaDoToken(getToken(req));
+    const podeGerir = perfilEq === 'admin' && (!contaEq || equipeLex.senior(contaEq));
+    if(!podeGerir) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só o advogado sênior gerencia a equipe'})); return; }
     try {
       if(url==='/api/equipe' && req.method==='GET') { res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, contas: await equipeLex.listar()})); return; }
       const b = req.method==='POST' ? await lerBody(req) : {};

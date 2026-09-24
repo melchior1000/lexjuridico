@@ -42,6 +42,19 @@ test('servidor: token de conta desativada é recusado e login por e-mail existe'
   const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
   assert.match(src,/if\(u && !equipeLex\.ativo\(u\)\) return null;/);
   assert.match(src,/equipeLex\.autenticar\(b\.email, b\.senha\)/);
-  assert.match(src,/if\(perfilEq !== 'admin'\)/);
+  assert.match(src,/if\(!podeGerir\)/);
   assert.match(src,/Você não pode desativar a própria conta/);
+});
+
+test('só o advogado sênior gerencia a equipe; os demais não',async()=>{
+  const x=U.createUserStore({load:async()=>({lista:[]}),save:async()=>{}});
+  const senior=await x.criar({nome:'Sênior',email:'s@x.com',papel:'admin',senha:'senha1234',senior:true});
+  const adv=await x.criar({nome:'Advogado',email:'a@x.com',papel:'admin',senha:'senha1234'});
+  await assert.rejects(x.criar({nome:'Sec',email:'c@x.com',papel:'secretaria',senha:'senha1234',senior:true}),/Só advogado/);
+  assert.equal(x.senior(senior.id),true);
+  assert.equal(x.senior(adv.id),false);
+  await x.desativar(senior.id);assert.equal(x.senior(senior.id),false,'desativado perde o poder');
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
+  assert.match(src,/const podeGerir = perfilEq === 'admin' && \(!contaEq \|\| equipeLex\.senior\(contaEq\)\);/);
+  assert.match(src,/Só o advogado sênior gerencia a equipe/);
 });
