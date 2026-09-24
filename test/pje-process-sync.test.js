@@ -46,7 +46,7 @@ test('atualiza andamentos e partes da carteira real, explicando o que não deu',
   const calls=[];
   const transport=async(endpoint,xml)=>{const n=(xml.match(/<tip:numeroProcesso>(\d+)</)||[])[1];calls.push(n);
     return{status:200,body:n==='60020605020254063818'?procXml(n,{movs:[['20260920101500','Juntada de impugnação'],['20260922090000','Conclusos para decisão']]}):procXml(n,{movs:[['20260921080000','Embargos recebidos']],polos:false})}};
-  const client=Mni.createMniClient(Mni.mniConfig({PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_TRIBUNAIS:'TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'}),{transport});
+  const client=Mni.createMniClient(Mni.mniConfig({PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_LEGADO:'TRF6',PJE_MNI_TRIBUNAIS:'TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'}),{transport});
   const now=new Date('2026-09-24T13:00:00Z');
   const r=await Sync.syncProcessesFromPje({client,processStore:db,now});
   assert.deepEqual(calls,['60020605020254063818','60028469420254063818'],'consulta principal e embargos; não consulta processo encerrado nem o "vinculado a"');
@@ -69,7 +69,7 @@ test('atualiza andamentos e partes da carteira real, explicando o que não deu',
 test('falha de um tribunal não para os outros e é relatada',async()=>{
   const db=store([{id:'a',nome:'A',numero:'5004158-61.2024.8.13.0704'},{id:'b',nome:'B',numero:'6002060-50.2025.4.06.3818'}]);
   const transport=async endpoint=>endpoint.includes('tjmg')?Promise.reject(new Mni.MniError('timeout','O tribunal não respondeu a tempo.')):{status:200,body:procXml('60020605020254063818')};
-  const client=Mni.createMniClient(Mni.mniConfig({PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_TRIBUNAIS:'TJMG=https://pje.tjmg.jus.br/pje/intercomunicacao;TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'}),{transport});
+  const client=Mni.createMniClient(Mni.mniConfig({PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_LEGADO:'TRF6',PJE_MNI_TRIBUNAIS:'TJMG=https://pje.tjmg.jus.br/pje/intercomunicacao;TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'}),{transport});
   const r=await Sync.syncProcessesFromPje({client,processStore:db});
   assert.equal(r.atualizados.length,1);assert.equal(r.falhas[0].tribunal,'TJMG');assert.equal(r.ok,false);
 });
@@ -78,7 +78,7 @@ test('pelo WhatsApp: "atualize meus processos" e sem PJe conectado explica o que
   const db=store([{id:'b',nome:'B',numero:'6002060-50.2025.4.06.3818'}]);
   const records={rows:new Map(),async read(k){return this.rows.has(k)?{value:this.rows.get(k)}:null},async change(k,f){const v=f(this.rows.get(k));this.rows.set(k,v);return v}};
   const transport=async()=>({status:200,body:procXml('60020605020254063818',{movs:[['20260922090000','Conclusos']]})});
-  const pje=createPjeMonitor({records,processStore:db,env:{PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_TRIBUNAIS:'TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'},transport});
+  const pje=createPjeMonitor({records,processStore:db,env:{PJE_MNI_CPF:'12345678909',PJE_MNI_SENHA:'x',PJE_MNI_LEGADO:'TRF6',PJE_MNI_TRIBUNAIS:'TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao'},transport});
   const out=await executeNaturalOfficeCommand({processStore:db,records,pje,engine:{async list(){return[]}},log:()=>{}},{text:'atualize meus processos',profile:'secretaria'});
   assert.match(out.message,/1 processo\(s\) atualizado\(s\) pelo PJe/);
   const off=createPjeMonitor({records,processStore:db,env:{}});

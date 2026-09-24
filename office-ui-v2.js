@@ -174,6 +174,7 @@ window.lexOab=async function(){
     +'<section class="lex-oab"><h2>PJe (acesso autenticado)</h2>'+st(pje.configurado,pje.configurado?'PJe configurado: '+(pje.tribunais||[]).join(', '):'PJe não configurado')
     +'<p>Expedientes, intimações e citações pendentes, partes e andamentos. Precisa do CPF e da senha (ou certificado) do advogado no servidor. A consulta não dá ciência.</p>'
     +(pje.configurado?'':'<p class="lex-conn-miss">Falta no servidor: '+esc((pje.faltando||[]).join(', '))+'</p>')
+    +((pje.eproc||[]).length?'<p class="lex-conn-miss">'+esc(pje.eproc.join(', '))+': sistema eproc, não PJe. Publicações chegam pelo Diário; o painel do eproc ainda não tem conector no LEX.</p>':'')
     +'<button class="lex-oab-sec" onclick="lexAskLex(\'teste o PJe\')">Testar conexão com o PJe</button></section>';
   shell('Diário e PJe',body,'mais');
 };
