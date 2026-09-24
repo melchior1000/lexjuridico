@@ -95,7 +95,8 @@ const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
 const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-quality');
-const {applyPjeMovement} = require('./lib/pje-sync');
+const {applyPjeMovement, cnjDigits:_cnjDigits} = require('./lib/pje-sync');
+const {aliasForCnj:_datajudAlias, syncProcess:_datajudSyncProcess} = require('./lib/datajud');
 const {runDailyOfficeJobs} = require('./lib/office-daily-jobs');
 const {createDeadlineScheduler} = require('./lib/deadline-scheduler');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
@@ -961,15 +962,10 @@ async function _resolverClientePorNumero(numeroLimpo) {
   } catch(e) { return null; }
 }
 function _extrairTribunalDoProcesso(numero) {
-  const n = String(numero||'').replace(/\D/g,'');
-  const cod = n.length >= 16 ? n.substring(13,16) : '';
-  const mapa = {
-    '826':'tjsp','813':'tjmg','819':'tjrj','805':'tjba','810':'tjma','806':'tjce','804':'tjpe','807':'tjes',
-    '401':'trf1','402':'trf2','403':'trf3','404':'trf4','406':'trf6',
-    '502':'trt2','510':'trt10'
-  };
-  return mapa[cod] || null;
+  // Usa a tabela central do CNJ em lib/datajud; evita mapeamentos manuais divergentes.
+  try { return _datajudAlias(numero); } catch { return null; }
 }
+
 function _linkPjeProcesso(tribunal, numero) {
   const t = String(tribunal||'').toUpperCase();
   const n = encodeURIComponent(String(numero||''));
@@ -983,7 +979,7 @@ function _linkPjeProcesso(tribunal, numero) {
 }
 async function _buscarAndamentosDatajud(processoNumero, tribunalAlias) {
   const tribunal = String(tribunalAlias || _extrairTribunalDoProcesso(processoNumero)).toLowerCase();
-  if(!/^(tj[a-z]+|trf[1-6]|trt\d{1,2})$/.test(tribunal)) return {ok:false,erro:'Tribunal não mapeado',movimentacoes:[]};
+  if(!/^(tj[a-z]+|tjm[a-z]+|trf[1-6]|trt\d{1,2}|tst|tre-[a-z]{2}|stm|stj|stf)$/.test(tribunal)) return {ok:false,erro:'Tribunal não mapeado',movimentacoes:[]};
   const datajudKey=process.env.DATAJUD_API_KEY;
   if(!datajudKey) return {ok:false,erro:'Consulta pública Datajud não configurada',movimentacoes:[]};
   const host = 'api-publica.datajud.cnj.jus.br';
@@ -1009,31 +1005,42 @@ async function _buscarAndamentosDatajud(processoNumero, tribunalAlias) {
   }
 }
 async function _varrerAndamentosPjeAgora() {
-  const ativos = processos.filter(p => ['ATIVO','URGENTE','EM_PREP','RECURSAL'].includes(String(p.status||'').toUpperCase()) && p.numero);
+  // Não usa cache em memória como fonte de verdade: ele zera em reinícios/cold starts.
+  // Processo aberto com CNJ é conferido contra os andamentos persistidos no ProcessStore.
+  const ativos = processos.filter(p => !Workflow.CLOSED.has(String(p.status||'ATIVO').toUpperCase()) && _cnjDigits(p.numero));
   let novidades = 0;
   let falhas = 0;
   const alertas = [];
-  for(const p of ativos) {
-    const r = await _buscarAndamentosDatajud(p.numero, _extrairTribunalDoProcesso(p.numero));
-    if(!r.ok) { falhas++; continue; }
-    if(!r.movimentacoes.length) continue;
-    const ultimo = r.movimentacoes[0];
-    const chave = String(p.id || p.numero);
-    const antigo = _pjeMovCache[chave];
-    const assinatura = (ultimo.data||'')+'|'+(ultimo.tipo||'')+'|'+(ultimo.texto||'');
-    if(antigo && antigo !== assinatura) {
-      try {
-        const result = await applyPjeMovement({processos, sbReq, origem:'datajud',
-          onPersisted:()=>_bumpProcessos('datajud')},
-          {cnj:p.numero, data:ultimo.data, andamento_texto:ultimo.texto});
-        if(!result.duplicado) { novidades++; alertas.push({processo:result.processo, mov:ultimo}); }
-      } catch(e) { falhas++; continue; }
-
-    }
-    _pjeMovCache[chave] = assinatura;
+  const erros = [];
+  if(!String(process.env.DATAJUD_API_KEY||'').trim()) {
+    _pjeUltimoCheck = new Date().toISOString();
+    return { ok:false, falhas:ativos.length, monitorados:ativos.length, novidades:0, ultimo_check:_pjeUltimoCheck, alertas, erros:[{erro:'DATAJUD_API_KEY não configurada'}] };
   }
+  // Quatro consultas em paralelo; a persistência continua protegida pelo ProcessStore.
+  const fila = ativos.slice();
+  const trabalhador = async () => { for(let p=fila.shift(); p; p=fila.shift()) {
+    try {
+      const r = await _datajudSyncProcess(processStore, p.id, {
+        apiKey:process.env.DATAJUD_API_KEY,
+        integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
+        fetchImpl:globalThis.fetch,
+        actor:'LEX Datajud'
+      });
+      if(r.novos>0) {
+        novidades += r.novos;
+        const ultimo = (r.processo?.andamentos||[])[0] || {};
+        alertas.push({processo:r.processo, mov:{data:ultimo.data, tipo:'Movimentacao', texto:ultimo.txt}});
+      }
+      _pjeMovCache[String(p.id)] = new Date().toISOString();
+    } catch(e) {
+      falhas++;
+      erros.push({processo_id:p.id, numero:p.numero, erro:e.message==='READING_INTEGRITY_KEY_REQUIRED'?'COURT_READING_INTEGRITY_KEY ausente no servidor':e.message});
+    }
+  } };
+  await Promise.all(Array.from({length:Math.min(4, ativos.length)}, trabalhador));
+  if(novidades>0) _bumpProcessos('datajud');
   _pjeUltimoCheck = new Date().toISOString();
-  return { ok: falhas===0, falhas, monitorados: ativos.length, novidades, ultimo_check: _pjeUltimoCheck, alertas };
+  return { ok: falhas===0, falhas, monitorados: ativos.length, novidades, ultimo_check: _pjeUltimoCheck, alertas, erros };
 }
 
 async function logAtividade(agenteId, chatId, acao, detalhes) {
@@ -11531,6 +11538,36 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       if(!processo_numero) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_numero obrigatorio (ou processo_id de processo com numero cadastrado)'})); return; }
       const trib = u.searchParams.get('tribunal') || _extrairTribunalDoProcesso(processo_numero);
+      // Processo cadastrado: consulta e persiste os andamentos novos.
+      const _pidParam = u.searchParams.get('processo_id');
+      const _cnjAlvo = _cnjDigits(processo_numero);
+      const _cadastrados = processos.filter(p => _pidParam ? String(p.id)===String(_pidParam) : (_cnjAlvo && _cnjDigits(p.numero)===_cnjAlvo));
+      if(_cadastrados.length===1 && _cnjDigits(_cadastrados[0].numero)) {
+        try {
+          const s = await _datajudSyncProcess(processStore, _cadastrados[0].id, {
+            apiKey:process.env.DATAJUD_API_KEY,
+            integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
+            fetchImpl:globalThis.fetch,
+            actor:'LEX Datajud (manual)'
+          });
+          if(s.novos>0) {
+            _bumpProcessos('datajud');
+            await envTelegram('MOVIMENTACAO: Processo '+processo_numero+' — '+s.novos+' andamento(s) novo(s) gravado(s).', null, CHAT_ID).catch(()=>{});
+          }
+          const movs = (s.processo?.andamentos||[]).filter(a=>a.origem==='datajud').slice(0,10)
+            .map(a=>({data:a.data, tipo:'Movimentacao', texto:String(a.txt||'').replace(/^\[DATAJUD\]\s*/,'')}));
+          res.writeHead(200,corsHeaders(req));
+          res.end(JSON.stringify({ok:true, processo_numero, tribunal:s.alias, movimentacoes:movs,
+            nova_movimentacao:s.novos>0, novos:s.novos, gravado:true, processo:s.processo, erro:null}));
+        } catch(e) {
+          res.writeHead(502,corsHeaders(req));
+          res.end(JSON.stringify({ok:false, processo_numero, movimentacoes:[], nova_movimentacao:false, gravado:false,
+            erro:e.message==='READING_INTEGRITY_KEY_REQUIRED'
+              ? 'Servidor sem COURT_READING_INTEGRITY_KEY (mínimo 32 caracteres). Configure no Render.'
+              : e.message}));
+        }
+        return;
+      }
       const r = await _buscarAndamentosDatajud(processo_numero, trib);
       const ultima = r.movimentacoes[0] || null;
       const chave = String(processo_numero);
@@ -11572,7 +11609,10 @@ if(url==='/api/memoria' && req.method==='GET') {
           tribunal:p.tribunal || _extrairTribunalDoProcesso(p.numero),
           ultimoAndamento:(p.andamentos&&p.andamentos[0]) ? p.andamentos[0].txt : ''
         })),
-        resumo: 'Monitorados: '+varredura.monitorados+' | Novidades: '+varredura.novidades,
+        resumo: 'Monitorados: '+varredura.monitorados+' | Andamentos novos gravados: '+varredura.novidades+(varredura.falhas?' | Falhas: '+varredura.falhas:''),
+        novidades: varredura.novidades,
+        erros: varredura.erros || [],
+        error: varredura.ok ? undefined : ('Consulta com '+varredura.falhas+' falha(s); '+varredura.novidades+' andamento(s) novo(s) gravado(s). '+(varredura.erros||[]).slice(0,3).map(e=>(e.numero||e.processo_id||'')+': '+e.erro).join(' | ')).trim(),
         novosAndamentos: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero })),
         ultimo_check: varredura.ultimo_check
       }));
