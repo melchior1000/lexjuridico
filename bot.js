@@ -881,7 +881,15 @@ function _historicoCanalParaPrompt(rows){
     }).join('\n');
 }
 async function _comporRespostaComandoCanal(job){
-  if(!aiAvailable()) throw new Error('IA do LEX não está configurada no servidor.');
+  const {directReplyFromCommand,noCreditMessage}=require('./lib/channel-direct-reply');
+  if(process.env.LEX_AI_NO_CREDIT==='1'||!aiAvailable()){
+    const direct=directReplyFromCommand(job?.comando);
+    if(direct){
+      console.log('[LEX OUTBOX] '+job.id+' etapa=resposta_direta_sem_ia');
+      return direct.slice(0,3500);
+    }
+    throw new Error(noCreditMessage());
+  }
   const historico=_historicoCanalParaPrompt(job?.historico);
   const system=[
     'Você é o LEX, secretário operacional do escritório.',
