@@ -17,8 +17,9 @@ test('dossiê comercial mostra documentos, origem e estado de conferência',()=>
   assert.match(ui,/Provável duplicado/);
 });
 
-test('dossiê liga Datajud, encaminhamento, produção e anexo ao processo selecionado',()=>{
-  assert.match(ui,/\/api\/escritorio\/datajud/);
+test('dossiê liga PJe, encaminhamento, produção e anexo ao processo selecionado; nunca Datajud',()=>{
+  assert.match(ui,/\/api\/escritorio\/pje\/processos/);
+  assert.doesNotMatch(ui,/\/api\/escritorio\/datajud/);
   assert.match(ui,/\/api\/escritorio\/mover/);
   assert.match(ui,/\/api\/tarefas/);
   assert.match(ui,/lexDossierAttach/);

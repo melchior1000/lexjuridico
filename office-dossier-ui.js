@@ -45,9 +45,9 @@ window.lexDossierDatajud=async function(id){
   let msg;
   try{const d=await lexApi('/api/escritorio/pje/processos',{method:'POST',body:JSON.stringify({processo_id:String(id)}),timeoutMs:90000});msg=d.mensagem||'Processo atualizado pelo PJe.'}
   catch(e){
-   if(!/não configurado/i.test(String(e.message)))throw e;
-   const d=await lexApi('/api/escritorio/datajud',{method:'POST',body:JSON.stringify({processo_id:String(id)}),timeoutMs:60000});
-   msg='Atualizado pelo Datajud: '+(Number(d.novos)||0)+' andamento(s) novo(s). Partes só vêm pelo PJe conectado.';
+   // Sem PJe não há atualização: Datajud tem atraso e não reflete o Diário.
+   if(/não configurado/i.test(String(e.message)))throw new Error('o PJe ainda não está ligado ao LEX. Configure o acesso e diga "teste o PJe".');
+   throw e;
   }
   if(typeof verificarESincronizar==='function')await verificarESincronizar();
   window.lexDossierOpen(id);

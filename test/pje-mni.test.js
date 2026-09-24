@@ -207,3 +207,15 @@ test('vigia avisa expedientes novos uma vez e respeita o horário',async()=>{
   assert.match(sent[0],/1 novo\(s\) expediente\(s\)/);
   assert.match(sent[0],/Nada foi aberto/);
 });
+
+test('teste do PJe explica em português por que não conectou',async()=>{
+  const M=require('../lib/pje-mni');
+  const off=await M.diagnoseMni(null,{configurado:false,faltando:['PJE_MNI_SENHA']});
+  assert.match(M.diagnoseMessage(off),/não está ligado ao LEX: faltam PJE_MNI_SENHA/);
+  const client={tribunais:()=>['TJMG','TRF6'],async consultarAvisosPendentes(s){if(s==='TJMG')return{avisos:[{},{}]};throw new M.MniError('autenticacao','Tribunal recusou a consulta: usuário inválido')}};
+  const d=await M.diagnoseMni(client,{configurado:true});
+  assert.equal(d.ok,false);
+  const msg=M.diagnoseMessage(d);
+  assert.match(msg,/TJMG: conectado \(2 expediente/);
+  assert.match(msg,/TRF6: não conectou — o tribunal recusou o CPF\/senha/);
+});
