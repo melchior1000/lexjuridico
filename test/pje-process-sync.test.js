@@ -89,8 +89,9 @@ test('pelo WhatsApp: "atualize meus processos" e sem PJe conectado explica o que
 test('botão "Atualizar do tribunal" usa o servidor do LEX com login (antes chamava o endereço errado)',()=>{
   const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','office-dossier-ui.js'),'utf8');
   assert.match(src,/lexApi\('\/api\/escritorio\/pje\/processos'/);
-  assert.match(src,/lexApi\('\/api\/escritorio\/datajud',\{method:'POST',body:JSON\.stringify\(\{processo_id/);
-  assert.doesNotMatch(src,/fetch\('\/api\/escritorio\/datajud'/);
+  // Sem PJe não atualiza: Datajud tem atraso e não reflete o Diário.
+  assert.doesNotMatch(src,/\/api\/escritorio\/datajud/);
+  assert.match(src,/o PJe ainda não está ligado ao LEX/);
 });
 
 test('ordem pelo CNJ da execução não confunde com o agravo "vinculado a" o mesmo número',()=>{
