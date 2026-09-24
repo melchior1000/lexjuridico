@@ -35,7 +35,26 @@ window.lexDossierOpen=id=>{const p=byId(id);if(!p){window.lexProcessos?.();retur
 window.lexDossierFilter=function(btn,kind){document.querySelectorAll('.lex-dossier-filters button').forEach(x=>x.classList.remove('active'));btn?.classList.add('active');document.querySelectorAll('.lex-timeline-item').forEach(x=>{x.hidden=kind!=='tudo'&&x.dataset.kind!==kind})};
 window.lexDossierTalk=function(id){window.__lexDossierContext={case_id:String(id)};window.lexChat?.();setTimeout(()=>{const s=document.getElementById('lex-chat-process');if(s)s.value=String(id);const i=document.getElementById('lex-chat-input')||document.querySelector('.lex-chat-input textarea,.lex-chat-input input');if(i)i.placeholder='Pergunte ao LEX sobre este processo…'},80)};
 window.lexDossierAttach=function(id){const p=byId(id);if(typeof window.lexAttachProcess==='function')return window.lexAttachProcess(id);window.__lexDossierContext={case_id:String(id)};window.lexChat?.();setTimeout(()=>document.querySelector('[data-lex-attach],#lex-attach')?.click(),80);return p};
-window.lexDossierDatajud=async function(id){const r=await fetch('/api/escritorio/datajud',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:String(id)})});if(!r.ok)throw new Error('DATAJUD_UPDATE_FAILED');return r.json()};
+// Atualizar do tribunal: PJe (andamentos e partes); sem PJe conectado, Datajud.
+window.lexDossierDatajud=async function(id){
+ const btn=[...document.querySelectorAll('.lex-dossier-primary button')].find(b=>/Atualizar/.test(b.textContent));
+ const say=(msg,kind)=>{if(typeof toast==='function')toast(msg,kind||'ok');else alert(msg)};
+ if(typeof lexApi!=='function'){say('Não consegui falar com o servidor do LEX.','alert');return}
+ if(btn){btn.disabled=true;btn.dataset.label=btn.textContent;btn.textContent='Atualizando…'}
+ try{
+  let msg;
+  try{const d=await lexApi('/api/escritorio/pje/processos',{method:'POST',body:JSON.stringify({processo_id:String(id)}),timeoutMs:90000});msg=d.mensagem||'Processo atualizado pelo PJe.'}
+  catch(e){
+   if(!/não configurado/i.test(String(e.message)))throw e;
+   const d=await lexApi('/api/escritorio/datajud',{method:'POST',body:JSON.stringify({processo_id:String(id)}),timeoutMs:60000});
+   msg='Atualizado pelo Datajud: '+(Number(d.novos)||0)+' andamento(s) novo(s). Partes só vêm pelo PJe conectado.';
+  }
+  if(typeof verificarESincronizar==='function')await verificarESincronizar();
+  window.lexDossierOpen(id);
+  say(msg.split('\n')[0]);
+ }catch(e){say('Não atualizei: '+e.message,'alert')}
+ finally{if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent=btn.dataset.label||'Atualizar do tribunal'}}
+};
 window.lexDossierTask=async function(id){const r=await fetch('/api/tarefas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:String(id),tipo:'analise',origem:'dossie'})});if(!r.ok)throw new Error('TASK_CREATE_FAILED');return r.json()};
 window.lexDossierMove=async function(id,to,reason,intent_id){const r=await fetch('/api/escritorio/mover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:String(id),to,reason,intent_id})});if(!r.ok)throw new Error('CASE_MOVE_FAILED');return r.json()};
 function boot(){const old=window.lexOpenProc;if(typeof old==='function'&&!old.__dossier){const fn=id=>window.lexDossierOpen(id);fn.__dossier=true;fn.legacy=old;window.lexOpenProc=fn}}

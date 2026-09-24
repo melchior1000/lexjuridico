@@ -42,3 +42,12 @@ Ver `config/lex.env.example`: `PJE_MNI_TRIBUNAIS`, `PJE_MNI_CPF`, `PJE_MNI_SENHA
 - CNJ — Modelo Nacional de Interoperabilidade, versão 2.2.2 (`servico-intercomunicacao-2.2.2`, `tipos-servico-intercomunicacao-2.2.2`).
 - SEEU/PJe — Consulta de Avisos Pendentes e Teor da Comunicação: https://docs.seeu.pje.jus.br/docs/documentacao-tecnica/manual_avisos_pendentes_comunicacao/ (a consulta ao teor registra a ciência e inicia o prazo).
 - Lei 11.419/2006, art. 5º, §§1º e 3º; CPC, art. 231, V.
+
+## Atualizar a carteira (andamentos e partes)
+
+- Pelo WhatsApp/Telegram/web: "atualize meus processos" (toda a carteira) ou "atualize o processo da Maria" / CNJ.
+- Botão "Atualizar do tribunal" na tela do processo (usa PJe; sem PJe conectado, Datajud, que não traz partes).
+- Automático: uma vez por dia, na primeira ronda da vigia a partir das 6h; andamentos novos geram aviso.
+- Usa `consultarProcesso` com `incluirDocumentos=false` (não dá ciência). Tribunal deduzido do CNJ (J.TR): 8.13=TJMG, 8.26=TJSP, 4.06=TRF6 etc.
+- Campo número com vários autos ("6002060-50... / Embargos 6002846-94...") atualiza todos; campo que começa com texto ("A confirmar — vinculado a...") não atualiza, porque o número citado é de outro processo.
+- O relatório diz o que não foi atualizado e por quê: sem CNJ, tribunal não conectado, falha do tribunal.

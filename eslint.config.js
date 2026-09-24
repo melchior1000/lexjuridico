@@ -11,7 +11,7 @@ const lexBrowserGlobals = {
 module.exports = [
   { ignores: ['bot.js','lex_agente_vivo*.js','node_modules/**'] },
   {
-    files: ['lib/office-pipeline.js','lib/office-command.js','lib/office-queries.js','lib/pje-mni.js','lib/pje-monitor.js','lib/datajud.js'],
+    files: ['lib/office-pipeline.js','lib/office-command.js','lib/office-queries.js','lib/pje-mni.js','lib/pje-monitor.js','lib/pje-process-sync.js','lib/datajud.js'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'commonjs', globals: globals.node },
     rules: {
       ...js.configs.recommended.rules,
