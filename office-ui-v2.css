@@ -178,3 +178,6 @@ body.lex-commercial .lex-home-command b{display:grid;place-items:center;width:34
   .lex2-settings-grid{grid-template-columns:1fr}
   .lex2-office-map>summary,.lex2-specialists>summary{align-items:flex-start}
 }
+
+.lex2-office-tools{display:grid;gap:7px;min-height:0;max-height:34vh;overflow:auto;overscroll-behavior:contain;padding-right:1px}
+@media(max-width:620px){.lex2-office-tools{max-height:30vh}}
