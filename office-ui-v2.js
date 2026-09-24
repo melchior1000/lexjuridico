@@ -188,24 +188,41 @@ window.lexOabSave=async function(){
 };
 // Equipe: cada pessoa com login próprio. Desativar corta o acesso na hora.
 window.lexEquipe=async function(msg){
-  navMark('mais');let contas=[],erro='';
-  try{const d=await lexApi('/api/equipe');contas=Array.isArray(d.contas)?d.contas:[]}catch(e){erro=e?.message||'sem acesso'}
+  navMark('mais');let contas=[],erro='',pode=false,desligado=false;
+  try{const d=await lexApi('/api/equipe');contas=Array.isArray(d.contas)?d.contas:[];pode=d.pode_gerenciar===true;desligado=d.login_compartilhado_desligado===true}catch(e){erro=e?.message||'sem acesso'}
   const papel=p=>p==='admin'?'Administrador / advogado':'Secretária';
-  const linhas=contas.length?contas.map(c=>'<div class="lex-eq-row'+(c.ativo?'':' off')+'"><div><strong>'+esc(c.nome)+'</strong><small>'+esc(c.email)+' · '+papel(c.papel)+(c.senior?' · sênior':'')+(c.oab?' · OAB '+esc(c.oab):'')+(c.ativo?'':' · desativada')+'</small></div>'+(c.ativo?'<button onclick="lexEquipeDesativar(\''+esc(c.id)+'\',\''+esc(c.nome).replace(/'/g,'')+'\')">Desativar</button>':'')+'</div>').join(''):'<p class="lex-eq-vazio">Nenhuma conta individual ainda. Todos entram pelo perfil compartilhado.</p>';
+  const linhas=contas.length?contas.map(c=>'<div class="lex-eq-row'+(c.ativo?'':' off')+'"><div><strong>'+esc(c.nome)+'</strong><small>'+esc(c.email)+' · '+papel(c.papel)+(c.senior?' · sênior':'')+(c.oab?' · OAB '+esc(c.oab):'')+(c.ativo?'':' · desativada')+'</small></div>'+(pode&&c.ativo?'<button onclick="lexEquipeDesativar(\''+esc(c.id)+'\',\''+esc(c.nome).replace(/'/g,'')+'\')">Desativar</button>':'')+'</div>').join(''):'<p class="lex-eq-vazio">Nenhuma conta individual ainda.</p>';
   const body='<div class="lex-page-head"><div><small>Acesso</small><h1>Equipe</h1></div></div>'
-    +(erro?'<div class="lex-warning">'+esc(/403|s[eê]nior|administrador/i.test(erro)?'Só o advogado sênior gerencia a equipe.':erro)+'</div>':'')
+    +(erro?'<div class="lex-warning">'+esc(erro)+'</div>':'')
     +(msg?'<div class="lex-eq-msg" role="status">'+esc(msg)+'</div>':'')
-    +'<section class="lex-oab"><h2>Contas</h2>'+linhas+'</section>'
-    +(erro?'':'<section class="lex-oab"><h2>Nova conta</h2>'
-    +'<label for="eq-nome">Nome</label><input id="eq-nome" autocomplete="off">'
-    +'<label for="eq-email">E-mail</label><input id="eq-email" type="email" autocomplete="off">'
-    +'<label for="eq-papel">Papel</label><select id="eq-papel"><option value="admin">Administrador / advogado</option><option value="secretaria">Secretária</option></select>'
-    +'<label class="lex-eq-check"><input id="eq-senior" type="checkbox"> Advogado sênior (pode criar e desativar contas)</label>'
-    +'<label for="eq-oab">OAB (opcional)</label><input id="eq-oab" placeholder="123456/MG" autocomplete="off">'
-    +'<label for="eq-senha">Senha inicial (8+ caracteres, letras e números)</label><input id="eq-senha" type="password" autocomplete="new-password">'
-    +'<button class="lex-oab-go" onclick="lexEquipeCriar()">Criar conta</button>'
-    +'<p>A pessoa entra com este e-mail e senha. Quando sair do escritório, toque em Desativar: o acesso dela cai na hora.</p></section>');
+    +(erro?'':'<section class="lex-oab"><h2>Contas</h2>'+linhas+(pode?'':'<p>Só o advogado sênior cria ou desativa contas.</p>')+'</section>')
+    +(pode?'<section class="lex-oab"><h2>Login compartilhado</h2>'
+      +'<p>'+(desligado?'Desligado: só entra quem tem conta individual.':'Ligado: quem souber a senha única do perfil ainda entra. Depois que todos tiverem conta, desligue — assim quem sair do escritório perde o acesso de vez.')+'</p>'
+      +'<button class="'+(desligado?'lex-oab-sec':'lex-oab-go')+'" onclick="lexEquipeLoginCompartilhado('+(!desligado)+')">'+(desligado?'Religar login compartilhado':'Desligar login compartilhado')+'</button></section>'
+      +'<section class="lex-oab"><h2>Nova conta</h2>'
+      +'<label for="eq-nome">Nome</label><input id="eq-nome" autocomplete="off">'
+      +'<label for="eq-email">E-mail</label><input id="eq-email" type="email" autocomplete="off">'
+      +'<label for="eq-papel">Papel</label><select id="eq-papel"><option value="admin">Administrador / advogado</option><option value="secretaria">Secretária</option></select>'
+      +'<label class="lex-eq-check"><input id="eq-senior" type="checkbox"> Advogado sênior (pode criar e desativar contas)</label>'
+      +'<label for="eq-oab">OAB (opcional)</label><input id="eq-oab" placeholder="123456/MG" autocomplete="off">'
+      +'<label for="eq-senha">Senha inicial (8+ caracteres, letras e números)</label><input id="eq-senha" type="password" autocomplete="new-password">'
+      +'<button class="lex-oab-go" onclick="lexEquipeCriar()">Criar conta</button>'
+      +'<p>A pessoa entra com este e-mail e senha. Quando sair do escritório, toque em Desativar: o acesso dela cai na hora.</p></section>':'')
+    +'<section class="lex-oab"><h2>Minha senha</h2><p>Para quem entra com conta individual.</p>'
+    +'<label for="eq-atual">Senha atual</label><input id="eq-atual" type="password" autocomplete="current-password">'
+    +'<label for="eq-nova">Nova senha</label><input id="eq-nova" type="password" autocomplete="new-password">'
+    +'<button class="lex-oab-sec" onclick="lexEquipeMinhaSenha()">Trocar minha senha</button></section>';
   shell('Equipe',body,'mais');
+};
+window.lexEquipeLoginCompartilhado=async function(desligar){
+  if(desligar&&!window.confirm('Desligar o login compartilhado? Só quem tem conta individual vai entrar, e as sessões abertas pelo perfil caem agora.'))return;
+  try{await lexApi('/api/equipe/login-compartilhado',{method:'POST',body:JSON.stringify({desligar})});window.lexEquipe(desligar?'Login compartilhado desligado.':'Login compartilhado religado.')}
+  catch(e){window.lexEquipe('Não alterei: '+(e?.message||'erro'))}
+};
+window.lexEquipeMinhaSenha=async function(){
+  const v=id=>String(($('#'+id)||{}).value||'');
+  try{await lexApi('/api/equipe/minha-senha',{method:'POST',body:JSON.stringify({senhaAtual:v('eq-atual'),senhaNova:v('eq-nova')})});window.lexEquipe('Senha trocada.')}
+  catch(e){window.lexEquipe('Não troquei: '+(e?.message||'erro'))}
 };
 window.lexEquipeCriar=async function(){
   const v=id=>String(($('#'+id)||{}).value||'').trim();

@@ -9527,6 +9527,8 @@ function validarToken(token) {
     if(sig !== esperado) return null;
     // Conta desativada (advogado que saiu) perde o acesso na hora.
     if(u && !equipeLex.ativo(u)) return null;
+    // Login compartilhado desligado: sessões antigas sem conta individual caem.
+    if(!u && typeof equipeLex!=='undefined' && equipeLex.perfilDesligado()) return null;
     if(typeof p !== 'string' || !Object.hasOwn(PERMS, p)) return null;
     if(!Number.isSafeInteger(ts) || ts <= 0 || ts > Date.now()) return null;
     const agora = Date.now();
@@ -10502,6 +10504,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if(typeof b.perfil !== 'string' || !Object.hasOwn(PERMS, b.perfil) || typeof b.senha !== 'string' || !b.senha) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil ou senha invalidos'})); return; }
+      if(typeof equipeLex!=='undefined' && equipeLex.perfilDesligado()) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Login compartilhado desligado neste escritório. Entre com o seu e-mail.'})); return; }
       
       // Busca senha válida (env var → Supabase → setup mode)
       const senhaCorreta = await obterSenhaValida(b.perfil);
@@ -10538,10 +10541,23 @@ const server = http.createServer(async (req, res) => {
     // Gerencia a equipe: o titular (login do perfil administrador) ou conta de advogado sênior.
     const contaEq = contaDoToken(getToken(req));
     const podeGerir = perfilEq === 'admin' && (!contaEq || equipeLex.senior(contaEq));
-    if(!podeGerir) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só o advogado sênior gerencia a equipe'})); return; }
     try {
-      if(url==='/api/equipe' && req.method==='GET') { res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, contas: await equipeLex.listar()})); return; }
+      // Qualquer conta troca a própria senha (conferindo a atual).
+      if(url==='/api/equipe/minha-senha' && req.method==='POST') {
+        if(!contaEq) throw Object.assign(new Error('Entre com a sua conta individual para trocar a própria senha.'),{status:400});
+        const bs = await lerBody(req);
+        const out = await equipeLex.trocarPropriaSenha(contaEq, bs?.senhaAtual, bs?.senhaNova);
+        res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, conta:out})); return;
+      }
+      if(perfilEq !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só advogado ou administrador vê a equipe'})); return; }
+      // Leitura para todo advogado; alterações só para o sênior (ou o titular).
+      if(url==='/api/equipe' && req.method==='GET') { res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, pode_gerenciar:podeGerir, login_compartilhado_desligado:equipeLex.perfilDesligado(), contas: await equipeLex.listar()})); return; }
+      if(!podeGerir) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só o advogado sênior gerencia a equipe'})); return; }
       const b = req.method==='POST' ? await lerBody(req) : {};
+      if(url==='/api/equipe/login-compartilhado' && req.method==='POST') {
+        const desligado = await equipeLex.desligarLoginCompartilhado(b?.desligar===true);
+        res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, login_compartilhado_desligado:desligado})); return;
+      }
       let out;
       if(url==='/api/equipe' && req.method==='POST') out = await equipeLex.criar(b||{});
       else if(url==='/api/equipe/desativar' && req.method==='POST') {
@@ -10567,6 +10583,9 @@ const server = http.createServer(async (req, res) => {
     try {
       const perfil = validarToken(getToken(req));
       if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
+      // Senha compartilhada do perfil: só o titular (login do perfil) ou advogado sênior troca.
+      const contaTs = contaDoToken(getToken(req));
+      if(contaTs && !equipeLex.senior(contaTs)) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só o advogado sênior troca a senha compartilhada. Para a sua senha, use Mais → Equipe.'})); return; }
       const b = await lerBody(req);
       const alvo = b.perfilAlvo || perfil;
       if(perfil !== 'admin' && alvo !== perfil) { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissao'})); return; }
