@@ -9,7 +9,7 @@ const LEX_SPECIALISTS=[
   ['Assessor','Análise do processo: diagnóstico, estratégia, risco, pontos fortes/fracos e próximos passos.',true],
   ['Jurídico judicial','Trabalho jurídico de processos judiciais e apoio às peças e providências.',true],
   ['Jurídico administrativo','Trabalho jurídico de processos e demandas administrativas.',true],
-  ['Pesquisa decisória','Perfil/padrão decisório do magistrado com decisões identificadas, fundamentos, provas e limites da amostra.',true],
+  ['Pesquisa decisória','Perfil / padrão decisório do magistrado com decisões identificadas, fundamentos, provas e limites da amostra.',true],
   ['Pericial','Cálculos, quesitos, pareceres e análise técnica.',true],
   ['PJe','Fontes oficiais: número, partes, andamentos e expedientes nas integrações disponíveis.',false],
   ['Coordenador','Coordena o escritório inteiro, distribui ordens e acompanha a execução.',true],
