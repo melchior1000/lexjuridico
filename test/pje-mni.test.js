@@ -211,7 +211,7 @@ test('vigia avisa expedientes novos uma vez e respeita o horário',async()=>{
 test('teste do PJe explica em português por que não conectou',async()=>{
   const M=require('../lib/pje-mni');
   const off=await M.diagnoseMni(null,{configurado:false,faltando:['PJE_MNI_SENHA']});
-  assert.match(M.diagnoseMessage(off),/não está ligado ao LEX: faltam PJE_MNI_SENHA/);
+  assert.match(M.diagnoseMessage(off),/integração judicial ainda não está completa: faltam PJE_MNI_SENHA/);
   const client={tribunais:()=>['TJMG','TRF6'],async consultarAvisosPendentes(s){if(s==='TJMG')return{avisos:[{},{}]};throw new M.MniError('autenticacao','Tribunal recusou a consulta: usuário inválido')}};
   const d=await M.diagnoseMni(client,{configurado:true});
   assert.equal(d.ok,false);
@@ -227,20 +227,21 @@ test('TRF6 é eproc: sai da consulta do PJe e o LEX explica, sem mandar configur
   assert.deepEqual(c.tribunais.map(t=>t.sigla),['TJMG']);
   assert.deepEqual([...c.eproc],['TRF6']);
   assert.deepEqual(M.mniConfig({...env,PJE_MNI_LEGADO:'TRF6'}).tribunais.map(t=>t.sigla),['TJMG','TRF6'],'PJe legado só se pedido');
-  assert.match(M.diagnoseMessage({configurado:true,ok:true,tribunais:[{sigla:'TJMG',ok:true,avisos:0}],eproc:['TRF6']}),/TRF6: sistema eproc, não PJe/);
+  assert.match(M.diagnoseMessage({configurado:true,ok:true,tribunais:[{sigla:'TJMG',ok:true,avisos:0}],eproc:['TRF6']}),/TRF6: sistema eproc, não PJe[\s\S]*credenciamento institucional/);
   const {syncReportMessage}=require('../lib/pje-process-sync');
   const msg=syncReportMessage({atualizados:[],falhas:[],sem_cnj:[],nao_consta:[],sem_tribunal:[{tribunal:'TRF6'},{tribunal:'TJSP'}],novos_andamentos:0,partes_atualizadas:0});
-  assert.match(msg,/TRF6 usa eproc e ainda não está ligado: configure o webservice do eproc \(PJE_MNI_EPROC\)/);
+  assert.match(msg,/TRF6 usa eproc e ainda não está ligado[\s\S]*MNI exige credenciamento institucional/);
   assert.match(msg,/Tribunal não conectado: TJSP/);
   assert.doesNotMatch(msg,/Tribunal não conectado: TRF6/);
 });
 
-test('TRF6 ligado pelo MNI do eproc: endereço com ?srv=, credencial própria e consulta real',async()=>{
+test('TRF6 MNI usa credencial institucional e namespace homologado, nunca login pessoal',async()=>{
   const M=require('../lib/pje-mni');
   const env={PJE_MNI_TRIBUNAIS:'TJMG=https://pje.tjmg.jus.br/pje/intercomunicacao;TRF6=https://pje1g.trf6.jus.br/pje/intercomunicacao',
     PJE_MNI_CPF:'12345678901',PJE_MNI_SENHA:'senhaPje',
     PJE_MNI_EPROC:'TRF6=https://eproc1g.trf6.jus.br/eproc/ws/controlador_ws.php?srv=intercomunicacao2.2',
-    PJE_MNI_EPROC_CPF:'98765432100',PJE_MNI_EPROC_SENHA:'senhaEproc'};
+    PJE_MNI_EPROC_USUARIO:'integracao-trf6',PJE_MNI_EPROC_SENHA:'senhaMni',
+    PJE_MNI_EPROC_NS_SERVICO:'urn:trf6:mni:servico:2.2.3',PJE_MNI_EPROC_NS_TIPOS:'urn:trf6:mni:tipos:2.2.3'};
   const c=M.mniConfig(env);
   assert.equal(c.configurado,true);
   assert.deepEqual(c.tribunais.map(t=>t.sigla+':'+t.sistema),['TJMG:pje','TRF6:eproc'],'a URL antiga do PJe do TRF6 é descartada');
@@ -251,9 +252,21 @@ test('TRF6 ligado pelo MNI do eproc: endereço com ?srv=, credencial própria e 
   const client=M.createMniClient(c,{transport});
   await client.consultarAvisosPendentes('TRF6');
   assert.equal(sent[0].url,c.tribunais[1].endpoint);
-  assert.match(sent[0].body,/98765432100/);assert.match(sent[0].body,/senhaEproc/);assert.doesNotMatch(sent[0].body,/senhaPje/);
+  assert.match(sent[0].body,/integracao-trf6/);assert.match(sent[0].body,/senhaMni/);
+  assert.match(sent[0].body,/urn:trf6:mni:servico:2\.2\.3/);
+  assert.doesNotMatch(sent[0].body,/senhaPje|12345678901/,'eproc não reutiliza login pessoal/PJe');
   const d=await M.diagnoseMni(client,c);
   assert.match(M.diagnoseMessage(d),/TRF6 \(eproc\): conectado/);
-  const sem=M.mniConfig({...env,PJE_MNI_EPROC_CPF:'',PJE_MNI_EPROC_SENHA:''});
-  assert.equal(sem.tribunais.find(t=>t.sigla==='TRF6').credenciais.cpf,'12345678901','sem credencial própria usa a do PJe');
+  const sem=M.mniConfig({...env,PJE_MNI_EPROC_USUARIO:'',PJE_MNI_EPROC_SENHA:''});
+  assert.equal(sem.configurado,false);
+  assert.ok(sem.faltando.includes('PJE_MNI_EPROC_USUARIO'));
+  assert.ok(sem.faltando.includes('PJE_MNI_EPROC_SENHA'));
+  assert.equal(sem.tribunais.find(t=>t.sigla==='TRF6').credenciais.cpf,'','não há fallback para CPF do PJe');
+});
+
+test('diagnóstico do eproc explica que login pessoal não substitui credencial MNI',async()=>{
+  const M=require('../lib/pje-mni');
+  const client={tribunais:()=>['TRF6'],async consultarAvisosPendentes(){throw new M.MniError('autenticacao','negado')}};
+  const d=await M.diagnoseMni(client,{configurado:true,tribunais:[{sigla:'TRF6',sistema:'eproc'}],eproc:[]});
+  assert.match(M.diagnoseMessage(d),/credencial MNI[\s\S]*credenciamento institucional[\s\S]*login pessoal do eproc não substitui/);
 });
