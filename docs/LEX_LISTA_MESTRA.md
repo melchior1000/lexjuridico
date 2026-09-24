@@ -84,3 +84,11 @@ Antes: das 18 frases típicas do advogado testadas, só 2 viravam ação no Core
 Agora (`lib/office-queries.js`, ligado em `executeNaturalOfficeCommand`): prazos (hoje/amanhã/semana/quinzena/mês/vencidos) via `DeadlineWatch.watchlist`, com "NÃO confirmado" para prazo sem autorização oficial; intimações do DJEN a partir de `djen_comunicacoes`, com órfãs (processo não cadastrado) e alerta de leitura atrasada; andamento por nome ou CNJ, com opções listadas no texto quando há ambiguidade; resumo do dia; ajuda. Banco indisponível falha fechado ("isso NÃO significa que não há intimações"). Pergunta jurídica em tese ("qual o prazo para contestar?") deixa de abrir tarefa de contestação e segue para o assessor.
 
 Evidência: `test/office-queries.test.js` (13 testes). Estados das etapas 6 e 15 não mudam até homologação real nos canais.
+
+## Registro 24/09/2026 (2) — LEX mais próximo do usuário
+
+- Áudio do advogado/secretária no WhatsApp/Telegram passa a ser transcrito e executado como ordem (antes era ignorado fora da sessão de cadastro). A transcrição volta para conferência ("🎙 Entendi: …").
+- Pergunta "qual processo?" aceita resposta curta ("1", "o segundo", CNJ ou nome único) e retoma a ordem original, por até 15 minutos.
+- "Bom dia" automático no WhatsApp do titular a partir das 7h (`lib/morning-brief.js`): uma vez por dia, marcado só após confirmação do provedor; `LEX_BOM_DIA=0` desliga.
+
+Evidência: `test/office-queries.test.js`, `test/morning-brief.test.js`. Sem homologação real nos canais ainda.

@@ -149,3 +149,37 @@ test('intimações: cursor do DJEN ilegível vira aviso, não quebra a resposta'
   assert.equal(out.result.disponivel,true);
   assert.match(out.message,/Não há registro de leitura bem-sucedida do DJEN/);
 });
+
+const {pickChoice}=require('../lib/office-queries');
+test('escolha curta responde à pergunta "qual processo?"',()=>{
+  const opts=[{id:'p1',nome:'Maria Silva x Banco Alfa',numero:CNJ_A},{id:'p3',nome:'Maria Oliveira inventário',numero:'5008888-22.2026.8.13.0002'}];
+  assert.equal(pickChoice('1',opts).id,'p1');
+  assert.equal(pickChoice('2)',opts).id,'p3');
+  assert.equal(pickChoice('o segundo',opts).id,'p3');
+  assert.equal(pickChoice('opção 1',opts).id,'p1');
+  assert.equal(pickChoice(CNJ_A,opts).id,'p1');
+  assert.equal(pickChoice('oliveira',opts).id,'p3');
+  assert.equal(pickChoice('3',opts),null);
+  assert.equal(pickChoice('maria',opts),null,'nome ainda ambíguo não escolhe');
+  assert.equal(pickChoice('prazos da semana',opts),null,'ordem nova não é escolha');
+});
+
+test('fluxo completo: pergunta ambígua, escolha e resposta do processo certo',async()=>{
+  const first=await run('como está o processo da Maria?');
+  assert.equal(first.choice,'processo');
+  assert.match(first.message,/Responda com o número da opção/);
+  const pick=pickChoice('2',first.candidates);
+  const second=await executeNaturalOfficeCommand({processStore:processStore(carteira),engine:engine(),receptionStore,log:()=>{}},{text:'como está o processo da Maria?',processo_id:pick.id,profile:'advogado',now:NOW});
+  assert.equal(second.result.processo_id,'p3');
+  assert.match(second.message,/Maria Oliveira/);
+});
+
+test('canal: áudio do operador é transcrito e a escolha pendente é usada',()=>{
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
+  const start=src.indexOf('async function processarMensagem');
+  const body=src.slice(start,start+6000);
+  assert.match(body,/isOperator && !txt && dados\.audio\?\.buffer && !global\._intakeSessoes/);
+  assert.match(body,/_transcreverAudioWhisper\(dados\.audio\.buffer/);
+  assert.match(body,/pickChoice\(txt,pending\.candidatos\)/);
+  assert.match(body,/mem\.lexEscolhaPendente=\{/);
+});

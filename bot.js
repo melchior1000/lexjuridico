@@ -91,6 +91,8 @@ const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
 const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
+const {pickChoice,dailyBriefText} = require('./lib/office-queries');
+const {createMorningBrief} = require('./lib/morning-brief');
 const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
@@ -5955,19 +5957,45 @@ async function processarMensagem(ctx, dados) {
   const chatId = String(ctx.chatId);
   await inicializarMemoria(chatId, ctx.threadId);
   const mem = getMem(chatId, ctx.threadId);
-  const txt = (dados.texto||'').trim();
-  const low = txt.toLowerCase();
+  let txt = (dados.texto||'').trim();
+  let low = txt.toLowerCase();
   const modo = getModoAgente(chatId);
   const operatorProfile=isAdvogado(chatId)?'admin':(ctx.canal==='whatsapp'?_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId))?.perfil:null);
-  if(!mem.aguardando && ['admin','advogado','secretaria'].includes(operatorProfile)) {
+  const isOperator=['admin','advogado','secretaria'].includes(operatorProfile);
+  // Áudio do advogado/secretária vira ordem escrita (fora da sessão de cadastro,
+  // que acumula o áudio no próprio fluxo). A transcrição é devolvida para conferência.
+  if(isOperator && !txt && dados.audio?.buffer && !global._intakeSessoes?.[chatId]) {
+    const tr=await _transcreverAudioWhisper(dados.audio.buffer,dados.audio.mime,dados.audio.nome||'audio.ogg').catch(e=>({ok:false,erro:e.message}));
+    const heard=String(tr?.texto||'').trim();
+    if(!tr?.ok||!heard){
+      await env(OPENAI_API_KEY?'Não consegui entender o áudio. Pode repetir ou digitar?':'Recebi o áudio, mas a transcrição não está configurada no servidor (OPENAI_API_KEY). Pode digitar?',ctx);
+      return;
+    }
+    txt=heard;low=txt.toLowerCase();
+    dados={...dados,texto:heard,audio:null};
+    await env('🎙 Entendi: "'+heard.slice(0,400)+'"',ctx);
+  }
+  if(!mem.aguardando && isOperator && txt) {
+    // "1", "o segundo" ou o CNJ respondem à última pergunta de "qual processo?".
+    let choice=null;
+    const pending=mem.lexEscolhaPendente;
+    if(pending){
+      delete mem.lexEscolhaPendente;
+      const fresh=Date.now()-Number(pending.em||0)<15*60*1000;
+      const pick=fresh?pickChoice(txt,pending.candidatos):null;
+      if(pick)choice={texto:pending.texto,processo_id:pick.id};
+    }
     try {
       const execution=await executeNaturalOfficeCommand({
         records:recordStore,engine:taskEngine,processStore,
         log:msg=>console.warn('[LEX Core]',msg)
       },{
-        text:txt,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
+        text:choice?choice.texto:txt,processo_id:choice?.processo_id,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
         previous_text:[...(Array.isArray(mem.hist)?mem.hist:[])].reverse().find(m=>m?.role==='assistant'&&typeof m.content==='string')?.content||null
       });
+      if(execution?.needs_input && execution.choice==='processo' && execution.candidates?.length) {
+        mem.lexEscolhaPendente={texto:choice?choice.texto:txt,candidatos:execution.candidates.map(c=>({id:c.id,nome:c.nome,numero:c.numero})),em:Date.now()};
+      }
       if(execution?.handled) {
         const result=execution.result;
         if(result?.resultado) {
@@ -13064,6 +13092,18 @@ setTimeout(() => {
 
 console.log('[LEX] Motor Proativo agendado — verificação a cada 6h, 7h-22h (economia API)');
 deadlineScheduler.start();
+// Bom dia no WhatsApp do titular (o Telegram já recebe o resumo periódico).
+// Desligar com LEX_BOM_DIA=0; hora com LEX_BOM_DIA_HORA (padrão 7h).
+const morningBrief=createMorningBrief({
+  records:recordStore,
+  hour:Number(process.env.LEX_BOM_DIA_HORA)||7,
+  compose:now=>dailyBriefText({records:recordStore,engine:taskEngine,processStore},{
+    now,workQueue:()=>executeNaturalOfficeCommand({records:recordStore,engine:taskEngine,processStore,log:()=>{}},{text:'veja o que precisa de mim',profile:'admin'})
+  }).then(text=>'☀️ Bom dia! '+text),
+  deliver:text=>envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP),
+  log:msg=>console.warn(msg)
+});
+if(process.env.LEX_OPERATOR_WHATSAPP && process.env.LEX_BOM_DIA!=='0') morningBrief.start();
 console.log('[LEX] Vigia de prazos agendada — DJEN diário + alertas persistentes');
 
 
