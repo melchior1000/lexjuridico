@@ -29,4 +29,5 @@ document.write('<script src="office-dossier-ui.js"><\/script>');
 document.write('<script src="lex2-interface-core.js"><\/script>');
 document.write('<script src="lex2-coordinator-ui.js"><\/script>');
 // Roteador único: carregado por último para prevalecer sobre as camadas antigas.
+document.write('<script src="lex-legacy-frame.js"><\/script>');
 document.write('<script src="lex-nav.js"><\/script>');

@@ -5640,7 +5640,7 @@ function salvarPrazoProc(procId){
 function renderEstatisticas(){
   const ps=getProcs();
   const total=ps.length, ganhos=ps.filter(p=>p.status==='GANHO').length, perdidos=ps.filter(p=>p.status==='PERDIDO').length, ativos=ps.filter(p=>['URGENTE','ATIVO','RECURSAL','AGUARDANDO'].includes(p.status)).length;
-  const porArea={};ps.forEach(p=>{porArea[p.area]=(porArea[p.area]||0)+1;});
+  const porArea={};ps.forEach(p=>{const a=String(p.area||'').trim()||'Área não informada';porArea[a]=(porArea[a]||0)+1;});
   const porStatus={};ps.forEach(p=>{porStatus[p.status]=(porStatus[p.status]||0)+1;});
   const valorTotal=ps.reduce((s,p)=>s+(Number(p.valor)||0),0);
   const ativosRisco = ps.filter(p=>['URGENTE','ATIVO','RECURSAL','AGUARDANDO','EM_PREP'].includes(p.status));
@@ -12569,7 +12569,7 @@ async function renderAgenda(){
   try {
     const tk = getAuthToken()||'';
     const r = await fetchComTimeout(SERVIDOR+'/api/contatos',{headers:{'Authorization':'Bearer '+tk}},10000);
-    if(r.ok) { contatos = await r.json(); _salvarAgenda(contatos); }
+    if(r.ok) { const lista = await r.json(); contatos = Array.isArray(lista) ? lista : (Array.isArray(lista?.contatos) ? lista.contatos : _getAgenda()); _salvarAgenda(contatos); }
     else { contatos = _getAgenda(); }
   } catch(e) { contatos = _getAgenda(); }
   
