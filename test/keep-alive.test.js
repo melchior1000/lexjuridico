@@ -23,6 +23,8 @@ test('servidor liga o keep-alive com RENDER_EXTERNAL_URL e a rotina do GitHub co
   const fs=require('node:fs'),path=require('node:path');
   const bot=fs.readFileSync(path.join(__dirname,'..','bot.js'),'utf8');
   assert.match(bot,/createKeepAlive\(\{url:process\.env\.LEX_KEEPALIVE_URL\|\|process\.env\.RENDER_EXTERNAL_URL/);
+  assert.match(bot,/keep-alive ativo: visita \/health a cada 5 min/);
+  assert.doesNotMatch(bot,/keep-alive ativo: visita \/health a cada 10 min/);
   assert.match(bot,/global\._lexKeepAlive\?\.stop\?\.\(\);/);
   const wf=fs.readFileSync(path.join(__dirname,'..','.github','workflows','manter-servidor-acordado.yml'),'utf8');
   assert.match(wf,/cron: '\*\/5 \* \* \* \*'/);
