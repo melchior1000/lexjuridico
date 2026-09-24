@@ -791,12 +791,34 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
 const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
+// OABs ligadas pela tela ou pelo WhatsApp ("minha OAB é 123456/MG").
+// DJEN_OABS no ambiente, se existir, tem prioridade.
+function _oabsLigadas(){
+  const cfg=_configRuntime?.pje||{};
+  const list=Array.isArray(cfg.oabs)&&cfg.oabs.length?cfg.oabs:(cfg.oab_numero?[cfg.oab_numero]:[]);
+  return list.map(x=>{const m=String(x||'').trim().toUpperCase().match(/^(\d+)\/([A-Z]{2})$/);return m?{oab:m[1],uf:m[2]}:null}).filter(Boolean);
+}
 function _djenOabsRuntime(){
   if(process.env.DJEN_OABS) return undefined;
-  const raw=String(_configRuntime?.pje?.oab_numero||'').trim().toUpperCase();
-  const m=raw.match(/^(\d+)\/([A-Z]{2})$/);
-  return m?[{oab:m[1],uf:m[2]}]:[];
+  return _oabsLigadas();
 }
+require('./lib/djen-monitor').setOabsProvider(_oabsLigadas);
+const lexOab={
+  get:()=>{try{return require('./lib/djen-monitor').parseOabs()}catch{return _oabsLigadas()}},
+  async set(oabs){
+    const list=(Array.isArray(oabs)?oabs:[]).filter(o=>o&&/^\d{3,7}$/.test(String(o.oab))&&/^[A-Z]{2}$/.test(String(o.uf)));
+    if(!list.length)throw Object.assign(new Error('OAB inválida. Exemplo: 123456/MG'),{status:400});
+    const nextPje={..._configRuntime.pje,ativo:true,oab_numero:list[0].oab+'/'+list[0].uf,oabs:list.map(o=>o.oab+'/'+o.uf),atualizado_em:new Date().toISOString()};
+    await _salvarConfigPersistida('pje',nextPje);
+    _configRuntime.pje=nextPje;
+    let djen=null;
+    try{
+      djen=await require('./lib/djen-monitor').syncDjen({processStore,sbReq,oabs:process.env.DJEN_OABS?require('./lib/djen-monitor').parseOabs():list,
+        clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY,initialLookbackDays:30}});
+    }catch(e){djen={ok:false,erro:e.message}}
+    return{oabs:list,ambiente_prioritario:!!process.env.DJEN_OABS,djen:djen&&{ok:djen.ok,erro:djen.erro||null,consultadas:djen.consultadas||0,casadas:djen.casadas||0,orfas:djen.orfas||0,falhas:djen.falhas||[]}};
+  }
+};
 
 async function _analisarPrazoDjen(input){
   const system=[
@@ -6005,7 +6027,7 @@ async function processarMensagem(ctx, dados) {
     }
     try {
       const execution=await executeNaturalOfficeCommand({
-        records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,
+        records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,oab:lexOab,
         log:msg=>console.warn('[LEX Core]',msg)
       },{
         text:choice?choice.texto:txt,processo_id:choice?.processo_id,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
@@ -10389,7 +10411,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
-    await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,pje:typeof pjeMonitor==='undefined'?null:pjeMonitor,
+    await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,pje:typeof pjeMonitor==='undefined'?null:pjeMonitor,oab:typeof lexOab==='undefined'?null:lexOab,
       engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox:typeof channelOutbox==='undefined'?null:channelOutbox,
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
