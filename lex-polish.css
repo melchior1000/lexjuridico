@@ -1,0 +1,14 @@
+/* Acabamento final da interface comercial (carregado por último). */
+body.lex-commercial .lex-sort{font-size:13px}
+body.lex-commercial .lex-sort select{color:var(--text);background-color:var(--card);font-size:15px;min-height:42px}
+body.lex-commercial .lex-sort select option{color:var(--text);background:var(--card)}
+/* Número do processo na mesma fonte do resto, com algarismos alinhados. */
+body.lex-commercial .lex-proc-row code,
+body.lex-commercial .lex-now code,
+body.lex-commercial .lex-timeline code{font-family:inherit!important;font-variant-numeric:tabular-nums;letter-spacing:0;font-size:12px;color:var(--muted);word-break:normal;overflow-wrap:break-word}
+/* Botões do topo e da barra inferior com área de toque confortável. */
+body.lex-commercial .lex-top-actions button,
+body.lex-commercial .lex-shell-back{min-width:44px;min-height:44px;font-size:18px}
+body.lex-commercial .lex-dock button{min-height:56px}
+body.lex-commercial .lex-dock b{font-size:20px}
+body.lex-commercial .lex-dock span{font-size:11px}

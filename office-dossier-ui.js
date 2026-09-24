@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const list=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const byId=id=>list().find(p=>String(p.id)===String(id));
 const stage=p=>String(p?.current_sector_id||p?.office_stage||p?.fluxo_setor||p?.setor||'processos').toLowerCase();

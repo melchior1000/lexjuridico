@@ -1,3 +1,4 @@
+document.write('<script src="lex-text.js"><\/script>');
 document.write('<script src="office-ui-base.js"><\/script>');
 (function(){
   function esc(v){const s=String(v??'');if(typeof window.lexEscape==='function')return window.lexEscape(s);return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));}
@@ -15,6 +16,7 @@ document.write('<link rel="stylesheet" href="office-ui-device.css">');
 document.write('<link rel="stylesheet" href="login-theme.css">');
 document.write('<link rel="stylesheet" href="office-flow-ui.css">');
 document.write('<link rel="stylesheet" href="office-dossier-ui.css">');
+document.write('<link rel="stylesheet" href="lex-polish.css">');
 document.write('<script src="office-ui-device.js"><\/script>');
 document.write('<script src="office-ui-v2.js"><\/script>');
 document.write('<script src="login-theme.js"><\/script>');

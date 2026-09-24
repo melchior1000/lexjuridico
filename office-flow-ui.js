@@ -4,7 +4,7 @@ const LABELS={
   'Recepção':'recepcao','Cadastro':'cadastro','Iniciais':'iniciais','Processos':'processos','Prazos':'prazos',
   'Peças / Perícia':'pecas_pericia','Revisão':'revisao','Concluídos':'concluidos'
 };
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function state(){try{return await lexApi('/api/trabalho')}catch{return null}}
 function countsOf(data){return data?.contagens?.setores||null}
 function countFor(label,c){if(!c)return null;if(label==='Peças / Perícia')return Number(c.pecas||0)+Number(c.pericia||0);const key=LABELS[label];return key?Number(c[key]||0):null}
