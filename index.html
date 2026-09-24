@@ -509,18 +509,9 @@ body.dia .alerta-banner.orange{background:linear-gradient(135deg,#fff8f0,#fff0e8
 html{font-size:11px!important;}
 *,*::before,*::after{max-width:100%;box-sizing:border-box;}
 html,body{max-width:100vw!important;overflow-x:hidden!important;}
-body{font-size:12px!important;margin:0!important;zoom:0.85;}
-/* Compensar Windows display scaling 125-150% no desktop */
-@media(min-width:769px){
-  body{zoom:0.8;}
-}
-/* Fallback para navegadores sem suporte a zoom (Firefox) */
-@supports not (zoom: 1){
-  body{transform:scale(0.85);transform-origin:top left;width:117.65%;min-height:117.65vh;}
-  @media(min-width:769px){
-    body{transform:scale(0.8);width:125%;min-height:125vh;}
-  }
-}
+/* Sem zoom no body: o zoom de 85%/80% somado a max-width:100vw deixava uma
+   faixa vazia à direita e tudo miúdo no celular. */
+body{font-size:12px!important;margin:0!important;}
 img,video,iframe,canvas,svg{max-width:100%;height:auto;}
 pre,code{white-space:pre-wrap;word-break:break-word;}
 table{max-width:100%;}
@@ -2038,7 +2029,7 @@ var _TOUR_STEPS = [
 
   { sel: '#btn-pje',
     title: '🔗 PJe — Processo Eletronico',
-    desc: 'Integracao com o PJe via DATAJUD. Busca andamentos automaticamente e alerta quando ha movimentacao nova. Precisa de certificado A3 (token USB) para consultas avancadas.' },
+    desc: 'Integração com o PJe via DATAJUD. Busca andamentos automaticamente e alerta quando ha movimentacao nova. Precisa de certificado A3 (token USB) para consultas avancadas.' },
 
   { sel: '.nav-btn[onclick*="telegram"]',
     title: '✈️ Telegram',
@@ -2143,16 +2134,16 @@ function mostrarBoasVindas() {
   div.innerHTML = '<div id="lex-welcome-box">'
     + '<div style="font-size:48px;margin-bottom:12px;">&#9878;&#65039;</div>'
     + '<h1>Bem-vindo ao Lex</h1>'
-    + '<p class="wlc-sub">Sistema de Gestao Juridica Integrado</p>'
+    + '<p class="wlc-sub">Sistema de Gestão Jurídica Integrado</p>'
     + '<div class="feat">'
-    + '<div><span>&#128193;</span> Gerencie todos os seus processos em um so lugar</div>'
-    + '<div><span>&#129302;</span> IA que redige pecas e responde duvidas juridicas</div>'
-    + '<div><span>&#128197;</span> Controle de prazos com alertas automaticos</div>'
-    + '<div><span>&#9992;&#65039;</span> Notificacoes via Telegram em tempo real</div>'
-    + '<div><span>&#128279;</span> Integracao com o PJe para buscar andamentos</div>'
-    + '<div><span>&#9729;&#65039;</span> Sincronizacao entre todos os seus aparelhos</div>'
+    + '<div><span>&#128193;</span> Gerencie todos os seus processos em um só lugar</div>'
+    + '<div><span>&#129302;</span> IA que redige peças e responde dúvidas jurídicas</div>'
+    + '<div><span>&#128197;</span> Controle de prazos com alertas automáticos</div>'
+    + '<div><span>&#9992;&#65039;</span> Notificações via Telegram em tempo real</div>'
+    + '<div><span>&#128279;</span> Integração com o PJe para buscar andamentos</div>'
+    + '<div><span>&#9729;&#65039;</span> Sincronização entre todos os seus aparelhos</div>'
     + '</div>'
-    + '<button onclick="_fecharBoasVindas(true)" style="width:100%;background:var(--accent);border:none;border-radius:10px;padding:14px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px;">Comecar o tour guiado &rarr;</button>'
+    + '<button onclick="_fecharBoasVindas(true)" style="width:100%;background:var(--accent);border:none;border-radius:10px;padding:14px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px;">Começar o tour guiado &rarr;</button>'
     + '<button onclick="_fecharBoasVindas(false)" style="width:100%;background:none;border:1px solid var(--border2);border-radius:10px;padding:11px;color:var(--text3);font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;">Pular e ir direto</button>'
     + '</div>';
   document.body.appendChild(div);
@@ -5649,7 +5640,7 @@ function salvarPrazoProc(procId){
 function renderEstatisticas(){
   const ps=getProcs();
   const total=ps.length, ganhos=ps.filter(p=>p.status==='GANHO').length, perdidos=ps.filter(p=>p.status==='PERDIDO').length, ativos=ps.filter(p=>['URGENTE','ATIVO','RECURSAL','AGUARDANDO'].includes(p.status)).length;
-  const porArea={};ps.forEach(p=>{porArea[p.area]=(porArea[p.area]||0)+1;});
+  const porArea={};ps.forEach(p=>{const a=String(p.area||'').trim()||'Área não informada';porArea[a]=(porArea[a]||0)+1;});
   const porStatus={};ps.forEach(p=>{porStatus[p.status]=(porStatus[p.status]||0)+1;});
   const valorTotal=ps.reduce((s,p)=>s+(Number(p.valor)||0),0);
   const ativosRisco = ps.filter(p=>['URGENTE','ATIVO','RECURSAL','AGUARDANDO','EM_PREP'].includes(p.status));
@@ -12578,7 +12569,7 @@ async function renderAgenda(){
   try {
     const tk = getAuthToken()||'';
     const r = await fetchComTimeout(SERVIDOR+'/api/contatos',{headers:{'Authorization':'Bearer '+tk}},10000);
-    if(r.ok) { contatos = await r.json(); _salvarAgenda(contatos); }
+    if(r.ok) { const lista = await r.json(); contatos = Array.isArray(lista) ? lista : (Array.isArray(lista?.contatos) ? lista.contatos : _getAgenda()); _salvarAgenda(contatos); }
     else { contatos = _getAgenda(); }
   } catch(e) { contatos = _getAgenda(); }
   

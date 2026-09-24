@@ -91,6 +91,9 @@ const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
 const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
+const {pickChoice,dailyBriefText} = require('./lib/office-queries');
+const {createMorningBrief} = require('./lib/morning-brief');
+const {createPjeMonitor} = require('./lib/pje-monitor');
 const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
@@ -99,7 +102,7 @@ const {applyPjeMovement} = require('./lib/pje-sync');
 const {runDailyOfficeJobs} = require('./lib/office-daily-jobs');
 const {createDeadlineScheduler} = require('./lib/deadline-scheduler');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
-const { modelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
+const { modelsFor, channelModelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
 const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-reader');
 const http = require('http');
 const {intakeDecision} = require('./lib/intake-door');
@@ -160,6 +163,11 @@ const MODELO_TOP = _mp.top;
 const MODELO_MID = _mp.mid;
 const MODELO_ECO = _mp.eco;
 const MODELO_LEGAL = legalModelFor();
+// Conversa dos canais e respostas curtas: modelos econômicos (ver ai-runtime).
+const _mc = channelModelsFor(Object.hasOwn(MODELOS_POR_PROVIDER, IA_PROVIDER) ? IA_PROVIDER : 'anthropic');
+const MODELO_CANAL = _mc.canal;
+const MODELO_RAPIDO = _mc.rapido;
+const MODELO_CANAL_ANTHROPIC = channelModelsFor('anthropic').canal;
 
 const SB_URL = process.env.SUPABASE_URL || '';
 const SB_KEY = process.env.SUPABASE_KEY || '';
@@ -199,7 +207,7 @@ const SECRETARIO_WHATSAPP_CONFIG = {
     }
   },
   max_perguntas_cliente: 6,
-  modelo_ia: MODELO_MID, // Secretário WhatsApp = Intake → Sonnet (era Opus)
+  modelo_ia: MODELO_CANAL_ANTHROPIC, // Secretário WhatsApp (chamada Anthropic) = conversa de canal
   prompt_base: [
     'Você é o Secretário WhatsApp do escritório que usa o LEX.',
     'Responsável: o advogado titular configurado no perfil do escritório, único mandante do LEX.',
@@ -760,6 +768,8 @@ const _PJE_INTERVALO_PADRAO_HORAS = 6;
 // ════════════════════════════════════════════════════════════════════════════
 // SUPABASE — REST helpers (com tratamento real de erro, não silencioso)
 // ════════════════════════════════════════════════════════════════════════════
+// Modo comercial: um processo = um escritório, banco com RLS. Não liga fora disso.
+require('./lib/tenant-guard').enforceTenantBoot();
 const sbRaw = createSupabaseRequest({url: SB_URL, key: SB_KEY, https});
 const processStore = new ProcessStore(sbRaw, {onCommit:(rows,version,device)=>{
   processos.splice(0,processos.length,...rows);
@@ -814,6 +824,15 @@ const deadlineScheduler=createDeadlineScheduler({
     }
   }),
   notify:text=>notificationDigest.enqueue(text,CHAT_ID||'central'),
+  log:msg=>console.warn(msg)
+});
+// Vigia do PJe (MNI): lista expedientes pendentes, nunca abre teor sozinho.
+const pjeMonitor = createPjeMonitor({
+  records:recordStore,processStore,
+  notify:async text=>{
+    await envTelegram(text,null,CHAT_ID).catch(()=>false);
+    if(process.env.LEX_OPERATOR_WHATSAPP) await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false);
+  },
   log:msg=>console.warn(msg)
 });
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
@@ -4671,7 +4690,7 @@ async function _verificarIdentidadeCliente(numero, dados_informados) {
 async function _chamarAnthropicSecretario(messages, system, modelo) {
   if(!AK) throw new Error('ANTHROPIC_KEY não configurada.');
   const pay = {
-    model: MODELOS_POR_PROVIDER.anthropic.top,
+    model: modelo || MODELOS_POR_PROVIDER.anthropic.top,
     max_tokens: 900,
     messages
   };
@@ -4681,7 +4700,8 @@ async function _chamarAnthropicSecretario(messages, system, modelo) {
     'anthropic-version': '2023-06-01'
   });
   if(r?.error) throw new Error(r.error.message || 'Erro Anthropic secretario');
-  return r?.content?.[0]?.text || '';
+  // O primeiro bloco pode ser de raciocínio (vazio); a resposta está nos blocos de texto.
+  return (Array.isArray(r?.content)?r.content:[]).filter(block=>block?.type==='text').map(block=>block.text||'').join('\n').trim();
 }
 
 async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
@@ -4848,7 +4868,7 @@ async function _mediarRespostaTitular(respostaTitular, clienteNome, processo, hi
     'Gere o JSON de mediação.'
   ].join('\n');
   
-  const respIA = await _chamarAnthropicSecretario([{role:'user', content:user}], system, MODELO_MID); // Intake/mediação cliente → Sonnet
+  const respIA = await _chamarAnthropicSecretario([{role:'user', content:user}], system, MODELO_CANAL_ANTHROPIC); // Intake/mediação cliente → modelo de canal
   
   // Parse JSON da resposta
   let parsed = {};
@@ -5955,19 +5975,45 @@ async function processarMensagem(ctx, dados) {
   const chatId = String(ctx.chatId);
   await inicializarMemoria(chatId, ctx.threadId);
   const mem = getMem(chatId, ctx.threadId);
-  const txt = (dados.texto||'').trim();
-  const low = txt.toLowerCase();
+  let txt = (dados.texto||'').trim();
+  let low = txt.toLowerCase();
   const modo = getModoAgente(chatId);
   const operatorProfile=isAdvogado(chatId)?'admin':(ctx.canal==='whatsapp'?_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId))?.perfil:null);
-  if(!mem.aguardando && ['admin','advogado','secretaria'].includes(operatorProfile)) {
+  const isOperator=['admin','advogado','secretaria'].includes(operatorProfile);
+  // Áudio do advogado/secretária vira ordem escrita (fora da sessão de cadastro,
+  // que acumula o áudio no próprio fluxo). A transcrição é devolvida para conferência.
+  if(isOperator && !txt && dados.audio?.buffer && !global._intakeSessoes?.[chatId]) {
+    const tr=await _transcreverAudioWhisper(dados.audio.buffer,dados.audio.mime,dados.audio.nome||'audio.ogg').catch(e=>({ok:false,erro:e.message}));
+    const heard=String(tr?.texto||'').trim();
+    if(!tr?.ok||!heard){
+      await env(OPENAI_API_KEY?'Não consegui entender o áudio. Pode repetir ou digitar?':'Recebi o áudio, mas a transcrição não está configurada no servidor (OPENAI_API_KEY). Pode digitar?',ctx);
+      return;
+    }
+    txt=heard;low=txt.toLowerCase();
+    dados={...dados,texto:heard,audio:null};
+    await env('🎙 Entendi: "'+heard.slice(0,400)+'"',ctx);
+  }
+  if(!mem.aguardando && isOperator && txt) {
+    // "1", "o segundo" ou o CNJ respondem à última pergunta de "qual processo?".
+    let choice=null;
+    const pending=mem.lexEscolhaPendente;
+    if(pending){
+      delete mem.lexEscolhaPendente;
+      const fresh=Date.now()-Number(pending.em||0)<15*60*1000;
+      const pick=fresh?pickChoice(txt,pending.candidatos):null;
+      if(pick)choice={texto:pending.texto,processo_id:pick.id};
+    }
     try {
       const execution=await executeNaturalOfficeCommand({
-        records:recordStore,engine:taskEngine,processStore,
+        records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,
         log:msg=>console.warn('[LEX Core]',msg)
       },{
-        text:txt,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
+        text:choice?choice.texto:txt,processo_id:choice?.processo_id,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
         previous_text:[...(Array.isArray(mem.hist)?mem.hist:[])].reverse().find(m=>m?.role==='assistant'&&typeof m.content==='string')?.content||null
       });
+      if(execution?.needs_input && execution.choice==='processo' && execution.candidates?.length) {
+        mem.lexEscolhaPendente={texto:choice?choice.texto:txt,candidatos:execution.candidates.map(c=>({id:c.id,nome:c.nome,numero:c.numero})),em:Date.now()};
+      }
       if(execution?.handled) {
         const result=execution.result;
         if(result?.resultado) {
@@ -6901,7 +6947,7 @@ async function _responderCumprimento(ctx, mem, txt) {
 CUMPRIMENTO RECEBIDO. Responda naturalmente para o período (${periodo}). Se houver prazo urgente acima, mencione em 1 linha. Senão, responda e AGUARDE. Máximo 2-3 linhas.${ctxPrazos}`;
 
   try {
-    const resp = await ia([{role:'user', content:txt||'oi'}], sys, 200, MODELO_ECO); // Cumprimento curto → Haiku
+    const resp = await ia([{role:'user', content:txt||'oi'}], sys, 200, MODELO_RAPIDO); // Cumprimento curto → modelo rápido
     mem.hist.push({role:'user', content:txt||'oi'});
     mem.hist.push({role:'assistant', content:resp});
     salvarMemoria(ctx.chatId, ctx.threadId);
@@ -7520,7 +7566,7 @@ async function _conversaInteligente(ctx, mem, txt, low) {
 
   try {
     if(txt.length > 80) await env('...', ctx);
-    const resposta = await ia(mem.hist, sys, 2500, MODELO_MID); // Chat principal Lex → Sonnet (economia)
+    const resposta = await ia(mem.hist, sys, 2500, MODELO_CANAL); // Chat principal dos canais → modelo de canal
     mem.hist.push({role:'assistant', content:resposta});
     salvarMemoria(ctx.chatId, ctx.threadId);
 
@@ -10343,7 +10389,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
-    await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,
+    await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,pje:typeof pjeMonitor==='undefined'?null:pjeMonitor,
       engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox:typeof channelOutbox==='undefined'?null:channelOutbox,
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
@@ -10494,7 +10540,7 @@ const server = http.createServer(async (req, res) => {
       diag.checks.api_key = AK ? 'presente' : 'AUSENTE';
       // 2. Modelo
       diag.checks.provider = IA_PROVIDER.toUpperCase();
-      diag.checks.modelo = MODELO_TOP + ' (top) / ' + MODELO_MID + ' (mid) / ' + MODELO_ECO + ' (eco)';
+      diag.checks.modelo = MODELO_TOP + ' (top) / ' + MODELO_MID + ' (mid) / ' + MODELO_ECO + ' (eco) / ' + MODELO_CANAL + ' (canal) / ' + MODELO_RAPIDO + ' (rápido) / ' + MODELO_LEGAL + ' (jurídico)';
       // 3. Agente vivo carregado?
       diag.checks.agente_vivo = lex_agente_vivo ? 'carregado' : 'NAO CARREGADO';
       diag.checks.agente_vivo_tratarRota = (lex_agente_vivo && typeof lex_agente_vivo.tratarRota === 'function') ? 'OK' : 'FALHA';
@@ -10502,7 +10548,7 @@ const server = http.createServer(async (req, res) => {
       diag.checks.processos_count = processos.length;
       // 5. Testa chamada real à IA
       try {
-        const testeResp = await ia([{role:'user',content:'Diga apenas: OK FUNCIONANDO'}], 'Responda em 2 palavras.', 50, MODELO_ECO); // ping → Haiku
+        const testeResp = await ia([{role:'user',content:'Diga apenas: OK FUNCIONANDO'}], 'Responda em 2 palavras.', 50, MODELO_RAPIDO); // ping → modelo rápido
         diag.checks.ia_teste = 'OK: ' + (testeResp||'').substring(0,100);
       } catch(eIa) {
         diag.checks.ia_teste = 'ERRO: ' + String(eIa.message||eIa).substring(0,300);
@@ -10673,7 +10719,7 @@ const server = http.createServer(async (req, res) => {
   // ═══ TESTE CHAT PÚBLICO (temporário) ═══
   if(url==='/api/teste-ia' && req.method==='GET') {
     try {
-      const resp = await ia([{role:'user',content:'Diga: Lex funcionando perfeitamente'}], 'Responda em 1 frase curta.', 100, MODELO_ECO); // ping → Haiku
+      const resp = await ia([{role:'user',content:'Diga: Lex funcionando perfeitamente'}], 'Responda em 1 frase curta.', 100, MODELO_RAPIDO); // ping → modelo rápido
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ok:true, resposta:resp}));
     } catch(e) {
@@ -13064,6 +13110,20 @@ setTimeout(() => {
 
 console.log('[LEX] Motor Proativo agendado — verificação a cada 6h, 7h-22h (economia API)');
 deadlineScheduler.start();
+// Bom dia no WhatsApp do titular (o Telegram já recebe o resumo periódico).
+// Desligar com LEX_BOM_DIA=0; hora com LEX_BOM_DIA_HORA (padrão 7h).
+const morningBrief=createMorningBrief({
+  records:recordStore,
+  hour:Number(process.env.LEX_BOM_DIA_HORA)||7,
+  compose:now=>dailyBriefText({records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor},{
+    now,workQueue:()=>executeNaturalOfficeCommand({records:recordStore,engine:taskEngine,processStore,log:()=>{}},{text:'veja o que precisa de mim',profile:'admin'})
+  }).then(text=>'☀️ Bom dia! '+text),
+  deliver:text=>envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP),
+  log:msg=>console.warn(msg)
+});
+if(process.env.LEX_OPERATOR_WHATSAPP && process.env.LEX_BOM_DIA!=='0') morningBrief.start();
+if(pjeMonitor.config.configurado){pjeMonitor.start();console.log('[LEX] Vigia do PJe (MNI) ativa: '+pjeMonitor.config.tribunais.map(t=>t.sigla).join(', '));}
+else console.log('[LEX] Vigia do PJe (MNI) desligada: '+(pjeMonitor.config.erro||'faltam '+pjeMonitor.config.faltando.join(', ')));
 console.log('[LEX] Vigia de prazos agendada — DJEN diário + alertas persistentes');
 
 
@@ -13165,9 +13225,9 @@ class AgentePJe extends AgenteBase {
   constructor() {
     super({
       nome: 'PJe',
-      descricao: 'Importa andamentos pelo CNJ exato, preservando prazos. Conector de acesso ao tribunal pendente de implantação.',
-      status: 'pendente',  // pendente até lex-agente.js estar testado
-      ferramentas: ['receberAndamento']
+      descricao: 'Vigia os expedientes pendentes no PJe (MNI), calcula a ciência tácita e só abre teor com autorização do advogado. Importa andamentos pelo CNJ exato.',
+      status: pjeMonitor.config.configurado ? 'pronto' : 'pendente',
+      ferramentas: ['receberAndamento','sincronizarExpedientes','listarExpedientes']
     });
   }
 
@@ -13180,6 +13240,8 @@ class AgentePJe extends AgenteBase {
     return {sucesso:true, duplicado:result.duplicado, proc_nome:result.processo.nome};
   }
 
+  sincronizarExpedientes(){ return pjeMonitor.tick(); }
+  listarExpedientes(){ return pjeMonitor.list(); }
 }
 
 class AgenteJudicial extends AgenteAssessor {

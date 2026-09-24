@@ -76,3 +76,27 @@ Não exigir escolha de IA/setor ou comandos decorados. Exemplos de aceite: “re
 Fechar a lista funcional não autoriza vender o sistema se o isolamento entre escritórios não estiver comprovado. Antes da declaração comercial, cumprir o gate SaaS de AGENTS.md: identidade por usuário/escritório, isolamento de dados/ferramentas, RLS ou mecanismo equivalente comprovado, teste A/B, segredos, documentos/versionamento, backup/restore, limites, observabilidade, onboarding, rollback e billing isolado quando habilitado.
 
 Nenhum novo ✅ deve ser atribuído apenas por CI, mock, PR ou preview.
+
+## Registro 24/09/2026 — consultas do dia a dia pelos canais (etapas 6 e 15)
+
+Antes: das 18 frases típicas do advogado testadas, só 2 viravam ação no Core; "prazos de hoje", "tem intimação nova?", "andamento do processo X" e "resumo do dia" caíam na conversa livre da IA, que não pode ser fonte de prazo.
+
+Agora (`lib/office-queries.js`, ligado em `executeNaturalOfficeCommand`): prazos (hoje/amanhã/semana/quinzena/mês/vencidos) via `DeadlineWatch.watchlist`, com "NÃO confirmado" para prazo sem autorização oficial; intimações do DJEN a partir de `djen_comunicacoes`, com órfãs (processo não cadastrado) e alerta de leitura atrasada; andamento por nome ou CNJ, com opções listadas no texto quando há ambiguidade; resumo do dia; ajuda. Banco indisponível falha fechado ("isso NÃO significa que não há intimações"). Pergunta jurídica em tese ("qual o prazo para contestar?") deixa de abrir tarefa de contestação e segue para o assessor.
+
+Evidência: `test/office-queries.test.js` (13 testes). Estados das etapas 6 e 15 não mudam até homologação real nos canais.
+
+## Registro 24/09/2026 (2) — LEX mais próximo do usuário
+
+- Áudio do advogado/secretária no WhatsApp/Telegram passa a ser transcrito e executado como ordem (antes era ignorado fora da sessão de cadastro). A transcrição volta para conferência ("🎙 Entendi: …").
+- Pergunta "qual processo?" aceita resposta curta ("1", "o segundo", CNJ ou nome único) e retoma a ordem original, por até 15 minutos.
+- "Bom dia" automático no WhatsApp do titular a partir das 7h (`lib/morning-brief.js`): uma vez por dia, marcado só após confirmação do provedor; `LEX_BOM_DIA=0` desliga.
+
+Evidência: `test/office-queries.test.js`, `test/morning-brief.test.js`. Sem homologação real nos canais ainda.
+
+## Registro 24/09/2026 (3) — PJe pelo MNI (etapa 14)
+
+Implementado o cliente MNI 2.2.2 (`lib/pje-mni.js`) e a vigia de expedientes (`lib/pje-monitor.js`). A vigia lista avisos pendentes sem dar ciência, casa pelo CNJ, calcula a ciência tácita (Lei 11.419/2006, art. 5º, §3º) e avisa nos canais. A abertura de teor exige "CONFIRMO CIENCIA SIGLA ID" do advogado. Detalhes e limites: `docs/PJE_MNI.md`. Evidência: `test/pje-mni.test.js` (10 testes, incluindo "a vigia nunca chama consultarTeorComunicacao"). A etapa 14 segue 🟡 até a leitura real com credenciais do advogado em cada tribunal.
+
+## Registro 24/09/2026 (4) — isolamento entre escritórios (gate SaaS)
+
+Auditoria: 12 tabelas usadas pelo LEX estavam fora da muralha (contatos, sessões do WhatsApp, documentos, mensagens, auditoria, cobranças, checkpoints etc.) e o código deixava tabela não declarada passar sem filtro. Corrigido em três camadas: código recusa tabela não isolada; migração `20260924120000` leva RLS às 12 tabelas e cria `ativar_multi_escritorio()`, que remove o padrão "primeiro escritório" e as chaves globais legadas; trava de inicialização do modo comercial. Evidência: `test/tenant-migrations-pglite.test.js` (A/B em PostgreSQL real, todas as tabelas) e `test/tenant-guard.test.js`. Falta aplicar em produção e homologar A/B com dados sintéticos (§9).

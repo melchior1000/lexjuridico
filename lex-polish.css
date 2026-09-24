@@ -1,0 +1,99 @@
+/* Acabamento final da interface comercial (carregado por último). */
+body.lex-commercial .lex-sort{font-size:13px}
+body.lex-commercial .lex-sort select{color:var(--text);background-color:var(--card);font-size:15px;min-height:42px}
+body.lex-commercial .lex-sort select option{color:var(--text);background:var(--card)}
+/* Número do processo na mesma fonte do resto, com algarismos alinhados. */
+body.lex-commercial .lex-proc-row code,
+body.lex-commercial .lex-now code,
+body.lex-commercial .lex-timeline code{font-family:inherit!important;font-variant-numeric:tabular-nums;letter-spacing:0;font-size:12px;color:var(--muted);word-break:normal;overflow-wrap:break-word}
+/* Botões do topo e da barra inferior com área de toque confortável. */
+body.lex-commercial .lex-top-actions button,
+body.lex-commercial .lex-shell-back{min-width:44px;min-height:44px;font-size:18px}
+body.lex-commercial .lex-dock button{min-height:56px}
+body.lex-commercial .lex-dock b{font-size:20px}
+body.lex-commercial .lex-dock span{font-size:11px}
+/* Tela do processo (dossiê): estilos que faltavam para os blocos atuais. */
+body.lex-commercial .lex-dossier-head p{font-size:13px;line-height:1.45;margin:4px 0 0}
+body.lex-commercial .lex-dossier-head small{font-size:12px;word-break:normal;overflow-wrap:break-word}
+body.lex-commercial .lex-dossier-partes{color:var(--text)!important;font-weight:700}
+body.lex-commercial .lex-dossier-primary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px}
+body.lex-commercial .lex-dossier-primary button{min-height:52px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);font-size:14px;font-weight:800;line-height:1.25;text-align:left}
+body.lex-commercial .lex-dossier-primary .lex-dossier-main{grid-column:1/-1;background:#1a6dff;border-color:#1a6dff;color:#fff;text-align:center}
+body.lex-commercial .lex-dossier-filters{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
+body.lex-commercial .lex-dossier-filters button{flex:0 0 auto;min-height:38px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font-size:13px;font-weight:700}
+body.lex-commercial .lex-dossier-filters button.active{background:rgba(26,109,255,.16);border-color:#1a6dff;color:var(--text)}
+body.lex-commercial .lex-dossier-timeline{display:grid;gap:8px;padding:0;border:0;background:none}
+body.lex-commercial .lex-timeline-item{padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+body.lex-commercial .lex-timeline-item time{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+body.lex-commercial .lex-timeline-item strong{display:block;color:var(--text);font-size:14px;line-height:1.35}
+body.lex-commercial .lex-timeline-item p{color:var(--muted);font-size:13px;margin:4px 0 0}
+body.lex-commercial .lex-dossier-ask{margin-top:12px}
+body.lex-commercial .lex-dossier-ask button{width:100%;min-height:50px;border:1px dashed var(--line);border-radius:14px;background:transparent;color:var(--muted);font-size:14px;text-align:left;padding:0 16px}
+/* A barra antiga do celular não aparece nas telas novas. */
+body.lex-commercial #mobile-nav,body.lex-commercial .mobile-nav,body.lex-commercial .bottom-nav{display:none!important}
+/* Contraste mínimo (WCAG ≥ 4.5 para texto pequeno) em login e selos. */
+.login-shell .login-kicker,.login-shell .login-label,.login-shell label,.login-shell .login-footer,.login-shell .login-reset,.login-shell .login-eye,.login-shell a{color:#a9b6cc!important}
+.login-shell .login-reset{display:inline-block;padding:10px 4px;font-size:13px!important}
+body.lex-commercial .chips em.late{color:#ff8a9a!important;background:rgba(255,80,106,.16)!important}
+body.lex-commercial .lex-tabs button,body.lex-commercial .lex-filter-row button,body.lex-commercial .lex-chips button{min-height:38px}
+/* Telas antigas dentro da moldura nova: respiro, letra legível e espaço para a barra. */
+body.lex-commercial #content.lex-legacy-framed{padding:9px 14px 110px!important;font-size:14px}
+body.lex-commercial .lex-legacy-top{margin:0 -2px 12px}
+body.lex-commercial .lex-legacy-top strong{font-size:22px}
+body.lex-commercial #content.lex-legacy-framed .fi,body.lex-commercial #content.lex-legacy-framed input,body.lex-commercial #content.lex-legacy-framed select{font-size:15px!important;min-height:42px}
+body.lex-commercial #content.lex-legacy-framed button{min-height:38px}
+
+/* Carteira por cliente: urgência no topo, clientes recolhidos, linhas de uma linha. */
+body.lex-commercial .lex-list-summary .link{border:0;background:none;padding:0;color:#0b70ff;font:inherit;text-decoration:underline;cursor:pointer}
+body.lex-commercial #lex-proc-list{display:block!important;border-top:0!important}
+body.lex-commercial .lex-proc-group{border:1px solid var(--line);border-radius:12px;background:var(--card);margin:0 0 8px;overflow:hidden}
+body.lex-commercial .lex-proc-group.hot{border-left:4px solid #e5484d}
+body.lex-commercial .lex-proc-group>.head{display:grid;grid-template-columns:38px minmax(0,1fr) auto 18px;align-items:center;gap:10px;width:100%;min-height:60px;padding:8px 12px;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+body.lex-commercial .lex-proc-group .ava{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:color-mix(in srgb,#0b70ff 14%,transparent);color:#0b70ff;font-weight:800;font-size:13px}
+body.lex-commercial .lex-proc-group .who strong{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.lex-commercial .lex-proc-group .who small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+body.lex-commercial .lex-proc-group .head .chips{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;margin:0}
+body.lex-commercial .lex-proc-group .head>b{color:var(--muted);font-size:14px}
+body.lex-commercial .lex-proc-group .rows{border-top:1px solid var(--line)}
+body.lex-commercial .lex-proc-group .more{width:100%;min-height:44px;border:0;border-top:1px solid var(--line);background:transparent;color:#0b70ff;font-size:12px;cursor:pointer}
+body.lex-commercial .lex-proc-flat{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+body.lex-commercial .lex-proc-line{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:52px;padding:7px 12px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;cursor:pointer}
+body.lex-commercial .lex-proc-line:last-child{border-bottom:0}
+body.lex-commercial .lex-proc-line:hover{background:var(--card2,transparent)}
+body.lex-commercial .lex-proc-line .dot{width:8px;height:8px;border-radius:50%;background:#2fb67c}
+body.lex-commercial .lex-proc-line .dot.late{background:#e5484d}body.lex-commercial .lex-proc-line .dot.urgent{background:#f76b15}body.lex-commercial .lex-proc-line .dot.soon{background:#d4a017}body.lex-commercial .lex-proc-line .dot.done{background:var(--muted)}
+body.lex-commercial .lex-proc-line strong{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.lex-commercial .lex-proc-line small{display:block;font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.lex-commercial .lex-proc-line code{font-family:inherit;font-variant-numeric:tabular-nums;color:var(--muted)}
+body.lex-commercial .lex-proc-line .nocnj{color:#c28f00}
+body.lex-commercial .lex-proc-line .chips{margin:0}
+body.lex-commercial .lex-process-toolbar .lex-sort select{max-width:180px}
+body.lex-commercial.lex-day .chips em.late,body.lex-commercial.lex-day .chips em.urgent{color:#b4232a!important;background:#fde8e8!important}
+body.lex-commercial.lex-day .chips em.soon{color:#7a5a00!important;background:#fbf1d3!important}
+body.lex-commercial.lex-day .chips em.ok{color:#146c43!important;background:#e3f5ec!important}
+
+/* Início: o LEX fala primeiro — até 3 assuntos, uma ação cada. */
+body.lex-commercial .lex-quick{display:flex;gap:8px;margin-top:10px}
+body.lex-commercial .lex-quick button{flex:1;min-height:42px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer}
+body.lex-commercial .lex-says-list{margin-top:16px}
+body.lex-commercial .lex-says-list h2{font-size:14px;margin:0 2px 8px;color:var(--muted);font-weight:700;letter-spacing:.02em}
+body.lex-commercial .lex-says{display:flex;align-items:center;gap:12px;padding:12px 12px 12px 14px;margin:0 0 8px;border:1px solid var(--line);border-left:4px solid #0b70ff;border-radius:12px;background:var(--card)}
+body.lex-commercial .lex-says>div{flex:1;min-width:0}
+body.lex-commercial .lex-says strong{display:block;font-size:14px;line-height:1.3}
+body.lex-commercial .lex-says small{display:block;margin-top:3px;font-size:12px;color:var(--muted);line-height:1.35}
+body.lex-commercial .lex-says>button{flex:none;min-height:40px;padding:0 14px;border:0;border-radius:10px;background:#0b70ff;color:#fff;font-size:12px;font-weight:700;cursor:pointer}
+body.lex-commercial .lex-says.late{border-left-color:#e5484d}body.lex-commercial .lex-says.urgent{border-left-color:#f76b15}body.lex-commercial .lex-says.soon{border-left-color:#d4a017}body.lex-commercial .lex-says.ok{border-left-color:#2fb67c}
+body.lex-commercial .lex-says.calm{border-left-color:#2fb67c}
+body.lex-commercial .lex-says-more{width:100%;min-height:40px;border:0;background:transparent;color:#0b70ff;font-size:12px;cursor:pointer}
+/* Processos: uma linha do LEX no lugar do quadro de números. */
+body.lex-commercial .lex-proc-says{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;margin:0 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+body.lex-commercial .lex-proc-says.calm{color:#2fb67c;font-size:12px}
+body.lex-commercial .lex-proc-says .chips-row{display:flex;flex-wrap:wrap;gap:6px}
+body.lex-commercial .lex-proc-says .chips-row button{min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text);font-size:12px;cursor:pointer}
+body.lex-commercial .lex-proc-says .chips-row .late{color:#e5484d;border-color:color-mix(in srgb,#e5484d 45%,transparent)}
+body.lex-commercial .lex-proc-says .chips-row .urgent{color:#f76b15;border-color:color-mix(in srgb,#f76b15 45%,transparent)}
+body.lex-commercial .lex-proc-says .chips-row .soon{color:#c28f00;border-color:color-mix(in srgb,#d4a017 45%,transparent)}
+body.lex-commercial .lex-proc-says .chips-row .on{background:color-mix(in srgb,currentColor 12%,transparent)}
+body.lex-commercial .lex-proc-says>button{flex:none;min-height:38px;padding:0 12px;border:0;border-radius:10px;background:#0b70ff;color:#fff;font-size:12px;font-weight:700;cursor:pointer}
+@media(max-width:620px){body.lex-commercial .lex-proc-says{flex-direction:column;align-items:stretch}body.lex-commercial .lex-says{flex-wrap:wrap}body.lex-commercial .lex-says>button{width:100%}}
+body.lex-commercial .lex-today-more{width:100%;min-height:44px;margin-top:4px;border:1px dashed var(--line);border-radius:12px;background:transparent;color:#0b70ff;font-size:13px;cursor:pointer}

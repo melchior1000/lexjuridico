@@ -1,7 +1,7 @@
 (function(){
 'use strict';
 const $=(s,r=document)=>r.querySelector(s);
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const procs=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const prep=()=>{try{return typeof getPrep==='function'?(getPrep()||[]):[]}catch{return[]}};
 const first=()=>{try{return String(typeof getResponsavel==='function'?getResponsavel():'').replace(/^dr\.?\s*/i,'').trim().split(/\s+/)[0]||'titular'}catch{return'titular'}};
@@ -10,8 +10,9 @@ const openProc=id=>{if(typeof abrirProc==='function')abrirProc(id)};
 const days=p=>{const raw=p?.prazoReal||p?.prazo||p?.dataPrazo;if(!raw)return 9999;let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,day]=raw.split('-');d=new Date(+y,+m-1,+day)}else d=new Date(raw);if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000)};
 const active=p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''));
 const CHAT_HISTORY_LIMIT=20;
-let procTab='todos',procQuery='',procSort='recentes',procPage=1,prazoTab='todos',prazoPage=1,deadlineServerState=[];
+let procTab='ativos',procQuery='',procSort='recentes',procPage=1,procView='clientes',procOpen=new Set(),procGroupShow={},prazoTab='todos',prazoPage=1,deadlineServerState=[];
 const PROC_PAGE_SIZE=40,DEADLINE_PAGE_SIZE=40;
+const PROC_GROUP_PAGE=25,PROC_GROUP_ROWS=30;
 let navCurrent=null,navTrail=[],navRestoring=false;
 function navMark(view){
   if(navRestoring){navCurrent=view;navRestoring=false;return}
@@ -67,24 +68,60 @@ function syncLegacyThemeButton(){
 function dock(on){return '<nav class="lex-dock"><button '+(on==='home'?'class="on"':'')+' onclick="lexHome()"><b>⌂</b><span>Início</span></button><button '+(on==='processos'?'class="on"':'')+' onclick="lexProcessos()"><b>▣</b><span>Processos</span></button><button class="lex-main '+(on==='lex'?'on':'')+'" onclick="lexChat()"><b>◉</b><span>LEX</span></button><button '+(on==='prazos'?'class="on"':'')+' onclick="lexPrazos()"><b>◷</b><span>Prazos</span></button><button '+(on==='mais'?'class="on"':'')+' onclick="lexMais()"><b>☰</b><span>Mais</span></button></nav>'}
 function shell(title,body,on){const host=$('#content');if(!host)return;document.body.classList.add('lex-commercial');const back=navCurrent&&navCurrent!=='home'?'<button class="lex-shell-back" onclick="lexBack()" aria-label="Voltar">‹</button>':'';host.innerHTML='<main class="lex-screen"><header class="lex-top"><div class="lex-brand">'+back+'<div><strong>LEX</strong><small>ESCRITÓRIO VIRTUAL INTELIGENTE</small></div></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="typeof toggleSidebar===\'function\'&&toggleSidebar()">☰</button></div></header>'+body+dock(on)+'</main>';const t=$('#page-title');if(t)t.textContent=title}
 function badge(d){if(d===9999)return '';if(d<0)return '<em class="late">Vencido</em>';if(d===0)return '<em class="urgent">Prazo hoje</em>';if(d<=2)return '<em class="urgent">'+d+' dias</em>';if(d<=7)return '<em class="soon">'+d+' dias</em>';return '<em class="ok">Em curso</em>'}
-function procRows(list){return list.map(p=>'<button class="lex-proc-row" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><span class="bar"></span><span><code>'+esc(p.numero||'sem número')+'</code><strong>'+esc(p.nome||p.partes||'Processo')+'</strong><small>'+esc(p.tribunal||p.area||p.assunto||'')+'</small><span class="chips">'+badge(days(p))+'</span></span><b>›</b></button>').join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>'}
+function procRows(list,opts){return list.map(p=>procLine(p,opts)).join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>'}
+// Carteira: cliente é o campo cliente ou o que vem antes de " — " / " x " no nome.
+const PROC_SEP=/\s+[—–-]\s+|\s+(?:x|×|vs\.?|versus)\s+/i;
+function procClient(p){const c=String((globalThis.lexFixText||String)(p?.cliente||(p?.grupo&&!/^outros$/i.test(p.grupo)?p.grupo:''))).trim();if(c)return c;const n=String((globalThis.lexFixText||String)(p?.nome||'')).trim(),m=n.split(PROC_SEP);return m.length>1&&m[0].trim().length>=2?m[0].trim():''}
+function procKey(name){return String(name||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim()}
+function procTitle(p,client){const n=String((globalThis.lexFixText||String)(p.nome||p.partes||'Processo')).trim();if(!client)return n;const rest=n.slice(0,client.length).toLowerCase()===client.toLowerCase()?n.slice(client.length).replace(/^\s*(?:[—–-]|x|×|vs\.?|versus)\s+/i,'').trim():n;return rest||n}
+function procShortNum(p){const m=String(p.numero||'').match(/^\s*(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);return m?m[1]:''}
+function procLine(p,opts){const d=days(p),num=procShortNum(p),where=p.tribunal||p.vara||p.area||'',tone=d<0?'late':d<=2?'urgent':d<=7?'soon':active(p)?'ok':'done';
+  return '<button class="lex-proc-line" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><i class="dot '+tone+'"></i><span class="txt"><strong>'+esc(procTitle(p,opts?.client))+'</strong><small>'+(num?(cnjOk(num)||!judicial(p)?'<code>'+esc(num)+'</code>':'<span class="nocnj">nº CNJ inválido</span>'):'<span class="nocnj">'+(judicial(p)?'sem nº CNJ':'administrativo')+'</span>')+(where?' · '+esc(where):'')+'</small></span>'+(d<9999?'<span class="chips">'+badge(d)+'</span>':'')+'</button>'}
+function procUrgency(list){const r={vencidos:0,hoje:0,semana:0};for(const p of list){if(!active(p))continue;const d=days(p);if(d<0)r.vencidos++;else if(d===0)r.hoje++;else if(d<=7)r.semana++}return r}
+function procGroups(list){const map=new Map();for(const p of list){const name=procClient(p),key=procKey(name)||'~';if(!map.has(key))map.set(key,{key,name:name||'Sem cliente identificado',items:[]});map.get(key).items.push(p)}
+  const groups=[],single=[];for(const g of map.values()){if(g.key!=='~'&&g.items.length>1)groups.push(g);else single.push(...g.items)}
+  const byUrgency=(a,b)=>(active(a)?days(a):99999)-(active(b)?days(b):99999);
+  for(const g of groups){g.u=procUrgency(g.items);g.items.sort(byUrgency)}
+  groups.sort((a,b)=>b.u.vencidos-a.u.vencidos||b.u.hoje-a.u.hoje||b.u.semana-a.u.semana||b.items.length-a.items.length||a.name.localeCompare(b.name,'pt-BR'));
+  if(single.length)single.sort(byUrgency),groups.push({key:'~outros',name:groups.length?'Demais clientes':'Processos',items:single,u:procUrgency(single),rest:true});
+  return groups}
+function initials(n){return String(n||'?').replace(/[^\p{L}\p{N}\s]/gu,'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'}
+function procGroupHtml(g){const open=procOpen.has(g.key),u=g.u,chips=(u.vencidos?'<em class="late">'+u.vencidos+' vencido'+(u.vencidos>1?'s':'')+'</em>':'')+(u.hoje?'<em class="urgent">'+u.hoje+' hoje</em>':'')+(u.semana?'<em class="soon">'+u.semana+' na semana</em>':'');
+  const show=procGroupShow[g.key]||PROC_GROUP_ROWS,rows=open?g.items.slice(0,show):[];
+  return '<section class="lex-proc-group'+(open?' open':'')+(u.vencidos||u.hoje?' hot':'')+'"><button class="head" aria-expanded="'+open+'" onclick="lexToggleProcGroup(\''+esc(g.key)+'\')"><span class="ava">'+(g.rest?'＋':esc(initials(g.name)))+'</span><span class="who"><strong>'+esc(g.name)+'</strong><small>'+g.items.length+' processo'+(g.items.length>1?'s':'')+'</small></span><span class="chips">'+chips+'</span><b>'+(open?'⌃':'⌄')+'</b></button>'
+    +(open?'<div class="rows">'+procRows(rows,{client:g.rest?'':g.name})+(g.items.length>show?'<button class="more" onclick="lexMoreProcGroup(\''+esc(g.key)+'\')">Mostrar mais '+Math.min(PROC_GROUP_ROWS,g.items.length-show)+' de '+(g.items.length-show)+' restantes</button>':'')+'</div>':'')+'</section>'}
+function procListHtml(list){
+  if(procView==='clientes'&&!procQuery&&!['vencidos','hoje','semana','semcnj'].includes(procTab)){
+    const groups=procGroups(list),meta=pageSlice(groups,procPage,PROC_GROUP_PAGE);procPage=meta.page;
+    if(groups.length===1&&!procOpen.has(groups[0].key))procOpen.add(groups[0].key);
+    return meta.items.map(procGroupHtml).join('')||'<div class="lex-empty">Nenhum processo encontrado.</div>';
+  }
+  const meta=pageSlice(list,procPage,PROC_PAGE_SIZE);procPage=meta.page;
+  return '<div class="lex-proc-flat">'+procRows(meta.items)+'</div>'+pagerHtml(meta,'lexSetProcPage')}
+function procGroupPager(list){if(procView!=='clientes'||procQuery||['vencidos','hoje','semana','semcnj'].includes(procTab))return'';const meta=pageSlice(procGroups(list),procPage,PROC_GROUP_PAGE);return meta.pages>1?pagerHtml({...meta,total:meta.total},'lexSetProcPage').replace(' de '+meta.total+'</span>',' de '+meta.total+' clientes</span>'):''}
 function processUpdatedAt(p){const raw=p?.atualizado_em||p?.ultima_atualizacao||p?.updated_at||p?.criado_em||'';const ms=Date.parse(raw);return Number.isFinite(ms)?ms:0}
 function filteredProcesses(){
   let list=procs();
   if(procTab==='ativos')list=list.filter(active);
   else if(procTab==='prazos')list=list.filter(p=>days(p)<9999);
   else if(procTab==='arquivados')list=list.filter(p=>!active(p));
+  else if(procTab==='vencidos')list=list.filter(p=>active(p)&&days(p)<0);
+  else if(procTab==='hoje')list=list.filter(p=>active(p)&&days(p)===0);
+  else if(procTab==='semana')list=list.filter(p=>active(p)&&days(p)>0&&days(p)<=7);
+  else if(procTab==='semcnj')list=list.filter(cnjProblem);
   if(procQuery)list=list.filter(p=>[p.nome,p.numero,p.partes,p.assunto,p.area,p.tribunal,p.status,p.responsavel,p.cliente].join(' ').toLowerCase().includes(procQuery));
   if(procSort==='nome')list=[...list].sort((a,b)=>String(a.nome||a.partes||'').localeCompare(String(b.nome||b.partes||''),'pt-BR'));
   else if(procSort==='numero')list=[...list].sort((a,b)=>String(a.numero||'').localeCompare(String(b.numero||''),'pt-BR'));
   else list=[...list].sort((a,b)=>processUpdatedAt(b)-processUpdatedAt(a)||String(a.nome||a.partes||'').localeCompare(String(b.nome||b.partes||''),'pt-BR'));
+  // Filtros de prazo: o mais atrasado primeiro.
+  if(['prazos','vencidos','hoje','semana'].includes(procTab))list.sort((a,b)=>days(a)-days(b));
   return list
 }
 function renderProcessList(){
   const h=$('#lex-proc-list');if(!h)return;
-  const list=filteredProcesses(),meta=pageSlice(list,procPage,PROC_PAGE_SIZE);procPage=meta.page;
-  h.innerHTML=procRows(meta.items)+pagerHtml(meta,'lexSetProcPage');
-  const summary=$('#lex-proc-summary');if(summary)summary.textContent=list.length+' processo'+(list.length===1?'':'s')+' neste filtro';
+  const list=filteredProcesses();
+  h.innerHTML=procListHtml(list)+procGroupPager(list);
+  const summary=$('#lex-proc-summary');if(summary)summary.innerHTML=procSummary(list,['vencidos','hoje','semana','semcnj'].includes(procTab));
 }
 function setDeadlineServerState(work){deadlineServerState=Array.isArray(work?.prazos?.todos)?work.prazos.todos.filter(x=>x?.deadline_legal_truth===true&&x?.case_id!=null):[]}
 function deadlineTruthMap(){return new Map(deadlineServerState.map(x=>[String(x.case_id),x]))}
@@ -95,11 +132,11 @@ function deadlineItems(){const trusted=deadlineTruthMap();return procs().map(p=>
 function deadlineBuckets(all=deadlineItems()){return{revisar:all.filter(x=>!x.confirmed),vencidos:all.filter(x=>x.confirmed&&x.d<0),hoje:all.filter(x=>x.confirmed&&x.d===0),dias7:all.filter(x=>x.confirmed&&x.d>0&&x.d<=7),todos:all}}
 function deadlineVisible(all=deadlineItems()){const b=deadlineBuckets(all);return prazoTab==='revisar'?b.revisar:prazoTab==='vencidos'?b.vencidos:prazoTab==='hoje'?b.hoje:prazoTab==='7dias'?b.dias7:b.todos}
 function deadlineEmptyMessage(){return prazoTab==='revisar'?'Nenhum prazo legado aguardando conferência.':prazoTab==='vencidos'?'Nenhum prazo confirmado está vencido.':prazoTab==='hoje'?'Nenhum prazo confirmado vence hoje.':prazoTab==='7dias'?'Nenhum prazo confirmado vence nos próximos 7 dias.':'Nenhum prazo cadastrado.'}
-function deadlineRows(list,emptyMessage=deadlineEmptyMessage()){return list.map(x=>{const legacy=!x.confirmed,label=legacy?'REVISAR':x.d<0?'vencido '+Math.abs(x.d)+'d':x.d===0?'hoje':x.d+'d',meta=legacy?'Prazo legado sem confirmação auditável · '+(x.p.prazoReal||x.p.prazo||'data não informada'):[x.p.numero,x.due?'vence '+x.due:null].filter(Boolean).join(' · ')||(x.p.tribunal||'');return'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><i class="'+(legacy?'amber':x.d<=0?'red':x.d<=2?'amber':'blue')+'"></i><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(meta)+'</small></span><em>'+esc(label)+'</em></button>'}).join('')||'<div class="lex-empty">'+esc(emptyMessage)+'</div>'}
+function deadlineRows(list,emptyMessage=deadlineEmptyMessage()){return list.map(x=>{const legacy=!x.confirmed,label=legacy?'REVISAR':x.d<0?'vencido '+Math.abs(x.d)+'d':x.d===0?'hoje':x.d+'d',meta=legacy?'Anotado no LEX, ainda não conferido no tribunal · '+(x.p.prazoReal||x.p.prazo||'data não informada'):[x.p.numero,x.due?'vence '+x.due:null].filter(Boolean).join(' · ')||(x.p.tribunal||'');return'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><i class="'+(legacy?'amber':x.d<=0?'red':x.d<=2?'amber':'blue')+'"></i><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(meta)+'</small></span><em>'+esc(label)+'</em></button>'}).join('')||'<div class="lex-empty">'+esc(emptyMessage)+'</div>'}
 function deadlineOrganizeCommand(){
   const critical=deadlineItems().filter(x=>!x.confirmed||x.d<=7).slice(0,30);
   if(!critical.length)return'Confira a controladoria de prazos e diga se existe alguma pendência que exige ação. Não invente prazo nem vencimento.';
-  const rows=critical.map(x=>{const id=(x.p.numero||'sem número')+' · '+(x.p.nome||x.p.partes||'Processo');if(!x.confirmed)return'- '+id+' · PRAZO LEGADO A CONFERIR · data cadastrada '+(x.p.prazoReal||x.p.prazo||'não informada');return'- '+id+' · '+(x.d<0?'VENCIDO HÁ '+Math.abs(x.d)+' DIAS':x.d===0?'VENCE HOJE':'VENCE EM '+x.d+' DIAS')}).join('\n');
+  const rows=critical.map(x=>{const id=(x.p.numero||'sem número')+' · '+(x.p.nome||x.p.partes||'Processo');if(!x.confirmed)return'- '+id+' · PRAZO A CONFERIR NO TRIBUNAL · data cadastrada '+(x.p.prazoReal||x.p.prazo||'não informada');return'- '+id+' · '+(x.d<0?'VENCIDO HÁ '+Math.abs(x.d)+' DIAS':x.d===0?'VENCE HOJE':'VENCE EM '+x.d+' DIAS')}).join('\n');
   return'Organize estas pendências da controladoria por urgência e diga qual ação exige minha atenção agora. Prazo legado é apenas dado para conferência: não o trate como verdade jurídica nem como vencido confirmado. Não altere datas.\n\n'+rows;
 }
 window.lexOrganizeDeadlines=function(){
@@ -116,20 +153,37 @@ window.lexOrganizeDeadlines=function(){
     else if(typeof window.lexSendChat==='function')window.lexSendChat({preventDefault(){}});
   },100);
 }
+// Número CNJ: dígito verificador (Res. CNJ 65/2008, mod 97). Mesmo cálculo do servidor (lib/carteira-audit.js).
+function cnjOk(d){d=String(d||'').replace(/\D/g,'');if(d.length!==20||typeof BigInt!=='function')return d.length===20;const r=Number(BigInt(d.slice(0,7)+d.slice(9)+'00')%97n);return String(98-r).padStart(2,'0')===d.slice(7,9)}
+function judicial(p){return !/administr|extrajud|consult/i.test(String(p?.tipo||'')+' '+String(p?.setor||''))}
+function cnjProblem(p){if(!active(p)||!judicial(p))return false;const n=procShortNum(p);return !n||!cnjOk(n)}
+window.lexAskLex=function(text){try{window.lexSelectChatProcess?.('')}catch{}if(typeof window.lexChat!=='function')return;window.lexChat('');setTimeout(()=>{const input=document.getElementById('lex-chat-input');if(!input)return;input.value=String(text||'');const form=input.closest('form');if(form&&typeof form.requestSubmit==='function')form.requestSubmit();else if(typeof window.lexSendChat==='function')window.lexSendChat({preventDefault(){}})},100)};
 window.lexOpenProc=id=>openProc(id);
 
 async function home(){
   const p=procs(),act=p.filter(active);let tasks=[],reception=0,quadro=null;
   try{const d=await lexApi('/api/trabalho');tasks=Array.isArray(d.tarefas)?d.tarefas:[];quadro=officeCounts(d);setDeadlineServerState(d)}catch{deadlineServerState=[]}
   try{const d=await lexApi('/api/escritorio/recepcao');const r=d.itens||d.contatos||d.recepcao||[];reception=Array.isArray(r)?r.filter(x=>x.status!=='arquivado').length:0}catch{}
-  const buckets=deadlineBuckets(),soon=buckets.dias7.length;
-  const urgent=[
-    ...buckets.revisar.map(x=>({...x,review:true})),
-    ...buckets.vencidos,
-    ...buckets.hoje,
-    ...buckets.dias7.filter(x=>x.d<=2)
-  ].sort((a,b)=>(Number(a.review)-Number(b.review))*-1||(a.d-b.d)).slice(0,4);
-  const body='<section class="lex-home-hero"><div class="lex-hello">'+bot()+'<div><h1>Olá, '+esc(first())+'!</h1><p>Seu escritório em ação. Resultados hoje.</p></div></div><button class="lex-talk" onclick="lexChat()"><span>⌕</span><b>Fale com o LEX...</b><i>🎙</i><i>↑</i></button><div class="lex-actions"><button onclick="goLex(\'peticao\')">📄<span>Nova peça</span></button><button onclick="lexProcessos()">⌕<span>Consultar</span></button><button onclick="lexPrazos()">📅<span>Prazos</span></button><button onclick="document.getElementById(\'pdf-upload-input\')?.click()">⇧<span>Enviar</span></button></div></section><section><div class="lex-section-title"><h2>Hoje no seu escritório</h2><button onclick="lexMais()">Ver tudo ›</button></div><div class="lex-kpis"><button onclick="lexProcessos()"><b>'+act.length+'</b><span>Processos</span></button><button onclick="lexPrazos()"><b>'+soon+'</b><span>Prazos</span></button><button onclick="lexTarefas()"><b>'+tasks.filter(t=>!['concluida','falhou'].includes(t.status)).length+'</b><span>Tarefas</span></button><button onclick="lexChannel(\'all\')"><b>'+reception+'</b><span>Mensagens</span></button></div></section><section><div class="lex-section-title"><h2>Agir agora</h2><button onclick="lexPrazos()">Ver todos ›</button></div><div class="lex-now">'+(urgent.length?urgent.map(x=>'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><span>⚠</span><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(x.p.numero||x.p.assunto||'')+'</small></span><em>'+(x.review?'Revisar':x.d<0?'Vencido':x.d===0?'Hoje':x.d+'d')+'</em></button>').join(''):'<div class="lex-empty">Nenhuma ação crítica para hoje.</div>')+'</div></section><section><div class="lex-section-title"><h2>Setores do Escritório</h2><button onclick="lexEscritorio()">Ver todos ›</button></div>'+officeGrid(tasks,p,quadro)+'</section>';
+  const buckets=deadlineBuckets();
+  // O LEX fala primeiro: no máximo 3 assuntos, cada um com UMA ação.
+  const cnjBad=act.filter(cnjProblem),review=tasks.filter(t=>t.status==='aguardando_revisao');
+  const talk=[];
+  if(buckets.vencidos.length)talk.push({tone:'late',t:buckets.vencidos.length+' prazo'+(buckets.vencidos.length>1?'s vencidos':' vencido'),s:esc(buckets.vencidos[0].p.nome||buckets.vencidos[0].p.numero||'Processo')+(buckets.vencidos.length>1?' e mais '+(buckets.vencidos.length-1):''),b:'Resolver com o LEX',a:"lexAskLex('prazos vencidos')"});
+  if(buckets.hoje.length)talk.push({tone:'urgent',t:buckets.hoje.length+' prazo'+(buckets.hoje.length>1?'s vencem':' vence')+' hoje',s:esc(buckets.hoje[0].p.nome||buckets.hoje[0].p.numero||'Processo'),b:'Ver com o LEX',a:"lexAskLex('prazos de hoje')"});
+  if(buckets.revisar.length)talk.push({tone:'soon',t:buckets.revisar.length+' prazo'+(buckets.revisar.length>1?'s':'')+' para conferir',s:'Anotados no LEX, ainda sem confirmação do tribunal.',b:'Conferir',a:"lexSetPrazoTab('revisar')"});
+  if(cnjBad.length)talk.push({tone:'soon',t:cnjBad.length+' processo'+(cnjBad.length>1?'s':'')+' com número CNJ errado ou faltando',s:'Eu procuro o número certo nas publicações da sua OAB e você só confirma.',b:'Corrigir com o LEX',a:"lexAskLex('confira os números dos meus processos')"});
+  if(review.length)talk.push({tone:'ok',t:review.length+' minuta'+(review.length>1?'s prontas':' pronta')+' para sua revisão',s:esc(review[0].processo_nome||review[0].tipo||''),b:'Revisar',a:'lexTarefas()'});
+  if(reception)talk.push({tone:'ok',t:reception+' conversa'+(reception>1?'s':'')+' de clientes em andamento',s:'Recepção no WhatsApp.',b:'Abrir',a:"lexChannel('all')"});
+  const shown=talk.slice(0,3),more=talk.length-shown.length;
+  const status=talk.length?'Tenho '+talk.length+' assunto'+(talk.length>1?'s':'')+' para resolver com você.':'Tudo em dia. Estou acompanhando '+act.length+' processo'+(act.length===1?'':'s')+'.';
+  const cards=shown.length?shown.map(x=>'<div class="lex-says '+x.tone+'"><div><strong>'+x.t+'</strong><small>'+x.s+'</small></div><button onclick="'+x.a+'">'+x.b+'</button></div>').join('')+(more?'<button class="lex-says-more" onclick="lexEscritorio()">Ver os outros '+more+' ›</button>':'')
+    :'<div class="lex-says calm"><div><strong>Nada exige você agora.</strong><small>Aviso aqui e no WhatsApp quando chegar intimação, prazo ou mensagem de cliente.</small></div></div>';
+  const body='<section class="lex-home-hero lex-home-v3"><div class="lex-hello">'+bot()+'<div><h1>Olá, '+esc(first())+'!</h1><p>'+status+'</p></div></div>'
+    +'<button class="lex-talk" onclick="lexChat()"><span>⌕</span><b>Fale com o LEX...</b><i>🎙</i><i>↑</i></button>'
+    +'<div class="lex-quick"><button onclick="goLex(\'peticao\')">📄 Nova peça</button><button onclick="document.getElementById(\'pdf-upload-input\')?.click()">⇧ Enviar documento</button></div></section>'
+    +'<section class="lex-says-list"><h2>O LEX informa</h2>'+cards+'</section>';
+  // Painel completo (setores, contagens) fica em Escritório: officeGrid(tasks,procs(),quadro)
+  void quadro;
   shell('Início',body,'home');
 }
 function officeCounts(data){return data?.contagens?.setores||null}
@@ -148,20 +202,30 @@ function officeBoardHtml(counts){
 window.lexHome=function(){navMark('home');return home()};
 window.lexProcessos=function(){
   navMark('processos');
-  const all=procs(),filtered=filteredProcesses(),meta=pageSlice(filtered,procPage,PROC_PAGE_SIZE);procPage=meta.page;
+  const all=procs(),filtered=filteredProcesses(),u=procUrgency(all),urgentTab=['vencidos','hoje','semana','semcnj'].includes(procTab);
+  const bad=all.filter(cnjProblem).length,chip=(tab,n,label,tone)=>n?'<button class="'+tone+(procTab===tab?' on':'')+'" onclick="lexSetProcFilter(\''+(procTab===tab?'ativos':tab)+'\')">'+n+' '+label+'</button>':'';
+  const need=u.vencidos+u.hoje+bad;
   const body='<div class="lex-page-head"><div><small>Carteira jurídica</small><h1>Processos</h1></div><button onclick="goLex(\'autuacao\')" aria-label="Cadastrar processo">＋</button></div>'
+    +(need?'<div class="lex-proc-says"><div class="chips-row">'+chip('vencidos',u.vencidos,'vencido'+(u.vencidos>1?'s':''),'late')+chip('hoje',u.hoje,'hoje','urgent')+chip('semcnj',bad,'nº CNJ a corrigir','soon')+'</div><button onclick="lexAskLex(\''+(u.vencidos||u.hoje?'o que precisa de mim':'confira os números dos meus processos')+'\')">Resolver com o LEX</button></div>':'<div class="lex-proc-says calm">✓ Nenhum prazo vencido e todos os números CNJ válidos.</div>')
     +'<div class="lex-search"><span>⌕</span><input id="lex-q" value="'+esc(procQuery)+'" placeholder="Buscar número, cliente, parte, assunto..." oninput="lexFilterProc(this.value)"></div>'
-    +'<div class="lex-process-toolbar"><div class="lex-tabs"><button class="'+(procTab==='todos'?'on':'')+'" onclick="lexSetProcFilter(\'todos\')">Todos <b>'+all.length+'</b></button><button class="'+(procTab==='ativos'?'on':'')+'" onclick="lexSetProcFilter(\'ativos\')">Ativos <b>'+all.filter(active).length+'</b></button><button class="'+(procTab==='prazos'?'on':'')+'" onclick="lexSetProcFilter(\'prazos\')">Com prazo <b>'+all.filter(x=>days(x)<9999).length+'</b></button><button class="'+(procTab==='arquivados'?'on':'')+'" onclick="lexSetProcFilter(\'arquivados\')">Encerrados <b>'+all.filter(x=>!active(x)).length+'</b></button></div>'
-    +'<label class="lex-sort">Ordenar <select onchange="lexSetProcSort(this.value)"><option value="recentes" '+(procSort==='recentes'?'selected':'')+'>Atualizados</option><option value="nome" '+(procSort==='nome'?'selected':'')+'>Nome</option><option value="numero" '+(procSort==='numero'?'selected':'')+'>Número</option></select></label></div>'
-    +'<div class="lex-list-summary" id="lex-proc-summary">'+filtered.length+' processo'+(filtered.length===1?'':'s')+' neste filtro</div>'
-    +'<div id="lex-proc-list">'+procRows(meta.items)+pagerHtml(meta,'lexSetProcPage')+'</div>';
+    +'<div class="lex-process-toolbar"><div class="lex-tabs"><button class="'+(procTab==='ativos'?'on':'')+'" onclick="lexSetProcFilter(\'ativos\')">Ativos <b>'+all.filter(active).length+'</b></button><button class="'+(procTab==='prazos'?'on':'')+'" onclick="lexSetProcFilter(\'prazos\')">Com prazo <b>'+all.filter(x=>days(x)<9999).length+'</b></button><button class="'+(procTab==='arquivados'?'on':'')+'" onclick="lexSetProcFilter(\'arquivados\')">Encerrados <b>'+all.filter(x=>!active(x)).length+'</b></button><button class="'+(procTab==='todos'?'on':'')+'" onclick="lexSetProcFilter(\'todos\')">Todos <b>'+all.length+'</b></button></div>'
+    +(procView==='lista'||procQuery?'<label class="lex-sort">Ordenar <select onchange="lexSetProcSort(this.value)"><option value="recentes" '+(procSort==='recentes'?'selected':'')+'>Atualizados</option><option value="nome" '+(procSort==='nome'?'selected':'')+'>Nome</option><option value="numero" '+(procSort==='numero'?'selected':'')+'>Número</option></select></label>':'')+'</div>'
+    +'<div class="lex-list-summary" id="lex-proc-summary">'+procSummary(filtered,urgentTab)+'</div>'
+    +'<div id="lex-proc-list">'+procListHtml(filtered)+procGroupPager(filtered)+'</div>';
   shell('Processos',body,'processos')
 };
-window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos','arquivados'].includes(tab)?tab:'todos';procPage=1;window.lexProcessos()};
+function procSummary(list,urgentTab){const label={vencidos:'com prazo vencido',hoje:'com prazo hoje',semana:'com prazo nos próximos 7 dias',semcnj:'com número CNJ faltando ou errado — o LEX acha o número certo: toque em Resolver'}[procTab];
+  if(label)return list.length+' processo'+(list.length===1?'':'s')+' '+label+' · <button class="link" onclick="lexSetProcFilter(\'todos\')">ver todos</button>';
+  if(procView==='clientes'&&!procQuery&&!urgentTab){const g=procGroups(list);const n=g.filter(x=>!x.rest).length;return list.length+' processo'+(list.length===1?'':'s')+(n?' · '+n+' cliente'+(n===1?'':'s')+' · toque para abrir':'')}
+  return list.length+' processo'+(list.length===1?'':'s')+(procQuery?' encontrados':' neste filtro')}
+window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos','arquivados','vencidos','hoje','semana','semcnj'].includes(tab)?tab:'todos';procPage=1;window.lexProcessos()};
+window.lexSetProcView=view=>{procView=view==='lista'?'lista':'clientes';procPage=1;window.lexProcessos()};
+window.lexToggleProcGroup=key=>{const k=String(key);if(procOpen.has(k))procOpen.delete(k);else procOpen.add(k);renderProcessList()};
+window.lexMoreProcGroup=key=>{const k=String(key);procGroupShow[k]=(procGroupShow[k]||PROC_GROUP_ROWS)+PROC_GROUP_ROWS;renderProcessList()};
 window.lexSetProcSort=value=>{procSort=['recentes','nome','numero'].includes(value)?value:'recentes';procPage=1;renderProcessList()};
 window.lexSetProcPage=page=>{procPage=Math.max(1,Number(page)||1);renderProcessList();window.scrollTo?.({top:0,behavior:'smooth'})};
 window.lexFilterProc=q=>{procQuery=String(q||'').toLowerCase();procPage=1;renderProcessList()};
-window.lexPrazos=async function(){navMark('prazos');let serverError=null;try{const d=await lexApi('/api/trabalho');setDeadlineServerState(d)}catch(err){deadlineServerState=[];serverError=err?.message||'Falha ao consultar o servidor'}const all=deadlineItems(),b=deadlineBuckets(all),visible=deadlineVisible(all),page=pageSlice(visible,prazoPage,DEADLINE_PAGE_SIZE);prazoPage=page.page;const recommendation=b.revisar.length?'Há '+b.revisar.length+' prazo(s) legado(s) sem confirmação auditável. Confira antes de tratar como vencimento real.':b.vencidos.length?'Há '+b.vencidos.length+' prazo(s) confirmado(s) vencido(s). Confira primeiro a situação jurídica e a ação pendente.':b.hoje.length?'Há '+b.hoje.length+' prazo(s) confirmado(s) vencendo hoje. Priorize a conferência agora.':b.dias7.length?'Há '+b.dias7.length+' prazo(s) confirmado(s) nos próximos 7 dias. Organize a ordem de trabalho.':'Nenhum prazo confirmado crítico nos próximos 7 dias.';const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')" aria-label="Abrir calendário">▣</button></div>'+(serverError?'<div class="lex-warning">Não consegui confirmar os prazos auditáveis no servidor: '+esc(serverError)+'. Dados locais aparecem apenas para conferência.</div>':'')+'<div class="lex-tabs"><button class="'+(prazoTab==='revisar'?'on':'')+'" onclick="lexSetPrazoTab(\'revisar\')">Revisar <b>'+b.revisar.length+'</b></button><button class="'+(prazoTab==='vencidos'?'on':'')+'" onclick="lexSetPrazoTab(\'vencidos\')">Vencidos <b>'+b.vencidos.length+'</b></button><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+b.hoje.length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+b.dias7.length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos <b>'+b.todos.length+'</b></button></div><div class="lex-timeline">'+deadlineRows(page.items)+'</div>'+pagerHtml(page,'lexSetPrazoPage')+'<div class="lex-recommend"><b>💡 LEX recomenda</b><p>'+esc(recommendation)+'</p><button onclick="lexOrganizeDeadlines()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
+window.lexPrazos=async function(){navMark('prazos');let serverError=null;try{const d=await lexApi('/api/trabalho');setDeadlineServerState(d)}catch(err){deadlineServerState=[];serverError=err?.message||'Falha ao consultar o servidor'}const all=deadlineItems(),b=deadlineBuckets(all),visible=deadlineVisible(all),page=pageSlice(visible,prazoPage,DEADLINE_PAGE_SIZE);prazoPage=page.page;const recommendation=b.revisar.length?'Há '+b.revisar.length+' prazo(s) anotado(s) no LEX ainda não conferido(s) no tribunal. Confira antes de contar com a data.':b.vencidos.length?'Há '+b.vencidos.length+' prazo(s) confirmado(s) vencido(s). Confira primeiro a situação jurídica e a ação pendente.':b.hoje.length?'Há '+b.hoje.length+' prazo(s) confirmado(s) vencendo hoje. Priorize a conferência agora.':b.dias7.length?'Há '+b.dias7.length+' prazo(s) confirmado(s) nos próximos 7 dias. Organize a ordem de trabalho.':'Nenhum prazo confirmado crítico nos próximos 7 dias.';const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')" aria-label="Abrir calendário">▣</button></div>'+(serverError?'<div class="lex-warning">Não consegui confirmar os prazos auditáveis no servidor: '+esc(serverError)+'. Dados locais aparecem apenas para conferência.</div>':'')+'<div class="lex-tabs"><button class="'+(prazoTab==='revisar'?'on':'')+'" onclick="lexSetPrazoTab(\'revisar\')">Revisar <b>'+b.revisar.length+'</b></button><button class="'+(prazoTab==='vencidos'?'on':'')+'" onclick="lexSetPrazoTab(\'vencidos\')">Vencidos <b>'+b.vencidos.length+'</b></button><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+b.hoje.length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+b.dias7.length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos <b>'+b.todos.length+'</b></button></div><div class="lex-timeline">'+deadlineRows(page.items)+'</div>'+pagerHtml(page,'lexSetPrazoPage')+'<div class="lex-recommend"><b>💡 LEX recomenda</b><p>'+esc(recommendation)+'</p><button onclick="lexOrganizeDeadlines()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
 window.lexSetPrazoTab=tab=>{prazoTab=['revisar','vencidos','hoje','7dias','todos'].includes(tab)?tab:'todos';prazoPage=1;window.lexPrazos()};
 window.lexSetPrazoPage=page=>{prazoPage=Math.max(1,Number(page)||1);window.lexPrazos();window.scrollTo?.({top:0,behavior:'smooth'})};
 window.lexTarefas=async function(selectedId){navMark('tarefas');

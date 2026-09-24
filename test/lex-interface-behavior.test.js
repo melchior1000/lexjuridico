@@ -34,13 +34,13 @@ test('histórico acompanha seleção explícita e escapa conteúdo recebido',()=
   h.window.lexChat('a');assert.match(h.host.innerHTML,/A exclusivo/);assert.doesNotMatch(h.host.innerHTML,/B exclusivo/);
   h.window.lexChat('b');assert.equal(h.selected(),'b');assert.match(h.host.innerHTML,/&lt;script&gt;B exclusivo/);assert.doesNotMatch(h.host.innerHTML,/A exclusivo|<script>/);
 });
-function home(api){
+function home(api,processes=[]){
   const nodes={};for(const key of ['h1','p','.lex-today-feedback','.lex-today-list'])nodes[key]={textContent:'',innerHTML:'',appendChild(){},addEventListener(type,fn){this[type]=fn}};
   nodes['.lex-today-head']={querySelector:key=>nodes[key]};
   const surface={isConnected:true,querySelector:key=>nodes[key]};
   const host={firstElementChild:surface,innerHTML:''};const opened=[];
   const window=boot('lex2-interface-core.js',{
-    window:{lexTarefas:id=>opened.push(id)},lexApi:api,getProcs:()=>[],
+    window:{lexTarefas:id=>opened.push(id)},lexApi:api,getProcs:()=>processes,
     document:{readyState:'complete',body:{classList:{add(){}}},getElementById:()=>host,createElement:()=>({})}
   });
   return{window,nodes,surface,opened};
@@ -110,4 +110,24 @@ test('Home mostra sugestão sem tratá-la como prazo confirmado',async()=>{
   assert.match(html,/Confirmar 2026-09-29/);
   assert.match(html,/Corrigir/);
   assert.doesNotMatch(html,/Prazo confirmado vence/);
+});
+
+test('Home agrupa assuntos repetidos, mostra no máximo 3 e aponta número CNJ errado',async()=>{
+  const ontem=new Date(Date.now()-2*86400000).toISOString().slice(0,10);
+  const ps=[...Array.from({length:8},(_,i)=>({id:'v'+i,nome:'Vencido '+i,numero:'5004158-61.2024.8.13.0704',status:'ATIVO',prazo:ontem})),
+    {id:'x',nome:'Sem número',numero:'',status:'ATIVO'},{id:'y',nome:'Dígito errado',numero:'5004158-62.2024.8.13.0704',status:'ATIVO'},{id:'adm',nome:'Administrativo',numero:'',tipo:'administrativo',status:'ATIVO'}];
+  const contatos=Array.from({length:5},(_,i)=>({id:'c'+i,nome:'Cliente '+i,origem:'whatsapp',status:'novo'}));
+  const tarefas=[{id:'t1',status:'aguardando_revisao',processo_nome:'Minuta A'},{id:'t2',status:'aguardando_revisao',processo_nome:'Minuta B'}];
+  const h=home(async path=>path==='/api/trabalho'?{tarefas}:{contatos},ps);
+  await h.window.lexHome();
+  const html=h.nodes['.lex-today-list'].innerHTML;
+  assert.equal((html.match(/<article/g)||[]).length,3,'no máximo 3 cartões');
+  assert.match(html,/8 processos[\s\S]*Prazos cadastrados vencidos[\s\S]*Resolver com o LEX/);
+  assert.match(html,/Ver os outros 2/);
+  assert.match(h.nodes.h1.textContent,/^5 assuntos precisam de você/);
+  h.nodes['.lex-today-list'].click({target:{closest:sel=>sel==='[data-today-more]'?{dataset:{todayMore:''}}:null}});
+  await new Promise(r=>setTimeout(r,0));
+  const all=h.nodes['.lex-today-list'].innerHTML;
+  assert.match(all,/2 processos[\s\S]*Números CNJ faltando ou errados[\s\S]*Corrigir com o LEX/);
+  assert.match(all,/5 clientes[\s\S]*Aguardando sua resposta/);
 });

@@ -131,14 +131,15 @@ test('fila migra para o resumo persistente e não envia diretamente itens indivi
   assert.equal(shared._filaNotificacoes.length,0);assert.equal(queued.length,2);assert.equal(flushes,1);
 });
 
-test('secretário Anthropic ignora modelo legado e usa o TOP configurado',async()=>{
-  let model;
+test('secretário Anthropic usa o modelo de canal informado e, sem ele, o TOP',async()=>{
+  const models=[];
   const context=load('async function _chamarAnthropicSecretario(', 'async function _escalarParaAdvogado(',{
     AK:'fake',MODELOS_POR_PROVIDER:{anthropic:{top:'claude-opus-5'}},
-    httpsPost:async(host,path,payload)=>{model=payload.model;return {content:[{type:'text',text:'Resposta teste'}]};}
+    httpsPost:async(host,path,payload)=>{models.push(payload.model);return {content:[{type:'thinking',thinking:''},{type:'text',text:'Resposta teste'}]};}
   });
-  await context._chamarAnthropicSecretario([],null,'claude-sonnet-4-6');
-  assert.equal(model,'claude-opus-5');
+  assert.equal(await context._chamarAnthropicSecretario([],null,'claude-sonnet-5'),'Resposta teste','bloco de raciocínio vazio não pode virar resposta em branco');
+  await context._chamarAnthropicSecretario([],null,undefined);
+  assert.deepEqual(models,['claude-sonnet-5','claude-opus-5']);
 });
 
 for(const route of ['/api/webhook-whatsapp','/api/whatsapp/webhook']) {

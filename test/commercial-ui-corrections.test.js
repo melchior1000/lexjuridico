@@ -47,8 +47,8 @@ test('filtros de prazo separam legado de prazo confirmado',()=>{
   assert.match(js,/Todos <b>/);
   assert.match(js,/Nenhum prazo confirmado vence hoje/);
   assert.match(js,/Nenhum prazo confirmado vence nos próximos 7 dias/);
-  assert.match(js,/Prazo legado sem confirmação auditável/);
-  assert.match(js,/PRAZO LEGADO A CONFERIR/);
+  assert.match(js,/Anotado no LEX, ainda não conferido no tribunal/);
+  assert.match(js,/PRAZO A CONFERIR NO TRIBUNAL/);
 });
 
 test('Organizar com o LEX envia contexto real de prazos ao Core em vez de abrir chat vazio',()=>{
