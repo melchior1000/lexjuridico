@@ -107,3 +107,8 @@ body.lex-commercial .lex-oab .lex-oab-sec{min-height:44px;border:1px solid var(-
 body.lex-commercial .lex-oab-out{white-space:pre-line;font-size:13px;line-height:1.45}
 body.lex-commercial .lex-oab-out.ok{color:#2fb67c}body.lex-commercial .lex-oab-out.erro{color:#e5484d}
 body.lex-commercial .lex-oab hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+body.lex-commercial .lex-oab+.lex-oab{margin-top:12px}
+body.lex-commercial .lex-oab h2{margin:0;font-size:15px}
+body.lex-commercial .lex-conn{font-size:13px;font-weight:700}
+body.lex-commercial .lex-conn.on{color:#2fb67c}body.lex-commercial .lex-conn.off{color:#c28f00}
+body.lex-commercial .lex-conn-miss{color:#c28f00!important}
