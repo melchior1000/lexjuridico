@@ -7,6 +7,8 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 const SRC=fs.readFileSync(path.join(__dirname,'..','office-ui-v2.js'),'utf8');
+const {cnjCheckDigits,formatCnj}=require('../lib/carteira-audit');
+const validCnj=(seq,tail)=>{const raw=seq+'00'+tail;return formatCnj(seq+cnjCheckDigits(raw)+tail)};
 const iso=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
 
 function load(list){
@@ -24,7 +26,7 @@ function load(list){
 
 function carteira(){
   const out=[];
-  for(let i=0;i<300;i++)out.push({id:'c'+i,nome:'CEF — Execução '+i,numero:String(1000000+i)+'-10.2025.4.06.3818',tribunal:'TRF-6',status:'ATIVO',prazo:i===5?iso(-2):undefined});
+  for(let i=0;i<300;i++)out.push({id:'c'+i,nome:'CEF — Execução '+i,numero:validCnj(String(1000000+i),'20254063818'),tribunal:'TRF-6',status:'ATIVO',prazo:i===5?iso(-2):undefined});
   for(let i=0;i<200;i++)out.push({id:'b'+i,nome:'Banco do Brasil x Fulano '+i,numero:'',status:'ATIVO',prazo:i===1?iso(0):undefined});
   out.push({id:'s1',nome:'Maria Souza',numero:'5004158-61.2024.8.13.0704',status:'ATIVO'});
   return out;
@@ -37,8 +39,10 @@ test('com 500 processos a tela mostra clientes recolhidos, não 500 cartões',()
   assert.equal((html.match(/class="lex-proc-group/g)||[]).length,3,'CEF, Banco do Brasil e demais');
   assert.equal((html.match(/class="lex-proc-line"/g)||[]).length,0,'nada aberto de início');
   assert.doesNotMatch(html,/class="lex-proc-row"/);
-  // Urgência no topo e grupo mais urgente primeiro (vencido > hoje).
-  assert.match(html,/lex-proc-urgent[\s\S]*<b>1<\/b><span>Vencidos[\s\S]*<b>1<\/b><span>Prazo hoje/);
+  // Uma linha do LEX com o que exige ação (não um quadro de números) e o grupo mais urgente primeiro.
+  assert.match(html,/lex-proc-says[\s\S]*1 vencido<[\s\S]*1 hoje<[\s\S]*200 nº CNJ a corrigir[\s\S]*Resolver com o LEX/);
+  assert.doesNotMatch(html,/CEF[^<]*<\/strong><small>[^<]*<\/small><\/span><span class="chips"><em class="late">1 vencido<\/em><\/span>[\s\S]*nº CNJ inválido/);
+  assert.doesNotMatch(html,/lex-proc-urgent|lex-view-toggle/);
   assert.ok(html.indexOf('>CEF<')<html.indexOf('>Banco do Brasil<'));
   assert.match(html,/501 processos · 2 clientes/);
 });
@@ -64,8 +68,8 @@ test('quadro de urgência filtra; busca e modo lista saem dos grupos',()=>{
   assert.equal((ui.html().match(/class="lex-proc-line"/g)||[]).length,1);
   assert.match(ui.html(),/Fulano 1/);
   ui.ctx.lexSetProcFilter('semcnj');
-  assert.match(ui.html(),/200 processos sem número CNJ/);
-  ui.ctx.lexSetProcFilter('todos');
+  assert.match(ui.html(),/200 processos com número CNJ faltando ou errado/);
+  ui.ctx.lexSetProcFilter('ativos');
   ui.ctx.lexFilterProc('maria');
   assert.equal((ui.list().match(/class="lex-proc-line"/g)||[]).length,1);
   ui.ctx.lexFilterProc('');
