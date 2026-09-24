@@ -791,6 +791,15 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
 const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
+// Contas individuais da equipe (e-mail + senha por pessoa).
+const LexUsers = require('./lib/lex-users');
+const equipeLex = LexUsers.createUserStore({
+  load:()=>_carregarConfigPersistida('usuarios_lex',{lista:[]}),
+  save:v=>_salvarConfigPersistida('usuarios_lex',v)
+});
+// Carrega depois do boot (o banco ainda não está pronto aqui) e relê a cada 5 min.
+setTimeout(()=>equipeLex.carregar().catch(e=>console.warn('[equipe] leitura das contas falhou:', e.message)),0);
+setInterval(()=>equipeLex.carregar().catch(()=>{}),5*60*1000).unref?.();
 // OABs ligadas pela tela ou pelo WhatsApp ("minha OAB é 123456/MG").
 // DJEN_OABS no ambiente, se existir, tem prioridade.
 function _oabsLigadas(){
@@ -9498,18 +9507,26 @@ function _checkLoginRate(ip) {
 if(!global._tokensRevogados) global._tokensRevogados = new Set();
 if(!global._sessaoAtividade) global._sessaoAtividade = new Map();
 
-function gerarToken(perfil) {
+function gerarToken(perfil, contaId) {
   const ts = Date.now();
-  const sig = CRYPTO.createHmac('sha256', AUTH_SECRET).update(perfil+'|'+ts).digest('hex').slice(0,16);
-  return Buffer.from(JSON.stringify({p:perfil,ts,sig})).toString('base64url');
+  // Conta individual: o id entra na assinatura e o token só vale com a conta ativa.
+  const base = contaId ? perfil+'|'+contaId+'|'+ts : perfil+'|'+ts;
+  const sig = CRYPTO.createHmac('sha256', AUTH_SECRET).update(base).digest('hex').slice(0,16);
+  return Buffer.from(JSON.stringify(contaId?{p:perfil,u:contaId,ts,sig}:{p:perfil,ts,sig})).toString('base64url');
+}
+function contaDoToken(token){
+  try { const d=JSON.parse(Buffer.from(String(token||''),'base64url').toString()); return typeof d.u==='string'?d.u:null; } catch(e) { return null; }
 }
 function validarToken(token) {
   try {
     if(!token) return null;
     if(global._tokensRevogados && global._tokensRevogados.has(token)) return null;
-    const { p, ts, sig } = JSON.parse(Buffer.from(token,'base64url').toString());
-    const esperado = CRYPTO.createHmac('sha256', AUTH_SECRET).update(p+'|'+ts).digest('hex').slice(0,16);
+    const { p, u, ts, sig } = JSON.parse(Buffer.from(token,'base64url').toString());
+    if(u !== undefined && typeof u !== 'string') return null;
+    const esperado = CRYPTO.createHmac('sha256', AUTH_SECRET).update(u ? p+'|'+u+'|'+ts : p+'|'+ts).digest('hex').slice(0,16);
     if(sig !== esperado) return null;
+    // Conta desativada (advogado que saiu) perde o acesso na hora.
+    if(u && !equipeLex.ativo(u)) return null;
     if(typeof p !== 'string' || !Object.hasOwn(PERMS, p)) return null;
     if(!Number.isSafeInteger(ts) || ts <= 0 || ts > Date.now()) return null;
     const agora = Date.now();
@@ -10474,6 +10491,16 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const b = await lerBody(req);
+      // Conta individual (e-mail + senha).
+      if(typeof b.email === 'string' && b.email.trim()) {
+        const conta = typeof b.senha === 'string' ? await equipeLex.autenticar(b.email, b.senha) : null;
+        if(!conta || !Object.hasOwn(PERMS, conta.papel)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'E-mail ou senha incorretos'})); return; }
+        const tokenConta = gerarToken(conta.papel, conta.id);
+        global._sessaoAtividade.set(tokenConta, Date.now());
+        res.writeHead(200, corsHeaders(req));
+        res.end(JSON.stringify({ok:true, token:tokenConta, perfil:conta.papel, conta:{id:conta.id,nome:conta.nome,email:conta.email}, ...PERMS[conta.papel]}));
+        return;
+      }
       if(typeof b.perfil !== 'string' || !Object.hasOwn(PERMS, b.perfil) || typeof b.senha !== 'string' || !b.senha) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Perfil ou senha invalidos'})); return; }
       
       // Busca senha válida (env var → Supabase → setup mode)
@@ -10504,6 +10531,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   
+  // ── EQUIPE: contas individuais (só administrador gerencia) ──
+  if(url==='/api/equipe' || url.startsWith('/api/equipe/')) {
+    const perfilEq = validarToken(getToken(req));
+    if(!perfilEq) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+    if(perfilEq !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Só o administrador gerencia a equipe'})); return; }
+    try {
+      if(url==='/api/equipe' && req.method==='GET') { res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, contas: await equipeLex.listar()})); return; }
+      const b = req.method==='POST' ? await lerBody(req) : {};
+      let out;
+      if(url==='/api/equipe' && req.method==='POST') out = await equipeLex.criar(b||{});
+      else if(url==='/api/equipe/desativar' && req.method==='POST') {
+        if(String(b?.id||'') === contaDoToken(getToken(req))) throw Object.assign(new Error('Você não pode desativar a própria conta.'),{status:400});
+        out = await equipeLex.desativar(String(b?.id||''));
+      }
+      else if(url==='/api/equipe/senha' && req.method==='POST') out = await equipeLex.trocarSenha(String(b?.id||''), b?.senha);
+      else { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Rota não encontrada'})); return; }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, conta:out}));
+    } catch(e) { res.writeHead(e.status||500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    return;
+  }
+
   // ── TROCAR SENHA (autenticado) ──
   if(url==='/api/perfil' && req.method==='GET') {
     const perfil = validarToken(getToken(req));

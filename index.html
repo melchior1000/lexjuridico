@@ -726,6 +726,10 @@ table{max-width:100%;}
         <input class="login-input" type="url" id="login-bot-url" placeholder="https://lex-juridico.onrender.com" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:13px;outline:none;" onkeydown="if(event.key==='Enter')fazerLogin()">
       </div>
       <div style="margin-bottom:14px;">
+        <label class="login-label" for="login-email" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">E-MAIL (CONTA INDIVIDUAL)</label>
+        <input class="login-input" type="email" id="login-email" autocomplete="username" placeholder="seu@email.com (opcional)" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:14px;outline:none;" oninput="var p=document.getElementById('login-perfil-box');if(p)p.style.display=this.value.trim()?'none':'block'" onkeydown="if(event.key==='Enter')fazerLogin()">
+      </div>
+      <div id="login-perfil-box" style="margin-bottom:14px;">
         <label class="login-label" style="font-size:10px;letter-spacing:2px;display:block;margin-bottom:6px;">PERFIL</label>
         <select class="login-input" id="login-perfil" style="width:100%;border-radius:8px;padding:11px 13px;font-family:Arial,Helvetica,sans-serif;font-size:13px;"><option value="admin">Administrador</option><option value="secretaria">Secretária</option></select>
       </div>
@@ -1441,7 +1445,7 @@ async function _tentarReloginSilencioso() {
     const r = await fetch(SERVIDOR + '/api/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ perfil: sess.perfil, senha: senhaHash })
+      body: JSON.stringify((()=>{const em=localStorage.getItem('lex_login_email');return em?{email:em,senha:senhaHash}:{perfil:sess.perfil,senha:senhaHash}})())
     });
     if(!r.ok) throw new Error('Servidor não confirmou a gravação.');
     if(r.ok) {
@@ -2604,6 +2608,7 @@ function podeDocumentos(){return _perms.podeDocumentos||false;}
 
 async function fazerLogin(){
   const perfil=document.getElementById('login-perfil').value;
+  const email=(document.getElementById('login-email')?.value||'').trim();
   const senha=document.getElementById('login-senha').value.trim();
   const erroEl=document.getElementById('login-erro');
   const btnLogin=document.getElementById('btn-login');
@@ -2620,7 +2625,7 @@ async function fazerLogin(){
     const r=await fetch(SERVIDOR+'/api/login',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({perfil,senha}),
+      body:JSON.stringify(email?{email,senha}:{perfil,senha}),
       signal:ctrl.signal
     });
     clearTimeout(timer);
@@ -2637,7 +2642,7 @@ async function fazerLogin(){
     erroEl.style.display='none';
     _saveSess(d.token,d.perfil,d);
     // Salva senha para re-login automático (quando servidor reinicia)
-    try { localStorage.setItem('lex_pwd_cache', senha); } catch(e) {}
+    try { localStorage.setItem('lex_pwd_cache', senha); if(email) localStorage.setItem('lex_login_email', email); else localStorage.removeItem('lex_login_email'); } catch(e) {}
     usuarioAtivo=d.perfil;
     _perms=d;
     _registrarLogin(d.perfil);

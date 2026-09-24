@@ -186,6 +186,36 @@ window.lexOabSave=async function(){
   catch(e){if(out){out.textContent='Não liguei: '+(e?.message||'erro');out.className='lex-oab-out erro'}}
   finally{if(btn){btn.disabled=false;btn.textContent='Atualizar OAB e buscar publicações'}}
 };
+// Equipe: cada pessoa com login próprio. Desativar corta o acesso na hora.
+window.lexEquipe=async function(msg){
+  navMark('mais');let contas=[],erro='';
+  try{const d=await lexApi('/api/equipe');contas=Array.isArray(d.contas)?d.contas:[]}catch(e){erro=e?.message||'sem acesso'}
+  const papel=p=>p==='admin'?'Administrador / advogado':'Secretária';
+  const linhas=contas.length?contas.map(c=>'<div class="lex-eq-row'+(c.ativo?'':' off')+'"><div><strong>'+esc(c.nome)+'</strong><small>'+esc(c.email)+' · '+papel(c.papel)+(c.oab?' · OAB '+esc(c.oab):'')+(c.ativo?'':' · desativada')+'</small></div>'+(c.ativo?'<button onclick="lexEquipeDesativar(\''+esc(c.id)+'\',\''+esc(c.nome).replace(/'/g,'')+'\')">Desativar</button>':'')+'</div>').join(''):'<p class="lex-eq-vazio">Nenhuma conta individual ainda. Todos entram pelo perfil compartilhado.</p>';
+  const body='<div class="lex-page-head"><div><small>Acesso</small><h1>Equipe</h1></div></div>'
+    +(erro?'<div class="lex-warning">'+esc(/403|administrador/i.test(erro)?'Só o administrador gerencia a equipe.':erro)+'</div>':'')
+    +(msg?'<div class="lex-eq-msg" role="status">'+esc(msg)+'</div>':'')
+    +'<section class="lex-oab"><h2>Contas</h2>'+linhas+'</section>'
+    +'<section class="lex-oab"><h2>Nova conta</h2>'
+    +'<label for="eq-nome">Nome</label><input id="eq-nome" autocomplete="off">'
+    +'<label for="eq-email">E-mail</label><input id="eq-email" type="email" autocomplete="off">'
+    +'<label for="eq-papel">Papel</label><select id="eq-papel"><option value="admin">Administrador / advogado</option><option value="secretaria">Secretária</option></select>'
+    +'<label for="eq-oab">OAB (opcional)</label><input id="eq-oab" placeholder="123456/MG" autocomplete="off">'
+    +'<label for="eq-senha">Senha inicial (8+ caracteres, letras e números)</label><input id="eq-senha" type="password" autocomplete="new-password">'
+    +'<button class="lex-oab-go" onclick="lexEquipeCriar()">Criar conta</button>'
+    +'<p>A pessoa entra com este e-mail e senha. Quando sair do escritório, toque em Desativar: o acesso dela cai na hora.</p></section>';
+  shell('Equipe',body,'mais');
+};
+window.lexEquipeCriar=async function(){
+  const v=id=>String(($('#'+id)||{}).value||'').trim();
+  try{await lexApi('/api/equipe',{method:'POST',body:JSON.stringify({nome:v('eq-nome'),email:v('eq-email'),papel:v('eq-papel'),oab:v('eq-oab')||null,senha:v('eq-senha')})});window.lexEquipe('Conta criada para '+v('eq-email')+'.')}
+  catch(e){window.lexEquipe('Não criei: '+(e?.message||'erro'))}
+};
+window.lexEquipeDesativar=async function(id,nome){
+  if(!window.confirm('Desativar a conta de '+nome+'? O acesso cai na hora.'))return;
+  try{await lexApi('/api/equipe/desativar',{method:'POST',body:JSON.stringify({id})});window.lexEquipe('Conta de '+nome+' desativada. Se a OAB dela estava ligada ao Diário, troque em Diário e PJe.')}
+  catch(e){window.lexEquipe('Não desativei: '+(e?.message||'erro'))}
+};
 window.lexOpenProc=id=>openProc(id);
 
 async function home(){
@@ -420,7 +450,7 @@ window.lexArchiveChannelContact=async function(origem,id){
   catch(err){if(typeof window.toast==='function')window.toast(err.message||'Não foi possível arquivar','erro')}
 };
 
-window.lexMais=function(){navMark('mais');const body='<div class="lex-page-head"><div><small>Funções complementares</small><h1>Mais</h1></div><button onclick="lexToggleTheme()">◐</button></div><div class="lex-menu"><button onclick="lexOab()">⚖<span>Diário e PJe (conexões)</span><b>›</b></button><button onclick="goLex(\'agenda\')">👥<span>Clientes / Contatos</span><b>›</b></button><button onclick="goLex(\'calendario\')">📅<span>Agenda</span><b>›</b></button><button onclick="goLex(\'autuacao\')">📄<span>Documentos / Autuação</span><b>›</b></button><button disabled title="Módulo financeiro ainda não possui rota comercial própria">＄<span>Financeiro · em breve</span><b>·</b></button><button onclick="goLex(\'estatisticas\')">▥<span>Relatórios / Estatísticas</span><b>›</b></button><button onclick="lexEscritorio()">▦<span>Escritório / Setores</span><b>›</b></button><button onclick="goLex(\'escritorio\')">⚙<span>Configurações do escritório</span><b>›</b></button></div><h2 class="lex-channel-title">Canais de comunicação</h2><div class="lex-channels"><button onclick="lexChannel(\'whatsapp\')">🟢<span>WhatsApp</span></button><button onclick="lexChannel(\'telegram\')">🔵<span>Telegram</span></button><button onclick="lexChannel(\'all\')">✉️<span>Mensagens</span></button><button onclick="goLex(\'pje\')">Pe<span>PJe</span></button></div>';shell('Mais',body,'mais')};
+window.lexMais=function(){navMark('mais');const body='<div class="lex-page-head"><div><small>Funções complementares</small><h1>Mais</h1></div><button onclick="lexToggleTheme()">◐</button></div><div class="lex-menu"><button onclick="lexEquipe()">👥<span>Equipe (contas de acesso)</span><b>›</b></button><button onclick="lexOab()">⚖<span>Diário e PJe (conexões)</span><b>›</b></button><button onclick="goLex(\'agenda\')">👥<span>Clientes / Contatos</span><b>›</b></button><button onclick="goLex(\'calendario\')">📅<span>Agenda</span><b>›</b></button><button onclick="goLex(\'autuacao\')">📄<span>Documentos / Autuação</span><b>›</b></button><button disabled title="Módulo financeiro ainda não possui rota comercial própria">＄<span>Financeiro · em breve</span><b>·</b></button><button onclick="goLex(\'estatisticas\')">▥<span>Relatórios / Estatísticas</span><b>›</b></button><button onclick="lexEscritorio()">▦<span>Escritório / Setores</span><b>›</b></button><button onclick="goLex(\'escritorio\')">⚙<span>Configurações do escritório</span><b>›</b></button></div><h2 class="lex-channel-title">Canais de comunicação</h2><div class="lex-channels"><button onclick="lexChannel(\'whatsapp\')">🟢<span>WhatsApp</span></button><button onclick="lexChannel(\'telegram\')">🔵<span>Telegram</span></button><button onclick="lexChannel(\'all\')">✉️<span>Mensagens</span></button><button onclick="goLex(\'pje\')">Pe<span>PJe</span></button></div>';shell('Mais',body,'mais')};
 window.goLex=p=>go(p);
 window.renderPainel=home;window.renderTrabalho=window.lexTarefas;window.renderProcessos=window.lexProcessos;window.renderPrazos=window.lexPrazos;window.lexFocusV2=window.lexChat;
 function hook(){themeInit();disableLegacySweep();syncLegacyThemeButton();if(typeof window.ir==='function'&&!window.ir.__commercial){const old=window.ir;window.ir=function(page){if(page==='painel'){home();return}if(page==='trabalho'){window.lexTarefas();return}if(page==='processos'){window.lexProcessos();return}if(page==='prazos'){window.lexPrazos();return}return old.apply(this,arguments)};window.ir.__commercial=true}setTimeout(()=>{disableLegacySweep();syncLegacyThemeButton();const c=$('#content');if(c&&c.offsetParent!==null&&!$('.lex-screen',c))window.lexHome()},120)}
