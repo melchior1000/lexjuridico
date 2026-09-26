@@ -62,10 +62,11 @@ function lexTaskTimelineHtml(t){
 function lexTaskNeedsYouHtml(t){
   const need={aguardando_revisao:['Revisar a minuta','O LEX não protocola nem envia nada sem a sua conferência.'],aguardando_dados:['Completar a informação',t.pendencia||'Falta um dado para continuar.'],aguardando_documento_nitido:['Enviar documento legível',t.pendencia||'O documento anexado não está legível.'],aguardando_configuracao:['Configurar o servidor',t.pendencia||'A IA do servidor não está configurada.'],falhou:['Decidir se tento de novo',t.pendencia||'A execução falhou.']}[t.status];
   if(!need)return '';
-  const actions=(t.status==='aguardando_revisao'?`<button onclick="lexReviewTask('${t.id}')">Conferi a minuta</button>${t.tem_documento||t.resultado?`<button class="btn-outline" onclick="lexDownloadTask('${t.id}')">Baixar Word</button>`:''}<button class="btn-outline" onclick="lexReturnTask('${t.id}')">Devolver para correção</button>`:`<button onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`);
+  const actions=(t.status==='aguardando_revisao'?`<button onclick="lexReviewTask('${t.id}')">Conferi a minuta</button>${t.tem_documento||t.resultado?`<button class="btn-outline" onclick="lexDownloadTask('${t.id}')">Baixar Word</button>`:''}<button class="btn-outline" onclick="lexReturnTaskDetail('${t.id}')">Devolver para correção</button>`:`<button onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`);
   return `<section class="lex-task-need"><div class="lex-task-need-head"><span>PRECISA DE VOCÊ</span><small>para continuar</small></div><dl><dt>Quem</dt><dd>${lexEscape(t.processo_nome||t.processo_id||'Escritório')}</dd><dt>O quê</dt><dd>${lexEscape(need[0])}</dd><dt>Por quê</dt><dd>${lexEscape(need[1])}</dd></dl><div class="work-actions">${actions}</div></section>`;
 }
-async function lexReturnTask(id){const motivo=prompt('O que precisa ser corrigido na minuta? (vai para o LEX Redator)');if(!motivo||!motivo.trim())return;try{await lexApi('/api/tarefas/devolver',{method:'POST',body:JSON.stringify({id,motivo:motivo.trim()})});if(typeof window.lexTarefas==='function')window.lexTarefas(id);else renderTrabalho();}catch(e){toast(e.message,'erro');}}
+function lexAfterTaskAction(id){const detail=typeof document!=='undefined'?document.getElementById?.('lex-task-detail'):null;return detail?.isConnected&&typeof window.lexTarefas==='function'?window.lexTarefas(id):renderTrabalho();}
+async function lexReturnTaskDetail(id){const motivo=prompt('O que precisa ser corrigido na minuta? (vai para o LEX Redator)');if(!motivo||!motivo.trim())return;try{await lexApi('/api/tarefas/devolver',{method:'POST',body:JSON.stringify({id,motivo:motivo.trim()})});return lexAfterTaskAction(id);}catch(e){toast(e.message,'erro');}}
 function lexTaskDetailHtml(t){
   const stage=t.status==='concluida'?4:t.status==='aguardando_revisao'?3:t.status==='executando'?2:1;
   return `<article class="work-task lex-task-detail"><div class="work-task-head"><strong>${lexEscape(t.processo_nome||t.instrucao||t.tipo)}</strong><span class="work-state ${['concluida','aguardando_revisao'].includes(t.status)?'ready':''}">${lexEscape(lexTaskStatus[t.status]||t.status)}</span></div>
@@ -143,8 +144,8 @@ async function lexDownloadTask(id) {
     const url=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=url;a.download='LEX_minuta_'+id.slice(0,8)+'.docx';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
   }catch(e){toast(e.message,'erro');}
 }
-async function lexRetryTask(id){try{await lexApi('/api/tarefas/retomar',{method:'POST',body:JSON.stringify({id})});renderTrabalho();}catch(e){toast(e.message,'erro');}}
-async function lexReviewTask(id){try{const d=await lexApi('/api/tarefas?id='+id);if(!confirm('Você conferiu esta versão da minuta? Essa confirmação não protocola o documento.'))return;await lexApi('/api/tarefas/revisar',{method:'POST',body:JSON.stringify({id,sha256:d.tarefa.sha256})});renderTrabalho();}catch(e){toast(e.message,'erro');}}
+async function lexRetryTask(id){try{await lexApi('/api/tarefas/retomar',{method:'POST',body:JSON.stringify({id})});return lexAfterTaskAction(id);}catch(e){toast(e.message,'erro');}}
+async function lexReviewTask(id){try{const d=await lexApi('/api/tarefas?id='+id);if(!confirm('Você conferiu esta versão da minuta? Essa confirmação não protocola o documento.'))return;await lexApi('/api/tarefas/revisar',{method:'POST',body:JSON.stringify({id,sha256:d.tarefa.sha256})});return lexAfterTaskAction(id);}catch(e){toast(e.message,'erro');}}
 function lexExportConflict(){const url=URL.createObjectURL(new Blob([localStorage.getItem('lex_sync_conflict')||'{}'],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='LEX_alteracoes_para_conferir.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 async function renderEscritorio() {
   const host=document.getElementById('content');
