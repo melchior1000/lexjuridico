@@ -334,7 +334,8 @@ async function loadTasks(selectedId){
 }
 window.lexTarefas=async function(selectedId){navMark('tarefas');stopTaskWatch();
   shell(selectedId?'Tarefa':'Tarefas','<div class="lex-page-head"><div><small>'+(selectedId?'Em andamento':'Entregas do escritório')+'</small><h1>'+(selectedId?'Tarefa #'+esc(String(selectedId).slice(0,8)):'Tarefas')+'</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-task-detail" class="lex-panel" role="status">Consultando tarefas…</div>','home');
-  if(!selectedId||!(await loadTasks(selectedId)))return;
+  const keepPolling=await loadTasks(selectedId);
+  if(!selectedId||!keepPolling)return;
   const handle=setInterval(async()=>{if(!(await loadTasks(selectedId))&&taskWatch===handle)stopTaskWatch(handle)},15000);
   taskWatch=handle;
 };
