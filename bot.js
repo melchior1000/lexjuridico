@@ -108,9 +108,10 @@ const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-re
 const http = require('http');
 const {intakeDecision} = require('./lib/intake-door');
 const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-reception');
+const {createReceptionComposer} = require('./lib/reception-ai');
 const {createTelegramPoller} = require('./lib/telegram-poller');
 
-const {brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
+const {setReceptionComposer, brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -787,7 +788,18 @@ const processStore = new ProcessStore(sbRaw, {onCommit:(rows,version,device)=>{
 const sbReq = (method,table,data,query,headers) => table==='processos'
   ? processStore.gateway(method,data,query||{}) : sbRaw(method,table,data,query,headers);
 const recordStore = new RecordStore(sbRaw, process.env.CONFIG_TABLE || 'configuracoes');
+// Recepção inteligente dos canais: a IA escreve a conversa (modelo de canal, econômico)
+// dentro dos limites verificados em lib/reception-ai.js; a decisão continua do código.
+// `ia` e `aiAvailable` são definidos mais abaixo; o compositor só os chama em tempo de execução.
+const receptionComposer = createReceptionComposer({
+  ia:(messages,system,maxTok,modelo)=>ia(messages,system,maxTok,modelo),
+  aiAvailable:()=>aiAvailable(),
+  identity:()=>_idLex(),
+  modelo:MODELO_RAPIDO
+});
+setReceptionComposer(receptionComposer.compose);
 const telegramReception = createTelegramReception({records:recordStore,owner:CHAT_ID,
+  compose:receptionComposer.compose,
   send:(id,text)=>envTelegram(text,null,id),
   report:async text=>{
     const tg=await envTelegram(text,null,CHAT_ID).catch(()=>false);
