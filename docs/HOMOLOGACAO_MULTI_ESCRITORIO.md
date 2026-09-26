@@ -58,9 +58,15 @@ select count(*) from public.processos_cache where escritorio_id is null; -- deve
 
 Anote o `id` do escritório atual: é o `LEX_ESCRITORIO_ID`.
 
-**Rollback deste passo:** restaurar o backup do passo 1 (`pg_restore --clean`). A instalação
-atual continua funcionando **sem** mudar nada no Render enquanto o passo 4 não for feito —
-o modo REST ignora a RLS e o `escritorio_id` preenchido não atrapalha.
+**Rollback deste passo:** não restaure o backup por cima do banco já migrado supondo que
+`pg_restore --clean` removerá objetos criados depois do backup. Para voltar exatamente ao
+estado anterior, use um banco de restauração recém-criado/limpo (ou reverta explicitamente
+os objetos introduzidos pelas migrações) e só então rode `pg_restore --clean` com o backup
+do passo 1. Antes de recolocar a aplicação nesse banco, confira o esquema esperado e compare
+as contagens das tabelas registradas no passo 1; a restauração só está aprovada se estrutura
+e contagens coincidirem com o estado pré-migração. A instalação atual continua funcionando
+**sem** mudar nada no Render enquanto o passo 4 não for feito — o modo REST ignora a RLS e
+o `escritorio_id` preenchido não atrapalha.
 
 ## 3. Senha da role `lex_runtime` e string de conexão
 
