@@ -884,6 +884,7 @@ async function avisarTitular(text){
   if(process.env.LEX_OPERATOR_WHATSAPP) ok=(await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false))||ok;
   return ok;
 }
+const billingRoutes=require('./lib/billing-routes').createBillingRoutes({records:recordStore,authenticate:r=>validarToken(getToken(r)),headers:{},body:lerBody,log:m=>console.warn('[Cobrança]',m)});
 const pjeMonitor = createPjeMonitor({
   records:recordStore,processStore,
   notify:avisarTitular,
@@ -10558,7 +10559,7 @@ const server = http.createServer(async (req, res) => {
   // Negação por padrão: toda rota /api/* exige sessão válida, salvo as públicas
   // abaixo, que têm autenticação própria (senha, segredo de webhook ou conector).
   const ROTAS_PUBLICAS_LEX = new Set(['/api/login', '/api/ping', '/api/webhook-whatsapp',
-    '/api/whatsapp/webhook', '/api/conector/andamento', '/api/webhook-asaas', '/api/auth/refresh']);
+    '/api/whatsapp/webhook', '/api/conector/andamento', '/api/webhook-mercadopago', '/api/auth/refresh']);
   if(url.startsWith('/api/') && !ROTAS_PUBLICAS_LEX.has(url) && !validarToken(getToken(req))) {
     res.writeHead(401, CORS);
     res.end(JSON.stringify({error:'Nao autenticado'}));
@@ -12373,6 +12374,11 @@ if(url==='/api/memoria' && req.method==='GET') {
   // "Enviar prazos agora", "Resumo geral"). O token do bot fica SÓ no servidor
   // (TELEGRAM_TOKEN); o navegador nunca fala com api.telegram.org. Os prazos
   // saem da fila oficial (DeadlineWatch/deadline_legal_truth), nunca de p.prazo bruto.
+  // Cobrança da licença (Mercado Pago) e licença do escritório — política central em lib/license-policy.js.
+  if(url==='/api/webhook-mercadopago' || url.startsWith('/api/billing/')) {
+    try{ if(await billingRoutes.handle(req,res,url)) return; }
+    catch(e){ res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); return; }
+  }
   if(url==='/api/telegram/enviar' && req.method==='POST') {
     try {
       const pfTg = validarToken(getToken(req));
