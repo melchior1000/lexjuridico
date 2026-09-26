@@ -4778,7 +4778,7 @@ function _restaurarCacheAnaliseProc(p){
   setTimeout(()=>{
     const container = document.getElementById('ia-content-'+p.id);
     if(container && cached.julgador){
-      container.innerHTML = '<div class="ia-txt">'+String(cached.julgador).replace(/\n/g,'<br>')+'</div><div style="font-size:10px;color:var(--text3);margin-top:8px;font-style:italic">📦 Cache 24h (nenhuma IA consumida).</div>';
+      container.innerHTML = '<div class="ia-txt">'+lexEscape(cached.julgador).replace(/\n/g,'<br>')+'</div><div style="font-size:10px;color:var(--text3);margin-top:8px;font-style:italic">📦 Cache 24h (nenhuma IA consumida).</div>';
     }
   }, 0);
 }
@@ -4923,7 +4923,7 @@ function abrirProc(id){
   mostrarBackBar(p.grupo||'Processos', 'processos');
   const cor=COR[p.area]||'var(--accent)', sc=SC[p.status]||'#888', pf=fmtPrazo(p);
   const ands=(p.andamentos||[]).length
-    ?p.andamentos.map((a,i)=>`<div class="andamento-line"><div class="and-dot"></div><div style="flex:1"><div class="and-txt">${a.txt}</div><div class="and-data">${a.data}</div></div><button class="and-del" onclick="excluirAndamento(${p.id},${i})" title="Excluir">✕</button></div>`).join('')
+    ?p.andamentos.map((a,i)=>`<div class="andamento-line"><div class="and-dot"></div><div style="flex:1"><div class="and-txt">${lexEscape(a.txt)}</div><div class="and-data">${lexEscape(a.data)}</div></div><button class="and-del" onclick="excluirAndamento(${p.id},${i})" title="Excluir">✕</button></div>`).join('')
     :'<div style="font-size:13px;color:var(--text3);font-weight:300">Nenhum andamento registrado.</div>';
   const arquivosHtml=(p.arquivos||[]).length
     ?p.arquivos.map((a,i)=>`<div class="arquivo-item"><div class="arquivo-icon">${a.tipo==='pdf'?'📄':a.tipo==='doc'?'📝':'📎'}</div><div><div class="arquivo-nome">${a.nome||'(sem nome)'}</div><div class="arquivo-tipo">${(a.tipo||'arquivo').toUpperCase()} · ${a.data||''}</div></div><button onclick="removerArquivo(${p.id},${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;margin-left:auto;font-size:16px">✕</button></div>`).join('')
@@ -5202,7 +5202,7 @@ function imprimirProcesso(id){
     <div class="card"><h2>Descrição Estratégica</h2><p style="white-space:pre-wrap">${p.descricao||'—'}</p></div>
     ${(p.frentes||[]).length?`<div class="card"><h2>Frentes Processuais</h2><ul>${p.frentes.map(f=>`<li>${f}</li>`).join('')}</ul></div>`:''}
     ${(p.provas||[]).length?`<div class="card"><h2>Provas e Documentos</h2><ul>${p.provas.map(pr=>`<li>${pr}</li>`).join('')}</ul></div>`:''}
-    ${(p.andamentos||[]).length?`<div class="card"><h2>Andamentos (${p.andamentos.length})</h2>${p.andamentos.map(a=>`<div class="and-item"><div>${a.txt}</div><div class="and-data">${a.data}</div></div>`).join('')}</div>`:''}
+    ${(p.andamentos||[]).length?`<div class="card"><h2>Andamentos (${p.andamentos.length})</h2>${p.andamentos.map(a=>`<div class="and-item"><div>${lexEscape(a.txt)}</div><div class="and-data">${lexEscape(a.data)}</div></div>`).join('')}</div>`:''}
     <div style="text-align:center;padding:16px 0;font-size:11px;color:#aaa;border-top:1px solid #eee;margin-top:8px">
       ${esc.nome||''} ${esc.registro?' · '+esc.registro:''} ${esc.endereco?' · '+esc.endereco:''}
       <br>Gerado pelo Lex v14 · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}
@@ -5229,7 +5229,7 @@ function abaAnalise(procId, aba, btn){
 
   const cache = _analiseCache[procId];
   if(cache && cache[aba]){
-    container.innerHTML = '<div class="ia-txt">'+cache[aba].replace(/\n/g,'<br>')+'</div>';
+    container.innerHTML = '<div class="ia-txt">'+lexEscape(cache[aba]).replace(/\n/g,'<br>')+'</div>';
     return;
   }
 
@@ -5388,7 +5388,7 @@ C) Ações concretas para aumentar as chances de êxito`;
     // [ECONOMIA API] Persistir em cache 24h — se processo nao mudar, reusa.
     try { _cacheIA_set('analise', p, _analiseCache[procId]); } catch(_){}
     const container2 = document.getElementById('ia-content-'+procId);
-    if(container2) container2.innerHTML='<div class="ia-txt">'+(_analiseCache[procId][aba]).replace(/\n/g,'<br>')+'</div>';
+    if(container2) container2.innerHTML='<div class="ia-txt">'+lexEscape(_analiseCache[procId][aba]).replace(/\n/g,'<br>')+'</div>';
   } catch(e){
     const container2 = document.getElementById('ia-content-'+procId);
     if(container2) container2.innerHTML='<div class="ia-txt" style="color:var(--red)">Servidor offline. Tente novamente.</div>';
@@ -9736,15 +9736,15 @@ function _renderPropostaGestor(p) {
 
   let html = '<div style="background:color-mix(in srgb, var(--gold) 13%, transparent);border:1px solid var(--gold);border-radius:10px;padding:14px;margin:0 0 8px 0">';
   html += '<div style="font-weight:700;color:var(--gold);font-size:13px;margin-bottom:8px">📋 Proposta de atualização</div>';
-  if(andamento) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📝 <b>Andamento:</b> '+andamento+'</div>';
-  if(novoStatus && novoStatus !== proc.status) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">🔄 <b>Status:</b> '+proc.status+' → '+novoStatus+'</div>';
-  if(p.setor && p.setor !== proc.setor) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📂 <b>Setor:</b> '+(proc.setor||'?')+' → '+p.setor+'</div>';
+  if(andamento) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📝 <b>Andamento:</b> '+lexEscape(andamento)+'</div>';
+  if(novoStatus && novoStatus !== proc.status) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">🔄 <b>Status:</b> '+lexEscape(proc.status)+' → '+lexEscape(novoStatus)+'</div>';
+  if(p.setor && p.setor !== proc.setor) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📂 <b>Setor:</b> '+lexEscape(proc.setor||'?')+' → '+lexEscape(p.setor)+'</div>';
   if(typeof diasParado === 'number') html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">⏱ <b>Dias parado:</b> '+diasParado+'</div>';
-  if(novaProxacao) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">🎯 <b>Próxima ação:</b> '+novaProxacao+'</div>';
+  if(novaProxacao) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">🎯 <b>Próxima ação:</b> '+lexEscape(novaProxacao)+'</div>';
   if(novoPrazo === '') html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">⏱ <b>Prazo:</b> zerar</div>';
-  else if(novoPrazo) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📅 <b>Prazo novo:</b> '+novoPrazo+'</div>';
-  if(Array.isArray(p.lembretes_concluidos) && p.lembretes_concluidos.length) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">✅ <b>Baixar lembrete(s):</b> '+p.lembretes_concluidos.join(', ')+' — somente após confirmação</div>';
-  if(p.justificativa) html += '<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border2)">💭 '+p.justificativa+'</div>';
+  else if(novoPrazo) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">📅 <b>Prazo novo:</b> '+lexEscape(novoPrazo)+'</div>';
+  if(Array.isArray(p.lembretes_concluidos) && p.lembretes_concluidos.length) html += '<div style="font-size:12px;color:var(--text2);margin:4px 0">✅ <b>Baixar lembrete(s):</b> '+lexEscape(p.lembretes_concluidos.join(', '))+' — somente após confirmação</div>';
+  if(p.justificativa) html += '<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border2)">💭 '+lexEscape(p.justificativa)+'</div>';
   html += '<div style="display:flex;gap:8px;margin-top:10px">';
   html += '<button onclick="aplicarPropostaGestor()" style="flex:1;background:var(--green);border:none;border-radius:6px;padding:8px;color:#fff;font-weight:700;cursor:pointer;font-size:12px">✅ Aplicar</button>';
   html += '<button onclick="document.getElementById(\'gestor-proposta\').innerHTML=\'\';_gestorPropostaAtiva=null" style="flex:1;background:transparent;border:1px solid var(--border2);border-radius:6px;padding:8px;color:var(--text2);cursor:pointer;font-size:12px">❌ Descartar</button>';
