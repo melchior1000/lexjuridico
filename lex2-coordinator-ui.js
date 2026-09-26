@@ -134,7 +134,7 @@ function render(selectedId){
     +'<div class="lex2-command-row"><button class="lex2-attach" data-lex-attachment type="button" aria-label="Anexar documento ao processo">＋</button><textarea id="lex-chat-input" aria-label="Sua ordem ao LEX" rows="2" placeholder="Dê uma ordem ao LEX…"></textarea><button class="lex2-send" type="submit" aria-label="Enviar">↑</button></div>'
     +'<small class="lex2-command-note">Ex.: “LEX, quero X no processo Y, faça desse jeito Z”. O banco processual é preservado; eu encaminho internamente. Atos críticos continuam sujeitos à autorização humana.</small></form>'
     +dock()+'</main>';
-  setTimeout(()=>{const conv=document.getElementById('lex-conversation');if(conv)conv.scrollTop=conv.scrollHeight;refreshOperationalStatus();if(!id)renderBriefing()},40)
+  setTimeout(()=>{const conv=document.getElementById('lex-conversation');if(conv)conv.scrollTop=conv.scrollHeight;if(id)refreshOperationalStatus();else renderBriefing()},40)
 }
 // O LEX fala primeiro: cada aviso é uma mensagem com o botão que executa a ação
 // (mesmo caminho das ordens do WhatsApp/Telegram). Só prazo confirmado vira urgência.
@@ -147,7 +147,8 @@ async function renderBriefing(){
   const html=items.map(m=>'<div class="lex-msg bot lex2-says '+esc(m.tone||'info')+'"><p>'+esc(m.text)+'</p><div class="lex2-says-actions">'+m.actions.map(a=>'<button type="button" onclick="'+esc(a.onclick)+'">'+esc(a.label)+'</button>').join('')+'</div></div>').join('');
   const failed=b.failures&&b.failures.length?'<div class="lex-msg bot lex2-says warn"><p>Não consegui ler '+esc(b.failures.join(', '))+'. Não vou interpretar ausência de dado como ausência de problema.</p></div>':'';
   // Sem leitura completa não se afirma "nada exige você": ausência de dado não é ausência de problema.
-  box.innerHTML=failed+(html||(failed?'':'<div class="lex-msg bot lex2-says ok"><p>Nada exige você agora. Aviso aqui e no WhatsApp quando chegar intimação, prazo ou mensagem de cliente.</p></div>'));
+  const needsYou=(b.messages||[]).some(m=>m?.needsYou===true);
+  box.innerHTML=failed+html+((needsYou||failed)?'':'<div class="lex-msg bot lex2-says ok"><p>Nada exige você agora. Aviso aqui e no WhatsApp quando chegar intimação, prazo ou mensagem de cliente.</p></div>');
   const status=document.getElementById('lex2-operational-status');
   if(status&&b.status)status.innerHTML='<b>LEX</b><span>'+esc(b.status)+' · '+esc(b.active.length)+' processo'+(b.active.length===1?'':'s')+' acompanhado'+(b.active.length===1?'':'s')+'.</span>';
 }
