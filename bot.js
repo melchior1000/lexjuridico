@@ -11250,11 +11250,13 @@ const server = http.createServer(async (req, res) => {
         if(!porDia[d]) porDia[d] = 0;
         porDia[d] += 1;
       }
-      // Logins registrados só em memória (POST /api/tempo-uso/login) também
-      // contam: a tabela pode não existir ou ainda não ter recebido a linha.
+      // O login cria uma sessão na tabela e o navegador registra o mesmo login
+      // em memória. A tabela prevalece em cada dia para não contá-lo duas vezes;
+      // a memória cobre dias sem registro persistido ou falha da consulta.
+      const diasPersistidos = new Set(rows.map(r=>r.data).filter(Boolean));
       let emMemoria = 0;
       for(const r of (global._tempoUsoRegistros||[])) {
-        if(r.tipo !== 'login' || r.perfil !== perfilConsulta || !r.data || r.data < ini) continue;
+        if(r.tipo !== 'login' || r.perfil !== perfilConsulta || !r.data || r.data < ini || diasPersistidos.has(r.data)) continue;
         if(!porDia[r.data]) porDia[r.data] = 0;
         porDia[r.data] += 1; emMemoria++;
       }
