@@ -68,7 +68,7 @@ async function homologar({admin,run,manter=false,log=console.log,error=console.e
         try{await ins(B,mk(A,'intruso'));rec.gravacao_em_nome_do_outro=false;fail(table,'B inseriu linha com escritorio_id de A')}
         catch(e){rec.gravacao_em_nome_do_outro=/row-level security|imutavel|violates/i.test(e.message);if(!rec.gravacao_em_nome_do_outro)fail(table,'erro inesperado ao tentar gravar em nome de A: '+e.message)}
         try{const r=await as(B,`update public.${table} set escritorio_id=$1 where escritorio_id=$2`,[A,B]);rec.troca_de_escritorio=rc(r)===0;if(!rec.troca_de_escritorio)fail(table,'B moveu linha própria para A')}
-        catch(e){rec.troca_de_escritorio=/row-level security|imutavel|violates/i.test(e.message)}
+        catch(e){rec.troca_de_escritorio=/row-level security|imutavel|violates/i.test(e.message);if(!rec.troca_de_escritorio)fail(table,'erro inesperado ao tentar trocar de escritório: '+e.message)}
         const aStill=(await as(A,`select count(*)::int as n from public.${table} where escritorio_id=$1`,[A])).rows[0].n;
         if(Number(aStill)<1)fail(table,'A perdeu o próprio dado durante os ataques');
         if(rec.rls&&rec.leitura_cruzada&&rec.alteracao_cruzada&&rec.exclusao_cruzada&&rec.gravacao_em_nome_do_outro&&rec.troca_de_escritorio)ok(table,'isolado');
@@ -80,11 +80,15 @@ async function homologar({admin,run,manter=false,log=console.log,error=console.e
   }catch(e){if(!/role inválida/.test(e.message))fail('geral',e.message)}
   finally{
     if(!manter){
-      try{
-        for(const table of TENANT_TABLES){await admin.query(`delete from public.${table} where escritorio_id = any($1::uuid[])`,[[A,B]]).catch(()=>{})}
-        await admin.query('delete from public.escritorios where id = any($1::uuid[])',[[A,B]]);
-        log('  ✓ limpeza: dados sintéticos removidos');
-      }catch(e){error('  ! limpeza incompleta: '+e.message+' (remova manualmente os escritórios '+A+' e '+B+')')}
+      const falhasAntes=evidence.falhas.length;
+      for(const table of TENANT_TABLES){
+        try{await admin.query(`delete from public.${table} where escritorio_id = any($1::uuid[])`,[[A,B]])}
+        catch(e){fail('limpeza '+table,e.message)}
+      }
+      try{await admin.query('delete from public.escritorios where id = any($1::uuid[])',[[A,B]])}
+      catch(e){fail('limpeza escritorios',e.message)}
+      if(evidence.falhas.length===falhasAntes)log('  ✓ limpeza: dados sintéticos removidos');
+      else error('  ! limpeza incompleta: remova manualmente os escritórios '+A+' e '+B);
     }else log('  · --manter: escritórios sintéticos preservados '+A+' / '+B);
   }
   evidence.fim=new Date().toISOString();evidence.ok=evidence.falhas.length===0;
