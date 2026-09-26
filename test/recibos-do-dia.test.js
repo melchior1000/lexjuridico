@@ -85,3 +85,11 @@ test('tela Recibos mostra contadores, recibos com quem/o quê/autorização e co
   assert.match(html,/lexPrefill\(&quot;Corrija o recibo de 09:52/);
   assert.doesNotMatch(html,/onclick="[^"]*"[^>]*onmouseover=/,'texto do recibo não pode criar atributo de evento');
 });
+
+
+test('falha do histórico persistido da recepção aparece nos Recibos sem apagar as outras fontes',async()=>{
+  const r=await executeOfficeQuery(deps({reception:{listEvents:async()=>{throw new Error('Supabase indisponível')}}}),{action:'daily_receipts'},{now:NOW,profile:'admin'});
+  assert.ok(r.result.falhas.includes('recepção'));
+  assert.ok(r.result.recibos.some(x=>x.tipo==='mensagem_enviada'),'outras fontes continuam visíveis');
+  assert.doesNotMatch(r.message,/não há ação minha registrada/);
+});
