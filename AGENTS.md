@@ -765,3 +765,18 @@ Não reconstrua o LEX.
 Não pare entre etapas sem bloqueio humano real.
 
 **MISSÃO FINAL: ENTREGUE O LEX JURÍDICO FUNCIONAL E COMERCIAL.**
+
+
+## AGENT SKILLS LOCAIS
+
+As skills de engenharia em `.claude/skills/` complementam este arquivo e devem ser usadas conforme a tarefa. Priorize:
+- `test-driven-development` para correções e mudanças de comportamento;
+- `debugging-and-error-recovery` para falhas reproduzíveis;
+- `security-and-hardening` para autenticação, tenant/RLS, billing, PJe, prazos, canais e dados;
+- `frontend-ui-engineering` + `browser-testing-with-devtools` para interface;
+- `api-and-interface-design` para contratos e integrações;
+- `observability-and-instrumentation` para logs, métricas e diagnóstico;
+- `code-review-and-quality` antes de merge;
+- `shipping-and-launch` para deploy e homologação.
+
+Regra fixa: nenhuma skill genérica pode reduzir as exigências deste `AGENTS.md`, da lista-mestra ou das travas humanas do LEX. Veja `docs/AGENT_SKILLS.md`.
