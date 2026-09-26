@@ -181,50 +181,69 @@ function safeCaseLabel(p){if(processOfficial(p))return p?.nome_oficial||p?.parte
 function vencidosIds(){return procs().filter(p=>processOfficial(p)&&deadlineTruthDue(p)&&!p?.prazo_baixa?.ativa&&!p?.deadline_truth_resolvido_em&&deadlineDays(p)<0&&!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''))).map(p=>String(p.id))}
 window.lexFixCnj=fixCnj;
 window.lexPrazosVencidos=ids=>prazosSheet(Array.isArray(ids)&&ids.length?ids.map(String):vencidosIds());
-async function today(){
- const host=document.getElementById('content');if(!host)return;
- document.body.classList.add('lex-commercial','lex2-core');
- host.innerHTML='<main class="lex-screen lex-today lex-home-conversation-screen"><header class="lex-top"><div><strong>LEX</strong><small>SEU ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header><section class="lex-today-head"><small>LEX</small><h1>Estou conferindo o escritório.</h1><p>Só trato parte, andamento e prazo como verdade depois de fonte oficial.</p></section><div class="lex-today-feedback" role="status"></div><section class="lex-today-list lex-home-conversation" aria-label="Atualização do LEX"><div class="lex-home-msg bot"><b>LEX</b><p>Um instante. Estou lendo o estado do escritório.</p></div></section><button class="lex-home-command" onclick="lexChat()"><span>Fale comigo sobre um processo, prazo ou tarefa…</span><b>↑</b></button>'+dock()+'</main>';
- const surface=host.firstElementChild,ps=procs(),failures=[];
+// Estado do escritório em mensagens do LEX, cada uma com a ação que executa.
+// Determinístico (sem IA): lê tarefas/prazos, conexões e recepção e devolve
+// {messages:[{text,tone,actions:[{label,onclick}]}], failures, pjeOk, djenOk, status}.
+// Reutilizado pela tela "Hoje" (today) e pela Conversa (lex2-coordinator-ui.js).
+async function briefing(){
+ const ps=procs(),failures=[];
  const active=ps.filter(p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||'')));
  const official=active.filter(processOfficial),pending=active.filter(p=>!processOfficial(p));
  const results=await Promise.allSettled([lexApi('/api/trabalho'),lexApi('/api/escritorio/oab'),lexApi('/api/escritorio/recepcao')]);
- if(!surface.isConnected)return;
  const work=results[0],connections=results[1],reception=results[2],messages=[];
- messages.push('Estou acompanhando '+active.length+' processo'+(active.length===1?'':'s')+'. '+official.length+' '+(official.length===1?'tem':'têm')+' leitura oficial registrada.');
- if(pending.length)messages.push('Há '+pending.length+' processo'+(pending.length===1?'':'s')+' com dados antigos ou manuais ainda sem leitura oficial. Não vou usar nome, partes, prazo ou urgência desses cadastros como verdade até conferir o tribunal.');
+ const say=(text,tone,actions)=>messages.push({text,tone:tone||'info',actions:actions||[]});
+ say('Estou acompanhando '+active.length+' processo'+(active.length===1?'':'s')+'. '+official.length+' '+(official.length===1?'tem':'têm')+' leitura oficial registrada.');
+ if(pending.length)say('Há '+pending.length+' processo'+(pending.length===1?'':'s')+' com dados antigos ou manuais ainda sem leitura oficial. Não vou usar nome, partes, prazo ou urgência desses cadastros como verdade até conferir o tribunal.','warn',[{label:'Ver processos',onclick:'lexProcessos()'}]);
  let pjeOk=false,djenOk=false;
  if(connections.status==='fulfilled'){
    const pje=connections.value?.pje||{},oabs=Array.isArray(connections.value?.oabs)?connections.value.oabs:[];
    pjeOk=pje.configurado===true;
    djenOk=oabs.length>0;
-   if(pjeOk)messages.push('PJe/eproc está configurado para: '+(Array.isArray(pje.tribunais)&&pje.tribunais.length?pje.tribunais.join(', '):'tribunal configurado')+'. Posso conferir partes e andamentos.');
-   else messages.push('PJe/eproc ainda não está ligado. Enquanto isso eu não consigo validar partes e andamentos no tribunal e não vou fingir que consigo.');
-   if(djenOk)messages.push('Diário (DJEN) está ligado a '+oabs.length+' inscrição'+(oabs.length===1?'':'ões')+'. Publicação só vira prazo depois da confirmação exigida pelo LEX.');
-   else messages.push('Diário (DJEN) ainda não está ligado a uma OAB do escritório. Não vou dizer que as publicações estão monitoradas.');
+   if(pjeOk)say('PJe/eproc está configurado para: '+(Array.isArray(pje.tribunais)&&pje.tribunais.length?pje.tribunais.join(', '):'tribunal configurado')+'. Posso conferir partes e andamentos.','ok',[{label:'Atualizar no tribunal',onclick:"lexAskLex('atualize meus processos')"}]);
+   else say('PJe/eproc ainda não está ligado. Enquanto isso eu não consigo validar partes e andamentos no tribunal e não vou fingir que consigo.','warn',[{label:'Ligar PJe/eproc',onclick:'lexOab()'}]);
+   if(djenOk)say('Diário (DJEN) está ligado a '+oabs.length+' inscrição'+(oabs.length===1?'':'ões')+'. Publicação só vira prazo depois da confirmação exigida pelo LEX.','ok');
+   else say('Diário (DJEN) ainda não está ligado a uma OAB do escritório. Não vou dizer que as publicações estão monitoradas.','warn',[{label:'Ligar Diário (DJEN)',onclick:'lexOab()'}]);
  }else failures.push('conexões do tribunal');
+ let running=0,waiting=0;
  if(work.status==='fulfilled'){
    const desk=work.value?.prazos||{},confirmed=list(desk.correndo),toReview=list(desk.cunhar);
-   if(confirmed.length)messages.push('Há '+confirmed.length+' prazo'+(confirmed.length===1?' oficial em acompanhamento':'s oficiais em acompanhamento')+'.');
-   if(toReview.length)messages.push('Há '+toReview.length+' publicação'+(toReview.length===1?' aguardando':' aguardando')+' conferência de prazo. Eu não conto como prazo confirmado antes disso.');
-   const review=list(work.value?.tarefas).filter(t=>t?.status==='aguardando_revisao').length;
-   if(review)messages.push(review+' entrega'+(review===1?' está':'s estão')+' aguardando sua revisão.');
+   const late=confirmed.filter(x=>Number(x?.days_to_due)<0),today_=confirmed.filter(x=>Number(x?.days_to_due)===0);
+   if(late.length)say(late.length+' prazo'+(late.length===1?' oficial venceu':'s oficiais venceram')+'. Confira no tribunal se foi cumprido; a baixa é gravada no servidor.','late',[{label:'Resolver agora',onclick:'lexPrazosVencidos()'}]);
+   if(today_.length)say(today_.length+' prazo'+(today_.length===1?' oficial vence':'s oficiais vencem')+' hoje.','urgent',[{label:'Ver com o LEX',onclick:"lexAskLex('prazos de hoje')"}]);
+   if(confirmed.length)say('Há '+confirmed.length+' prazo'+(confirmed.length===1?' oficial em acompanhamento':'s oficiais em acompanhamento')+'.','info',[{label:'Ver prazos',onclick:'lexPrazos()'}]);
+   if(toReview.length)say('Há '+toReview.length+' publicação'+(toReview.length===1?' aguardando':' aguardando')+' conferência de prazo. Eu não conto como prazo confirmado antes disso.','soon',[{label:'Conferir',onclick:"lexSetPrazoTab('revisar')"}]);
+   const tasks=list(work.value?.tarefas);
+   const review=tasks.filter(t=>t?.status==='aguardando_revisao').length;
+   waiting=tasks.filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
+   running=tasks.filter(t=>!['concluida','falhou','cancelada'].includes(t?.status)).length-waiting;
+   if(review)say(review+' entrega'+(review===1?' está':'s estão')+' aguardando sua revisão.','ok',[{label:'Revisar',onclick:'lexTarefas()'}]);
    if(desk.erro)failures.push('prazos');
  }else failures.push('tarefas e prazos');
  if(reception.status==='fulfilled'){
    const rows=list(reception.value?.contatos||reception.value?.itens||reception.value?.recepcao).filter(r=>r?.status!=='arquivado');
-   if(rows.length)messages.push(rows.length+' conversa'+(rows.length===1?' de cliente está':'s de clientes estão')+' em andamento na recepção.');
+   if(rows.length)say(rows.length+' conversa'+(rows.length===1?' de cliente está':'s de clientes estão')+' em andamento na recepção.','info',[{label:'Abrir',onclick:"lexChannel('all')"}]);
  }else failures.push('recepção');
+ const status=(running>0?running+' tarefa'+(running===1?'':'s')+' em andamento':'nenhuma tarefa em andamento')+' · '+(waiting>0?waiting+(waiting===1?' aguarda':' aguardam')+' você':'nada aguarda você');
+ return{messages,failures,pjeOk,djenOk,active,official,pending,running,waiting,status};
+}
+window.lexBriefing=briefing;
+async function today(){
+ const host=document.getElementById('content');if(!host)return;
+ document.body.classList.add('lex-commercial','lex2-core');
+ host.innerHTML='<main class="lex-screen lex-today lex-home-conversation-screen"><header class="lex-top"><div><strong>LEX</strong><small>SEU ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header><section class="lex-today-head"><small>LEX</small><h1>Estou conferindo o escritório.</h1><p>Só trato parte, andamento e prazo como verdade depois de fonte oficial.</p></section><div class="lex-today-feedback" role="status"></div><section class="lex-today-list lex-home-conversation" aria-label="Atualização do LEX"><div class="lex-home-msg bot"><b>LEX</b><p>Um instante. Estou lendo o estado do escritório.</p></div></section><button class="lex-home-command" onclick="lexChat()"><span>Fale comigo sobre um processo, prazo ou tarefa…</span><b>↑</b></button>'+dock()+'</main>';
+ const surface=host.firstElementChild;
+ const b=await briefing();
+ if(!surface.isConnected)return;
  const head=surface.querySelector('.lex-today-head');
- head.querySelector('h1').textContent=pending.length?'Estou conferindo antes de afirmar.':'Escritório conferido.';
- head.querySelector('p').textContent=official.length+' de '+active.length+' processo'+(active.length===1?'':'s')+' com leitura oficial registrada.';
+ head.querySelector('h1').textContent=b.pending.length?'Estou conferindo antes de afirmar.':'Escritório conferido.';
+ head.querySelector('p').textContent=b.official.length+' de '+b.active.length+' processo'+(b.active.length===1?'':'s')+' com leitura oficial registrada.';
  const feedback=surface.querySelector('.lex-today-feedback');
- if(failures.length)feedback.textContent='Não consegui ler '+failures.join(', ')+'. Não vou interpretar ausência de dado como ausência de problema.';
+ if(b.failures.length)feedback.textContent='Não consegui ler '+b.failures.join(', ')+'. Não vou interpretar ausência de dado como ausência de problema.';
  const target=surface.querySelector('.lex-today-list');
- target.innerHTML=messages.map(m=>'<div class="lex-home-msg bot"><b>LEX</b><p>'+esc(m)+'</p></div>').join('')
+ target.innerHTML=b.messages.map(m=>'<div class="lex-home-msg bot"><b>LEX</b><p>'+esc(m.text)+'</p></div>').join('')
    +'<div class="lex-home-actions">'
-   +(pjeOk?'<button onclick="lexAskLex(\'atualize meus processos\')">Atualizar processos no tribunal</button>':'<button onclick="lexOab()">Ligar PJe/eproc</button>')
-   +(djenOk?'':'<button onclick="lexOab()">Ligar Diário (DJEN)</button>')
+   +(b.pjeOk?'<button onclick="lexAskLex(\'atualize meus processos\')">Atualizar processos no tribunal</button>':'<button onclick="lexOab()">Ligar PJe/eproc</button>')
+   +(b.djenOk?'':'<button onclick="lexOab()">Ligar Diário (DJEN)</button>')
    +'<button onclick="lexChat()">Conversar com o LEX</button></div>';
 }
 function patch(){window.lexHome=today;window.renderPainel=today;const previous=window.ir;if(typeof previous==='function'&&!previous.__lexToday){const route=function(page){if(page==='painel')return today();return previous.apply(this,arguments)};route.__lexToday=true;window.ir=route}}
