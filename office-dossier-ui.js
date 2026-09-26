@@ -23,7 +23,7 @@ function row(x){const detail=x.detail&&x.detail!==x.source?'<p>'+esc(x.detail)+'
 function shell(p){const id=esc(String(p.id)),numero=esc(p.numero||p.case_number||''),nome=esc(p.nome||p.cliente||p.partes||p.title||'Processo'),caseType=esc(p.case_type||p.tipo_processo||'judicial'),next=esc(p.next_action||p.proxima_acao||'Sem ação pendente registrada'),due=esc(brDate(p.next_action_due_at||p.prazo||''));const items=timeline(p);
  const partes=partesOf(p);
  const dockNav='<nav class="lex-dock"><button onclick="lexHome()"><b>⌂</b><span>Início</span></button><button class="on" onclick="lexProcessos()"><b>▣</b><span>Processos</span></button><button class="lex-main" onclick="lexChat()"><b>◉</b><span>LEX</span></button><button onclick="lexPrazos()"><b>◷</b><span>Prazos</span></button><button onclick="lexMais()"><b>☰</b><span>Mais</span></button></nav>';
- const body='<main class="lex-screen lex-dossier-screen"><header class="lex-top"><div class="lex-brand"><button class="lex-shell-back" onclick="lexProcessos()" aria-label="Voltar">‹</button><div><strong>LEX</strong><small>PROCESSO</small></div></div></header>'
+ const body='<main class="lex-screen lex-dossier-screen"><header class="lex-top"><div class="lex-brand"><button class="lex-shell-back" onclick="lexProcessos()" aria-label="Voltar">‹</button><div><strong>LEX</strong><small>PROCESSO</small>'+(typeof lexAvisoHtml==='function'?lexAvisoHtml():'')+'</div></div></header>'
   +'<section class="lex-dossier-head"><div><small>'+caseType+(numero?' · '+numero:' · número a confirmar')+'</small><h1>'+nome+'</h1>'
   +(partes?'<p class="lex-dossier-partes">'+partes+'</p>':'')
   +'<p>Próxima ação: '+next+(due?' · <b>'+due+'</b>':'')+'</p></div></section>'

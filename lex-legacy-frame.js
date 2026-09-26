@@ -18,7 +18,7 @@
       const title=(TITLES.find(([re])=>re.test(text))||[,'Mais'])[1];
       const top=document.createElement('header');
       top.className='lex-top lex-legacy-top';
-      top.innerHTML='<div class="lex-brand"><button class="lex-shell-back" onclick="lexMais()" aria-label="Voltar">‹</button><div><strong>'+title+'</strong></div></div>';
+      top.innerHTML='<div class="lex-brand"><button class="lex-shell-back" onclick="lexMais()" aria-label="Voltar">‹</button><div><strong>'+title+'</strong>'+(typeof lexAvisoHtml==='function'?lexAvisoHtml():'')+'</div></div>';
       host.prepend(top);
       host.insertAdjacentHTML('beforeend',dock);
       host.classList.add('lex-legacy-framed');
