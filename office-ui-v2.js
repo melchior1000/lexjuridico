@@ -127,8 +127,7 @@ function renderProcessList(){
 }
 function setDeadlineServerState(work){deadlineServerState=Array.isArray(work?.prazos?.todos)?work.prazos.todos.filter(x=>x?.deadline_legal_truth===true&&x?.case_id!=null):[]}
 function deadlineTruthMap(){return new Map(deadlineServerState.map(x=>[String(x.case_id),x]))}
-// Mantida pelo contrato de prazos (test/commercial-ui-corrections).
-// eslint-disable-next-line no-unused-vars
+// Mantida pelo contrato de prazos (test/commercial-ui-corrections); usada por trustedDeadline().
 function deadlineConfirmed(p){return deadlineTruthMap().has(String(p?.id))}
 function deadlineItems(){const trusted=deadlineTruthMap();return procs().map(p=>{const t=trusted.get(String(p.id));if(t){const d=Number(t.days_to_due);return{p,d:Number.isFinite(d)?d:9999,confirmed:true,due:t.prazo||null}}return{p,d:days(p),confirmed:false,due:null}}).filter(x=>x.d<9999).sort((a,b)=>a.d-b.d)}
 function deadlineBuckets(all=deadlineItems()){return{revisar:all.filter(x=>!x.confirmed),vencidos:all.filter(x=>x.confirmed&&x.d<0),hoje:all.filter(x=>x.confirmed&&x.d===0),dias7:all.filter(x=>x.confirmed&&x.d>0&&x.d<=7),todos:all}}

@@ -9,7 +9,8 @@ const vm=require('node:vm');
 const SRC=fs.readFileSync(path.join(__dirname,'..','office-ui-v2.js'),'utf8');
 const {cnjCheckDigits,formatCnj}=require('../lib/carteira-audit');
 const validCnj=(seq,tail)=>{const raw=seq+'00'+tail;return formatCnj(seq+cnjCheckDigits(raw)+tail)};
-const iso=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+// Data LOCAL (não UTC): a tela calcula prazos em hora local, e toISOString() viraria "amanhã" após as 21h em UTC-3.
+const iso=n=>{const d=new Date();d.setDate(d.getDate()+n);const p=x=>String(x).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())};
 
 function load(list){
   const nodes={'#content':{innerHTML:'',offsetParent:null,querySelector:()=>null}};
