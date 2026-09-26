@@ -18,9 +18,9 @@ function deps(over={}){
   };
   return{
     records:{list:async prefix=>Object.entries(kv).filter(([k])=>k.startsWith(prefix)).map(([,v])=>v),read:async k=>kv[k]?{value:kv[k]}:null},
-    reception:{list:async()=>[{numero:'5561911112222',nome:'Carlos Lima',classe:'trabalhista',atualizado_em:T+'04:10:00Z'},{numero:'5561933334444',nome:'Antigo',atualizado_em:'2026-09-20T10:00:00Z'}]},
+    reception:{listEvents:async({offset=0})=>offset?[]:[{numero:'5561911112222',nome:'Carlos Lima',direcao:'saida_lex',texto:'Recebi sua mensagem e encaminhei ao escritório.',classe:'trabalhista',criado_em:T+'04:10:00Z'},{numero:'5561933334444',nome:'Arquivado',direcao:'saida_lex',texto:'Atendimento encerrado.',criado_em:'2026-09-20T10:00:00Z'}]},
     processStore:{read:async()=>({processes:[
-      {id:'p1',nome:'Banco Alfa · Execução',numero:'1000042-11.2025.4.06.3818',status:'ATIVO',last_court_sync_at:T+'09:40:00Z',andamentos:[{data:'2026-09-26',txt:'[DATAJUD] Juntada de petição',origem:'datajud',importado_em:T+'09:40:00Z'},{data:'2026-09-10',txt:'[DATAJUD] antigo',origem:'datajud',importado_em:'2026-09-10T09:40:00Z'},{data:'2026-09-26',txt:'anotação manual sem origem'}],prazo_baixa:{ativa:true,vencimento:'2026-09-25',marcado_em:T+'13:05:00Z',marcado_por:'admin'}},
+      {id:'p1',nome:'Banco Alfa · Execução',numero:'1000042-11.2025.4.06.3818',status:'ATIVO',last_court_sync_at:T+'09:40:00Z',andamentos:[{data:'2026-09-26',txt:'[DATAJUD] Juntada de petição',origem:'datajud',importado_em:T+'09:40:00Z'},{data:'2026-09-26',txt:'Prazo marcado como cumprido',origem:'lex',importado_em:T+'13:05:00Z'},{data:'2026-09-10',txt:'[DATAJUD] antigo',origem:'datajud',importado_em:'2026-09-10T09:40:00Z'},{data:'2026-09-26',txt:'anotação manual sem origem'}],prazo_baixa:{ativa:true,vencimento:'2026-09-25',marcado_em:T+'13:05:00Z',marcado_por:'admin'}},
       {id:'p2',nome:'Maria Souza · Ação',numero:'5004158-61.2024.8.13.0704',status:'ATIVO',partes_verificadas_em:T+'09:40:00Z',prazoReal:'2026-10-14',prazo_confirmado_em:T+'13:10:00Z',prazo_confirmado_por:'admin',djen_id_origem:'d1'}
     ]})},
     engine:{list:async()=>[
@@ -45,6 +45,7 @@ test('daily_receipts agrega só o que foi registrado hoje em Brasília, com hora
   const and=r.result.recibos.find(x=>x.tipo==='andamento_registrado');
   assert.match(and.oque,/Juntada de petição/);assert.equal(and.origem,'datajud');assert.equal(and.ref,'p1');
   assert.ok(!r.result.recibos.some(x=>/anotação manual/.test(x.oque)),'andamento sem origem oficial não vira recibo');
+  assert.ok(!r.result.recibos.some(x=>x.tipo==='andamento_registrado'&&x.origem==='lex'),'baixa do LEX aparece só como prazo_cumprido');
   const noite=r.result.recibos.find(x=>x.tipo==='rotina_noturna');
   assert.match(noite.oque,/120 consultados · 7 andamentos novos · 1 erros/);
   assert.deepEqual(r.result.contagens,{concluidas:1,em_andamento:1,aguardam_voce:1,recibos:8});
@@ -81,5 +82,6 @@ test('tela Recibos mostra contadores, recibos com quem/o quê/autorização e co
   assert.match(html,/&lt;b&gt;x&lt;\/b&gt;/,'conteúdo escapado');
   assert.match(html,/TAREFA CONCLUÍDA[\s\S]*lexTarefas\('t1'\)/);
   assert.match(html,/Enviar correção/);
-  assert.match(html,/lexPrefill\("Corrija o recibo de 09:52/);
+  assert.match(html,/lexPrefill\(&quot;Corrija o recibo de 09:52/);
+  assert.doesNotMatch(html,/onclick="[^"]*"[^>]*onmouseover=/,'texto do recibo não pode criar atributo de evento');
 });
