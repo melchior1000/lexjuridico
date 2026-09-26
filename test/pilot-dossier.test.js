@@ -33,5 +33,5 @@ test('lista de processos abre a pele comercial do dossiê',()=>{
 });
 
 test('eslint cobre o novo sidecar comercial',()=>{
-  assert.match(pkg.scripts.lint,/office-dossier-ui\.js/);
+  assert.match(pkg.scripts.lint,/\*\.js/,'a raiz inteira (inclui office-dossier-ui.js) passa pelo lint');
 });

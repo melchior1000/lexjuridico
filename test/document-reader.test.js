@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {assessTextQuality,extractPdfText,readDocument,readWithVision,mustBlockReading,unreadMessage}=require('../lib/document-reader');
+const {assessTextQuality,readDocument,readWithVision,mustBlockReading,unreadMessage}=require('../lib/document-reader');
 
 const goodText=('BANCO EXEMPLO EXTRATO CONTA 1234 Data 03/09/2026 Saldo R$ 1.234,56 Movimento pagamento R$ 100,00. ').repeat(8);
 

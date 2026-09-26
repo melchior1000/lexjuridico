@@ -9,61 +9,6 @@ function days(p){
  let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,day]=raw.split('-');d=new Date(+y,+m-1,+day)}else d=new Date(raw);
  if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000);
 }
-const taskStates={aguardando_dados:['Informação necessária','Complete as informações indicadas na tarefa.'],aguardando_documento_nitido:['Documento ilegível','Envie uma cópia legível do documento solicitado.'],aguardando_documento:['Documento necessário','Confira o documento solicitado e anexe ao processo.'],aguardando_configuracao:['Configuração pendente','Confira a configuração indicada antes de tentar novamente.'],aguardando_revisao:['Entrega para revisão','Leia a minuta e registre sua decisão de revisão.'],bloqueada:['Tarefa bloqueada','Confira o impedimento antes de continuar.'],falhou:['Tarefa interrompida','Confira o motivo da falha antes de tentar novamente.']};
-function deadlineTitle(days){
- if(days<0)return'Prazo confirmado vencido';
- if(days===0)return'Prazo confirmado vence hoje';
- if(days===1)return'Prazo confirmado vence amanhã';
- return'Prazo confirmado em '+days+' dias';
-}
-function djenSuggestion(row){return row?.prazo_sugestao&&typeof row.prazo_sugestao==='object'?row.prazo_sugestao:null}
-function prazoLabel(s){
- if(!s?.dias)return'';
- return s.dias+' dia'+(s.dias===1?'':'s')+(s.modo==='uteis'?' úteis':s.modo==='corridos'?' corridos':'');
-}
-async function postDjenDeadline(row,due,regime,note,suggestionSourceHash=null){
- const clean=String(due||'').trim();
- if(!/^\d{4}-\d{2}-\d{2}$/.test(clean))throw new Error('Informe a data confirmada no formato AAAA-MM-DD.');
- await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:row.djen_id,due_at:clean,regime:String(regime||'manual').trim()||'manual',observacao:String(note||''),suggestion_source_hash:suggestionSourceHash||null})});
- await today();
-}
-async function confirmDjenSuggestion(row){
- const s=djenSuggestion(row);
- if(!s?.due_at_proposto)return correctDjenDeadline(row);
- const ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
- const resumo=[
-   p?.nome||p?.numero||row.cnj||'Processo',
-   row.tipo||'Intimação DJEN',
-   s.trecho?'Trecho identificado: '+s.trecho:null,
-   prazoLabel(s)?'Prazo identificado: '+prazoLabel(s):null,
-   'Vencimento PROPOSTO pelo LEX: '+s.due_at_proposto,
-   s.calendario_verificado===true?'Calendário marcado como verificado.':'Calendário local NÃO verificado: confira feriados/suspensões.',
-   '',
-   'Esta data ainda NÃO é prazo jurídico do LEX. Ela só vira prazo após sua confirmação.'
- ].filter(x=>x!==null).join('\n');
- if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfirmar este vencimento?'))return;
- await postDjenDeadline(row,s.due_at_proposto,s.regime||'manual','Confirmado a partir da sugestão assistiva do DJEN.',s.source_hash||null);
-}
-async function correctDjenDeadline(row){
- const s=djenSuggestion(row),ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
- const resumo=[p?.nome||p?.numero||row.cnj||'Processo',row.tipo||'Intimação DJEN',s?.trecho?'Trecho identificado: '+s.trecho:String(row.texto||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,900)].filter(Boolean).join('\n\n');
- if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfira o teor antes de informar o vencimento confirmado.'))return;
- const due=typeof prompt==='function'?prompt('Informe/corrija o vencimento CONFIRMADO (AAAA-MM-DD):',s?.due_at_proposto||''):null;
- if(due==null)return;
- const regime=typeof prompt==='function'?(prompt('Regime do prazo (cpc, clt ou manual):',s?.regime||'manual')||'manual'):(s?.regime||'manual');
- await postDjenDeadline(row,due,regime,'Vencimento informado/corrigido manualmente após leitura da intimação.',s?.source_hash||null);
-}
-function cnjDigitsOk(d){d=String(d||'').replace(/\D/g,'');if(d.length!==20)return false;if(typeof BigInt!=='function')return true;const r=Number(BigInt(d.slice(0,7)+d.slice(9)+'00')%97n);return String(98-r).padStart(2,'0')===d.slice(7,9)}
-function cnjProblem(p){if(/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p?.status||'')))return false;if(/administr|extrajud|consult/i.test(String(p?.tipo||'')+' '+String(p?.setor||'')))return false;const m=String(p?.numero||'').match(/^\s*(\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4})/);return !m||!cnjDigitsOk(m[1])}
-function askLex(text){if(typeof window.lexAskLex==='function')return window.lexAskLex(text);return window.lexChat?.()}
-// O que o LEX já fez sozinho hoje (leitura do Diário), dito numa linha.
-function diarioLine(v){
- if(!v||v.djen_status!=='ok'||!v.executado_em)return'';
- const d=new Date(v.executado_em);if(Number.isNaN(d.getTime()))return'';
- const hoje=new Date().toDateString()===d.toDateString();
- return' Diário lido '+(hoje?'hoje às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em '+d.toLocaleDateString('pt-BR'))+'.';
-}
-// Folha de ação: o LEX executa ali mesmo, sem abrir o chat.
 function sheet(title,onClose){
  document.querySelector?.('.lex-sheet')?.remove?.();
  const previous=document.activeElement;
@@ -181,50 +126,71 @@ function safeCaseLabel(p){if(processOfficial(p))return p?.nome_oficial||p?.parte
 function vencidosIds(){return procs().filter(p=>processOfficial(p)&&deadlineTruthDue(p)&&!p?.prazo_baixa?.ativa&&!p?.deadline_truth_resolvido_em&&deadlineDays(p)<0&&!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||''))).map(p=>String(p.id))}
 window.lexFixCnj=fixCnj;
 window.lexPrazosVencidos=ids=>prazosSheet(Array.isArray(ids)&&ids.length?ids.map(String):vencidosIds());
-async function today(){
- const host=document.getElementById('content');if(!host)return;
- document.body.classList.add('lex-commercial','lex2-core');
- host.innerHTML='<main class="lex-screen lex-today lex-home-conversation-screen"><header class="lex-top"><div><strong>LEX</strong><small>SEU ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header><section class="lex-today-head"><small>LEX</small><h1>Estou conferindo o escritório.</h1><p>Só trato parte, andamento e prazo como verdade depois de fonte oficial.</p></section><div class="lex-today-feedback" role="status"></div><section class="lex-today-list lex-home-conversation" aria-label="Atualização do LEX"><div class="lex-home-msg bot"><b>LEX</b><p>Um instante. Estou lendo o estado do escritório.</p></div></section><button class="lex-home-command" onclick="lexChat()"><span>Fale comigo sobre um processo, prazo ou tarefa…</span><b>↑</b></button>'+dock()+'</main>';
- const surface=host.firstElementChild,ps=procs(),failures=[];
+// Estado do escritório em mensagens do LEX, cada uma com a ação que executa.
+// Determinístico (sem IA): lê tarefas/prazos, conexões e recepção e devolve
+// {messages:[{text,tone,actions:[{label,onclick}]}], failures, pjeOk, djenOk, status}.
+// Reutilizado pela tela "Hoje" (today) e pela Conversa (lex2-coordinator-ui.js).
+async function briefing(){
+ const ps=procs(),failures=[];
  const active=ps.filter(p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||'')));
  const official=active.filter(processOfficial),pending=active.filter(p=>!processOfficial(p));
  const results=await Promise.allSettled([lexApi('/api/trabalho'),lexApi('/api/escritorio/oab'),lexApi('/api/escritorio/recepcao')]);
- if(!surface.isConnected)return;
  const work=results[0],connections=results[1],reception=results[2],messages=[];
- messages.push('Estou acompanhando '+active.length+' processo'+(active.length===1?'':'s')+'. '+official.length+' '+(official.length===1?'tem':'têm')+' leitura oficial registrada.');
- if(pending.length)messages.push('Há '+pending.length+' processo'+(pending.length===1?'':'s')+' com dados antigos ou manuais ainda sem leitura oficial. Não vou usar nome, partes, prazo ou urgência desses cadastros como verdade até conferir o tribunal.');
+ const say=(text,tone,actions,needsYou=false)=>messages.push({text,tone:tone||'info',actions:actions||[],needsYou:needsYou===true});
+ say('Estou acompanhando '+active.length+' processo'+(active.length===1?'':'s')+'. '+official.length+' '+(official.length===1?'tem':'têm')+' leitura oficial registrada.');
+ if(pending.length)say('Há '+pending.length+' processo'+(pending.length===1?'':'s')+' com dados antigos ou manuais ainda sem leitura oficial. Não vou usar nome, partes, prazo ou urgência desses cadastros como verdade até conferir o tribunal.','warn',[{label:'Ver processos',onclick:'lexProcessos()'}],true);
  let pjeOk=false,djenOk=false;
  if(connections.status==='fulfilled'){
    const pje=connections.value?.pje||{},oabs=Array.isArray(connections.value?.oabs)?connections.value.oabs:[];
    pjeOk=pje.configurado===true;
    djenOk=oabs.length>0;
-   if(pjeOk)messages.push('PJe/eproc está configurado para: '+(Array.isArray(pje.tribunais)&&pje.tribunais.length?pje.tribunais.join(', '):'tribunal configurado')+'. Posso conferir partes e andamentos.');
-   else messages.push('PJe/eproc ainda não está ligado. Enquanto isso eu não consigo validar partes e andamentos no tribunal e não vou fingir que consigo.');
-   if(djenOk)messages.push('Diário (DJEN) está ligado a '+oabs.length+' inscrição'+(oabs.length===1?'':'ões')+'. Publicação só vira prazo depois da confirmação exigida pelo LEX.');
-   else messages.push('Diário (DJEN) ainda não está ligado a uma OAB do escritório. Não vou dizer que as publicações estão monitoradas.');
+   if(pjeOk)say('PJe/eproc está configurado para: '+(Array.isArray(pje.tribunais)&&pje.tribunais.length?pje.tribunais.join(', '):'tribunal configurado')+'. Posso conferir partes e andamentos.','ok',[{label:'Atualizar no tribunal',onclick:"lexAskLex('atualize meus processos')"}]);
+   else say('PJe/eproc ainda não está ligado. Enquanto isso eu não consigo validar partes e andamentos no tribunal e não vou fingir que consigo.','warn',[{label:'Ligar PJe/eproc',onclick:'lexOab()'}],true);
+   if(djenOk)say('Diário (DJEN) está ligado a '+oabs.length+' inscrição'+(oabs.length===1?'':'ões')+'. Publicação só vira prazo depois da confirmação exigida pelo LEX.','ok');
+   else say('Diário (DJEN) ainda não está ligado a uma OAB do escritório. Não vou dizer que as publicações estão monitoradas.','warn',[{label:'Ligar Diário (DJEN)',onclick:'lexOab()'}],true);
  }else failures.push('conexões do tribunal');
+ let running=0,waiting=0;
  if(work.status==='fulfilled'){
    const desk=work.value?.prazos||{},confirmed=list(desk.correndo),toReview=list(desk.cunhar);
-   if(confirmed.length)messages.push('Há '+confirmed.length+' prazo'+(confirmed.length===1?' oficial em acompanhamento':'s oficiais em acompanhamento')+'.');
-   if(toReview.length)messages.push('Há '+toReview.length+' publicação'+(toReview.length===1?' aguardando':' aguardando')+' conferência de prazo. Eu não conto como prazo confirmado antes disso.');
-   const review=list(work.value?.tarefas).filter(t=>t?.status==='aguardando_revisao').length;
-   if(review)messages.push(review+' entrega'+(review===1?' está':'s estão')+' aguardando sua revisão.');
+   const late=confirmed.filter(x=>Number(x?.days_to_due)<0),today_=confirmed.filter(x=>Number(x?.days_to_due)===0);
+   if(late.length)say(late.length+' prazo'+(late.length===1?' oficial venceu':'s oficiais venceram')+'. Confira no tribunal se foi cumprido; a baixa é gravada no servidor.','late',[{label:'Resolver agora',onclick:'lexPrazosVencidos()'}],true);
+   if(today_.length)say(today_.length+' prazo'+(today_.length===1?' oficial vence':'s oficiais vencem')+' hoje.','urgent',[{label:'Ver com o LEX',onclick:"lexAskLex('prazos de hoje')"}],true);
+   if(confirmed.length)say('Há '+confirmed.length+' prazo'+(confirmed.length===1?' oficial em acompanhamento':'s oficiais em acompanhamento')+'.','info',[{label:'Ver prazos',onclick:'lexPrazos()'}]);
+   if(toReview.length)say('Há '+toReview.length+' publicação'+(toReview.length===1?' aguardando':' aguardando')+' conferência de prazo. Eu não conto como prazo confirmado antes disso.','soon',[{label:'Conferir',onclick:"lexSetPrazoTab('revisar')"}],true);
+   const tasks=list(work.value?.tarefas);
+   const review=tasks.filter(t=>t?.status==='aguardando_revisao').length;
+   waiting=tasks.filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
+   running=tasks.filter(t=>!['concluida','falhou','cancelada'].includes(t?.status)).length-waiting;
+   if(review)say(review+' entrega'+(review===1?' está':'s estão')+' aguardando sua revisão.','ok',[{label:'Revisar',onclick:'lexTarefas()'}],true);
+   const otherWaiting=waiting-review;
+   if(otherWaiting>0)say(otherWaiting+' tarefa'+(otherWaiting===1?' precisa':'s precisam')+' da sua atenção para continuar.','warn',[{label:'Ver tarefas',onclick:'lexTarefas()'}],true);
    if(desk.erro)failures.push('prazos');
  }else failures.push('tarefas e prazos');
  if(reception.status==='fulfilled'){
    const rows=list(reception.value?.contatos||reception.value?.itens||reception.value?.recepcao).filter(r=>r?.status!=='arquivado');
-   if(rows.length)messages.push(rows.length+' conversa'+(rows.length===1?' de cliente está':'s de clientes estão')+' em andamento na recepção.');
+   if(rows.length)say(rows.length+' conversa'+(rows.length===1?' de cliente está':'s de clientes estão')+' em andamento na recepção.','info',[{label:'Abrir',onclick:"lexChannel('all')"}],true);
  }else failures.push('recepção');
+ const status=(running>0?running+' tarefa'+(running===1?'':'s')+' em andamento':'nenhuma tarefa em andamento')+' · '+(waiting>0?waiting+(waiting===1?' aguarda':' aguardam')+' você':'nada aguarda você');
+ return{messages,failures,pjeOk,djenOk,active,official,pending,running,waiting,status};
+}
+window.lexBriefing=briefing;
+async function today(){
+ const host=document.getElementById('content');if(!host)return;
+ document.body.classList.add('lex-commercial','lex2-core');
+ host.innerHTML='<main class="lex-screen lex-today lex-home-conversation-screen"><header class="lex-top"><div><strong>LEX</strong><small>SEU ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header><section class="lex-today-head"><small>LEX</small><h1>Estou conferindo o escritório.</h1><p>Só trato parte, andamento e prazo como verdade depois de fonte oficial.</p></section><div class="lex-today-feedback" role="status"></div><section class="lex-today-list lex-home-conversation" aria-label="Atualização do LEX"><div class="lex-home-msg bot"><b>LEX</b><p>Um instante. Estou lendo o estado do escritório.</p></div></section><button class="lex-home-command" onclick="lexChat()"><span>Fale comigo sobre um processo, prazo ou tarefa…</span><b>↑</b></button>'+dock()+'</main>';
+ const surface=host.firstElementChild;
+ const b=await briefing();
+ if(!surface.isConnected)return;
  const head=surface.querySelector('.lex-today-head');
- head.querySelector('h1').textContent=pending.length?'Estou conferindo antes de afirmar.':'Escritório conferido.';
- head.querySelector('p').textContent=official.length+' de '+active.length+' processo'+(active.length===1?'':'s')+' com leitura oficial registrada.';
+ head.querySelector('h1').textContent=b.pending.length?'Estou conferindo antes de afirmar.':'Escritório conferido.';
+ head.querySelector('p').textContent=b.official.length+' de '+b.active.length+' processo'+(b.active.length===1?'':'s')+' com leitura oficial registrada.';
  const feedback=surface.querySelector('.lex-today-feedback');
- if(failures.length)feedback.textContent='Não consegui ler '+failures.join(', ')+'. Não vou interpretar ausência de dado como ausência de problema.';
+ if(b.failures.length)feedback.textContent='Não consegui ler '+b.failures.join(', ')+'. Não vou interpretar ausência de dado como ausência de problema.';
  const target=surface.querySelector('.lex-today-list');
- target.innerHTML=messages.map(m=>'<div class="lex-home-msg bot"><b>LEX</b><p>'+esc(m)+'</p></div>').join('')
+ target.innerHTML=b.messages.map(m=>'<div class="lex-home-msg bot"><b>LEX</b><p>'+esc(m.text)+'</p></div>').join('')
    +'<div class="lex-home-actions">'
-   +(pjeOk?'<button onclick="lexAskLex(\'atualize meus processos\')">Atualizar processos no tribunal</button>':'<button onclick="lexOab()">Ligar PJe/eproc</button>')
-   +(djenOk?'':'<button onclick="lexOab()">Ligar Diário (DJEN)</button>')
+   +(b.pjeOk?'<button onclick="lexAskLex(\'atualize meus processos\')">Atualizar processos no tribunal</button>':'<button onclick="lexOab()">Ligar PJe/eproc</button>')
+   +(b.djenOk?'':'<button onclick="lexOab()">Ligar Diário (DJEN)</button>')
    +'<button onclick="lexChat()">Conversar com o LEX</button></div>';
 }
 function patch(){window.lexHome=today;window.renderPainel=today;const previous=window.ir;if(typeof previous==='function'&&!previous.__lexToday){const route=function(page){if(page==='painel')return today();return previous.apply(this,arguments)};route.__lexToday=true;window.ir=route}}

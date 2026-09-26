@@ -147,7 +147,7 @@ const say=(deps,text,profile='advogado')=>executeNaturalOfficeCommand(deps,{text
 test('pelo WhatsApp: listar, pedir abertura (confirmação) e confirmar ciência',async()=>{
   const records=memoryRecords();
   const store=processStore([{id:'p1',nome:'Maria Silva x Banco',numero:CNJ,andamentos:[]}]);
-  const send=fakeTransport(op=>null);
+  fakeTransport(()=>null);
   const responses={consultarAvisosPendentes:avisosXml([{id:'1',data:'20260920101500',cnj:CNJ_D}]),consultarTeorComunicacao:teorXml('Fica a parte intimada para contestar.')};
   const transport=fakeTransport(responses);
   const deps=pjeDeps(records,store,transport);

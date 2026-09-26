@@ -71,14 +71,7 @@ test('ids de processo entram entre aspas nos onclick e são comparados como text
 });
 
 // ── 14. Sem "agente local" (localhost:3333) ──
-test('nenhum ping ao agente local inexistente; sincronização legada inerte',async()=>{
-  assert.doesNotMatch(index,/AGENTE_URL \+ '\/ping'/);
-  assert.doesNotMatch(index,/setTimeout\(sincronizacaoDiariaAuto/,'boot não chama a sincronização do agente local');
-  const trecho=fatia('async function detectarAgenteLocal()','function renderPje() {');
-  let chamadas=0;
-  const ctx=vm.createContext({fetchComTimeout:async()=>{chamadas++;return{ok:true,json:async()=>({})};},getPjeConfig:()=>({ativo:true}),getProcs:()=>[{id:1,numero:'0000001-62.2026.8.13.0704',status:'ATIVO'}],toast(){},AGENTE_URL:'http://localhost:3333'});
-  vm.runInContext(trecho,ctx);
-  assert.equal(await ctx.detectarAgenteLocal(),null);
-  await ctx.sincronizacaoDiariaAuto();
-  assert.equal(chamadas,0,'nenhuma chamada de rede ao agente local');
+test('o bloco legado do PJe com "agente local" foi removido de vez',()=>{
+  assert.doesNotMatch(index,/AGENTE_URL|localhost:3333|detectarAgenteLocal|sincronizacaoDiariaAuto|iniciarPjePolling|conectarPjeComCredenciais/);
+  assert.doesNotMatch(index,/function renderPje\(\)/);
 });

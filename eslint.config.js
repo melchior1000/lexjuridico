@@ -11,23 +11,28 @@ const lexBrowserGlobals = {
 module.exports = [
   { ignores: ['bot.js','lex_agente_vivo*.js','node_modules/**'] },
   {
-    files: ['lib/office-pipeline.js','lib/office-command.js','lib/office-queries.js','lib/pje-mni.js','lib/pje-monitor.js','lib/pje-process-sync.js','lib/datajud.js'],
+    files: ['lib/**/*.js','scripts/**/*.js','test/**/*.js'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'commonjs', globals: globals.node },
     rules: {
       ...js.configs.recommended.rules,
-      'no-unused-vars': 'warn',
-      'no-useless-escape': 'off'
+      'no-unused-vars': ['warn', { caughtErrors: 'none', args: 'none' }],
+      'no-useless-escape': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-control-regex': 'off',
+      'no-useless-assignment': 'off'
     }
   },
   {
-    files: ['office-ui-v2.js','office-flow-ui.js','office-command-ui.js','reception-handoff-ui.js','office-attachment-ui.js','office-dossier-ui.js','login-theme.js','lex-nav.js'],
+    files: ['*.js'],
+    ignores: ['eslint.config.js'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'script', globals: {...globals.browser,...lexBrowserGlobals} },
     rules: {
       'no-const-assign': 'error',
       'no-dupe-keys': 'error',
       'no-unreachable': 'error',
-      'no-redeclare': 'error',
-      'no-unused-vars': 'warn',
+      'no-redeclare': ['error', { builtinGlobals: false }],
+      // Scripts de navegador: funções de nível superior são chamadas por onclick no HTML.
+      'no-unused-vars': ['warn', { caughtErrors: 'none', args: 'none', vars: 'local' }],
       'no-undef': 'off'
     }
   }

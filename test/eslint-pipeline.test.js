@@ -10,9 +10,12 @@ test('pipeline executa sintaxe e ESLint no mesmo npm run check',()=>{
   assert.match(pkg.scripts.check,/npm run lint/);
 });
 
-test('ESLint cobre a casca comercial crítica e preserva o monólito legado',()=>{
+test('ESLint cobre lib/, test/, scripts/ e toda a casca da raiz, preservando o monólito legado',()=>{
   const cfg=fs.readFileSync('eslint.config.js','utf8');
-  for(const file of ['office-ui-v2.js','office-flow-ui.js','office-command-ui.js','reception-handoff-ui.js','login-theme.js','lib/office-pipeline.js']) assert.match(cfg,new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  assert.match(cfg,/files: \['lib\/\*\*\/\*\.js','scripts\/\*\*\/\*\.js','test\/\*\*\/\*\.js'\]/);
+  assert.match(cfg,/files: \['\*\.js'\]/);
   assert.match(cfg,/bot\.js/);
   assert.match(cfg,/lex_agente_vivo/);
+  const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+  assert.match(pkg.scripts.lint,/lib\/ scripts\/ test\/ \*\.js/);
 });
