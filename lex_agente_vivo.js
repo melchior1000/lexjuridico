@@ -97,7 +97,7 @@ async function tratarRota(req, res, url, deps) {
     // de ordens como ferramenta). O executor determinístico fica na frente só para comandos com
     // barra e frases de confirmação que exigem a digitação do titular, e como reserva sem IA.
     const aiOn=nextDeps.ANTHROPIC_KEY&&process.env.LEX_AI_NO_CREDIT!=='1'&&nextDeps.lexVivo!==false;
-    const literal=/^\s*(\/|CONFIRMO\s+CIENCIA\b|APROVO\b|\d{1,2}\s*$)/i.test(String(body.mensagem||''));
+    const literal=/^\s*(\/|CONFIRMO\s+CI[EÊ]NCIA\b|APROVO\b|\d{1,2}\s*$|\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}\s*$)/i.test(String(body.mensagem||''));
     if (nextDeps.engine && nextDeps.processStore && (!aiOn || literal)) {
       try {
         const execution=await executeNaturalOfficeCommand(nextDeps,{
@@ -116,6 +116,10 @@ async function tratarRota(req, res, url, deps) {
         }
       } catch(e) {
         jsonResponse(res,e.status||422,{error:e.message,codigo:'LEX_EXECUCAO_FALHOU'},nextDeps.CORS);
+        return true;
+      }
+      if(!nextDeps.ANTHROPIC_KEY){
+        jsonResponse(res,200,{ok:true,texto:'A IA jurídica não está configurada neste servidor. O LEX continua operacional para comandos determinísticos, banco de processos, prazos e tarefas já conectadas.',ia_estado:'nao_configurada'},nextDeps.CORS);
         return true;
       }
     }
