@@ -87,7 +87,8 @@ test('upload de documento rejeitado não informa sucesso', async () => {
   const app = setup({_extrairTextoPdf:() => 'documento',
     sbReq:async () => ({ok:false,status:403})});
   const result = await app.request('/api/documentos/upload',app.token('admin'),{pdf_base64:'test'},'POST');
-  assert.equal(result.status, 500);
+  // Banco recusou: erro de upstream (502, e.status do requireSuccess), nunca 2xx.
+  assert.equal(result.status, 502);
   assert.match(result.body, /banco/);
 });
 test('troca de senha respeita perfilAlvo enviado pelo frontend', async () => {

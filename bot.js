@@ -9438,9 +9438,25 @@ async function adapterEvolution(body) {
 // ════════════════════════════════════════════════════════════════════════════
 // SERVIDOR HTTP + API REST
 // ════════════════════════════════════════════════════════════════════════════
-// Limite global do corpo JSON (LEX_MAX_BODY_MB, padrão 32 MB). Acima dele a
+// Limite global do corpo JSON (LEX_MAX_BODY_MB, padrão 25 MB — igual ao lex.env.example). Acima dele a
 // requisição é recusada com 413 e o conteúdo já recebido é descartado.
-const LEX_MAX_BODY_BYTES = parseInt(process.env.LEX_MAX_BODY_MB || '32', 10) * 1024 * 1024;
+const LEX_MAX_BODY_BYTES = parseInt(process.env.LEX_MAX_BODY_MB || '25', 10) * 1024 * 1024;
+// Status HTTP de um erro lançado dentro de um handler: respeita e.status (413 do
+// lerBody, 404/409/400 dos módulos) quando é um código de erro válido; senão 500.
+function _statusErroLex(e, padrao = 500) {
+  const st = Number(e && e.status);
+  return Number.isInteger(st) && st >= 400 && st <= 599 ? st : padrao;
+}
+// Registros de tempo de uso em memória (login/heartbeat). Limitado a 5.000:
+// acima disso o mais antigo sai, para o processo não crescer sem fim.
+const LEX_TEMPO_USO_MAX = 5000;
+function _registrarTempoUsoMem(reg) {
+  if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
+  const arr = global._tempoUsoRegistros;
+  arr.push(reg);
+  if(arr.length > LEX_TEMPO_USO_MAX) arr.splice(0, arr.length - LEX_TEMPO_USO_MAX);
+  return arr.length;
+}
 function lerBody(req) {
   return new Promise((res,rej)=>{
     const chunks = [];
@@ -10577,7 +10593,7 @@ const server = http.createServer(async (req, res) => {
         console.warn('[tempo] falha ao registrar login automático:', e.message));
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ok:true, token, perfil:b.perfil, ...PERMS[b.perfil]}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
   
@@ -10757,7 +10773,7 @@ const server = http.createServer(async (req, res) => {
         arquivos: out.arquivos || null,
         perguntas: out.perguntas || null
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -10793,7 +10809,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Disposition':'attachment; filename="' + nome + '"'
       });
       res.end(docxBuf);
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -10825,7 +10841,7 @@ const server = http.createServer(async (req, res) => {
       if(rowIds.length) marcarComandosEntregues(rowIds).catch(()=>{});
       // Limpa fallback RAM
       global._cmdsRam = [];
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -10919,7 +10935,7 @@ const server = http.createServer(async (req, res) => {
       const nomeArq = 'Atendimento_' + (alvo.nome||'caso').replace(/[^a-zA-Z0-9]/g,'_').substring(0,30) + '_' + new Date().toISOString().substring(0,10) + '.txt';
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ ok:true, relatorio: rel, texto_download: textoDownload, nome_arquivo: nomeArq }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -10934,7 +10950,7 @@ const server = http.createServer(async (req, res) => {
       // Pós-processamento: marcadores de atualização de processo
       const acoes = await _processarMarcadoresChat(txt, validarToken(tk));
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({resposta:txt, text:txt, acoes_executadas:acoes}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -10985,7 +11001,7 @@ const server = http.createServer(async (req, res) => {
       const r = await _transcreverAudioWhisper(buf, b.mimeType||'audio/ogg', b.nome||'audio.ogg');
       if(r.ok) { res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ ok:true, texto: r.texto })); }
       else { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ ok:false, error: r.erro || 'Falha na transcricao' })); }
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11041,7 +11057,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, jobId, status:'processando'}));
     } catch(e) {
-      res.writeHead(500,corsHeaders(req));
+      res.writeHead(_statusErroLex(e),corsHeaders(req));
       res.end(JSON.stringify({error:e.message}));
     }
     return;
@@ -11076,7 +11092,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify(resp));
     } catch(e) {
-      res.writeHead(500,corsHeaders(req));
+      res.writeHead(_statusErroLex(e),corsHeaders(req));
       res.end(JSON.stringify({error:e.message}));
     }
     return;
@@ -11093,7 +11109,7 @@ const server = http.createServer(async (req, res) => {
       const memCaso = b.processo ? await recuperarMemoriaDoCaso(b.processo.nome, 30) : [];
       const texto = await gerarDoc(b.tipo, b.processo||null, b.instrucoes||'', b.dadosProf||null, b.ehInicial||false, b.dadosCliente||null, memCaso);
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({texto}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11130,7 +11146,7 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, corsHeaders(req));
         res.end(JSON.stringify(out));
       }
-    } catch(e) { if(!res.writableEnded) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); } }
+    } catch(e) { if(!res.writableEnded) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); } }
     return;
   }
 
@@ -11154,7 +11170,7 @@ const server = http.createServer(async (req, res) => {
       }, null, null), 'Salvar documento');
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, id:docId, texto_chars:texto.length}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11179,7 +11195,7 @@ const server = http.createServer(async (req, res) => {
       }
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({total: rows.length, documentos: rows}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11196,7 +11212,7 @@ const server = http.createServer(async (req, res) => {
       }, null) || [];
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({processo: processoId, total: rows.length, documentos: rows}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11234,10 +11250,18 @@ const server = http.createServer(async (req, res) => {
         if(!porDia[d]) porDia[d] = 0;
         porDia[d] += 1;
       }
+      // Logins registrados só em memória (POST /api/tempo-uso/login) também
+      // contam: a tabela pode não existir ou ainda não ter recebido a linha.
+      let emMemoria = 0;
+      for(const r of (global._tempoUsoRegistros||[])) {
+        if(r.tipo !== 'login' || r.perfil !== perfilConsulta || !r.data || r.data < ini) continue;
+        if(!porDia[r.data]) porDia[r.data] = 0;
+        porDia[r.data] += 1; emMemoria++;
+      }
       const logins = Object.keys(porDia).sort().map(d => ({ data: d, logins: porDia[d] }));
       res.writeHead(200,corsHeaders(req));
-      res.end(JSON.stringify({perfil: perfilConsulta, dias, total: rows.length, logins}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+      res.end(JSON.stringify({perfil: perfilConsulta, dias, total: rows.length + emMemoria, tabela: rows.length, memoria: emMemoria, logins}));
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11252,7 +11276,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       const fatos = await recuperarMemoriaDoCaso(caso, 100);
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({caso, fatos}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11264,7 +11288,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!b.caso || !b.texto) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'caso e texto obrigatórios'})); return; }
       const ok = await lembrarDoCaso(b.caso, b.tipo||'observacao', b.texto, b.fonte||'web');
       res.writeHead(ok?200:500,CORS); res.end(JSON.stringify({ok}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11295,7 +11319,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       res.writeHead(200, {...corsHeaders(req),'Content-Type':'text/markdown; charset=utf-8', 'Content-Disposition':'attachment; filename="lex-memoria.md"'
       });
       res.end(md);
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11343,7 +11367,7 @@ if(url==='/api/memoria' && req.method==='GET') {
           chunks_historico: _rateLimitHistorico.length
         }
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11392,7 +11416,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         conectado: _estadoWhatsApp.conectado,
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11424,7 +11448,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         estado: _estadoWhatsApp.estado || 'nao_verificado',
         ultima_mensagem: _estadoWhatsApp.ultima_mensagem
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11448,7 +11472,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       await recordStore.change(previewKey,()=>({history:[...previous,{direcao:'entrada',texto:mensagem},{direcao:'saida_lex',texto:out.reply}].slice(-40)}));
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ok:true,resposta:out.reply,escalonado:out.escalate,destino:out.destino,pendente_autorizacao:out.requiresApproval,simulacao:true}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
 
@@ -11470,7 +11494,7 @@ if(url==='/api/memoria' && req.method==='GET') {
           escalonado: !!s.escalonado
         }))
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
 
@@ -11500,7 +11524,7 @@ if(url==='/api/memoria' && req.method==='GET') {
           ultimas_5_msgs: Array.isArray(i.conversa) ? i.conversa.slice(-5) : []
         }))
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({ok:false,error:e.message})); }
     return;
   }
 
@@ -11541,7 +11565,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       msgs.sort((a,b) => new Date(b.em) - new Date(a.em));
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, total:msgs.length, mensagens:msgs.slice(0,limite) }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11566,7 +11590,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const r = await sbReq('POST', 'contatos', b, {}, { onConflict: 'telefone', merge: 'nome,cpf,email,processo_id,processo_nome,obs' });
       res.writeHead(200,{...corsHeaders(req),'Content-Type':'application/json'});
       res.end(JSON.stringify({ok:true}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11600,7 +11624,7 @@ if(url==='/api/memoria' && req.method==='GET') {
 
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, enviado, canal, destino}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11626,7 +11650,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const lista = [...contatos.values()].sort((a,b) => new Date(b.ultimaMsg) - new Date(a.ultimaMsg));
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, contatos: lista }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11680,7 +11704,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       _configRuntime.pje=nextPje;
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({ok:true, config:_configRuntime.pje}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11701,7 +11725,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         orientacao:'Abra o PJe no navegador, faca login com token A3 e mantenha sessao ativa. O bot consulta andamentos publicos pela DATAJUD.',
         tribunais
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11740,7 +11764,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         nova_movimentacao:nova,
         erro:r.erro||null
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11766,7 +11790,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         novosAndamentos: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero })),
         ultimo_check: varredura.ultimo_check
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11787,7 +11811,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         ultimo_aparelho: processosUltimoAparelho,
         escritorio: ESCRITORIO.nome
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11809,7 +11833,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       res.writeHead(200, {...corsHeaders(req), 'Content-Type':'application/pdf', 'Content-Disposition':'attachment; filename="' + nome + '"'
       });
       res.end(pdfBuf);
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11831,7 +11855,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         'Content-Disposition':'attachment; filename="' + nome + '"'
       });
       res.end(docxBuf);
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -11919,7 +11943,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         'Content-Disposition':'attachment; filename="peticao.docx"'
       });
       res.end(buf);
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12007,7 +12031,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const eventos = _coletarEventosCalendario();
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, total:eventos.length, eventos }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12034,7 +12058,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         'Content-Disposition': 'attachment; filename=\"arquivo_morto_'+Date.now()+'.zip\"'
       });
       res.end(zipBuf);
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12068,7 +12092,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, tipo, removidos }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12082,7 +12106,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const filtrados = !q ? rows : rows.filter(r => _normTexto((r.nome||'')+' '+(r.resumo||'')+' '+(r.caso_tipo||'')).includes(q));
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, total: filtrados.length, resultados: filtrados.slice(0,100) }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12106,7 +12130,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, restaurados }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12134,7 +12158,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const resultado = await _registrarTempoUso(perfilAlvo, acao, b.timestamp || Date.now());
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok: true, acao, ...resultado }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12151,7 +12175,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const resumo = await _resumoTempoUso(perfilConsulta);
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(resumo));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12169,7 +12193,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const historico = await _historicoTempoUso(perfilConsulta, dias);
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(historico));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12189,7 +12213,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const sacadas = await _motorSacardasJuridicas(b.texto, b.area||'', b.tribunal||'', b.processo||null);
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(sacadas));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12217,7 +12241,7 @@ if(url==='/api/memoria' && req.method==='GET') {
 
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify(perfil));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12241,7 +12265,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       _auditarAcao(pfV, 'perfil_juiz_vinculado_manual', { processo_id: b.processoId });
       res.writeHead(200, corsHeaders(req));
       res.end(JSON.stringify({ ok:true, processo_id: b.processoId, juiz: processos[idx].juiz_relator }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12294,9 +12318,10 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!pfProg) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       if(pfProg==='secretaria') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Sem permissão'})); return; }
       const b = await lerBody(req);
-      const pid = Number(b && b.processo_id);
+      // Id pode ser numérico (legado, Date.now()) ou UUID (novo): compara como texto.
+      const pid = String((b && b.processo_id) ?? '').trim();
       if(!pid) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_id obrigatório'})); return; }
-      const processo = processos.find(p => Number(p.id) === pid);
+      const processo = processos.find(p => String(p.id) === pid);
       if(!processo) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Processo não encontrado'})); return; }
       const prognostico = await _gerarPrognosticoRealista(processo);
       res.writeHead(200, corsHeaders(req));
@@ -12330,7 +12355,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       if(!await envTelegram(texto, null, destino)) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,enviado:false,error:'Telegram nao confirmou o envio'})); return; }
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, enviado:true, tipo}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12346,7 +12371,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!TK) { res.writeHead(503,corsHeaders(req)); res.end(JSON.stringify({error:'TELEGRAM_TOKEN nao configurado no servidor'})); return; }
       if(!await envTelegram(b.mensagem.trim(), null, b.chat_id || CHAT_ID)) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,error:'Telegram nao confirmou o envio'})); return; }
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Notificacao enviada via Telegram'}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12360,7 +12385,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(global._sessaoAtividade) global._sessaoAtividade.delete(tk);
       const streamsEncerrados = encerrarSseDoTokenLex(tk);
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, msg:'Sessao revogada', streams_encerrados:streamsEncerrados}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12372,7 +12397,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!perfil) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Token invalido ou expirado'})); return; }
       const novoToken = gerarToken(perfil);
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, token:novoToken, perfil}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12382,10 +12407,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       const pf = validarToken(getToken(req));
       if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
-      global._tempoUsoRegistros.push({perfil:pf, tipo:'login', ts:Date.now(), data:hojeBrasil()});
+      _registrarTempoUsoMem({perfil:pf, tipo:'login', ts:Date.now(), data:hojeBrasil()});
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12395,10 +12419,9 @@ if(url==='/api/memoria' && req.method==='GET') {
       const pf = validarToken(getToken(req));
       if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
-      if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
-      global._tempoUsoRegistros.push({perfil:pf, tipo:'heartbeat', ts:Date.now(), data:hojeBrasil(), minutos:b.minutos||1});
+      _registrarTempoUsoMem({perfil:pf, tipo:'heartbeat', ts:Date.now(), data:hojeBrasil(), minutos:b.minutos||1});
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12418,7 +12441,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       }
       const dias = Object.keys(porDia).sort().map(d=>({data:d,...porDia[d]}));
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, perfil:perfilFiltro, total:regs.length, dias}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12450,7 +12473,7 @@ if(url==='/api/memoria' && req.method==='GET') {
         fontes:garantia.fontes_oficiais,
         aviso:'Pesquisa assistida por IA. O advogado deve conferir o inteiro teor antes de citar ou protocolar.'
       }));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12465,7 +12488,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const sysGestor = sysAssessor(null, null) + '\n\n## Processos ativos no escritório:\n' + (resumoProcs || '(nenhum processo cadastrado)') + '\n\nVocê tem acesso direto aos dados acima. Responda como gestor do escritório.';
       const txt = await ia(b.messages, sysGestor, b.maxTokens||4096, MODELO_MID); // Gestor chat → Sonnet (economia)
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, resposta:txt, text:txt}));
-    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
+    } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 
@@ -12814,7 +12837,7 @@ NAO INVENTE numeros. Se um valor nao consta nos documentos, diga "nao foi possiv
       const zipBuf = await zip.generateAsync({type:'nodebuffer'});
       res.writeHead(200, {...corsHeaders(req), 'Content-Type':'application/zip', 'Content-Disposition':'attachment; filename="dados_cliente.zip"', 'Content-Length':zipBuf.length});
       res.end(zipBuf);
-    } catch(e) { if(!res.writableEnded) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); } }
+    } catch(e) { if(!res.writableEnded) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); } }
     return;
   }
 

@@ -130,7 +130,7 @@ test('falha na gravacao da configuracao WhatsApp preserva estado anterior',async
   const app=setup({_configRuntime:runtime,_configMemCache:{},LEX_WHATSAPP_NUMBER:null,brazilMobile,_normalizarNumeroWhats:n=>n+'@s.whatsapp.net',
     _configTabela:()=> 'configuracoes',sbUpsert:async()=>({ok:false,status:403})});
   const result=await app.request('/api/whatsapp/configurar',app.token('admin'),{numero:cfg.number,ativo:true},'POST');
-  assert.equal(result.status,500);assert.equal(runtime.whatsapp.ativo,false);assert.equal(runtime.whatsapp.numero,null);
+  assert.equal(result.status,502);assert.equal(runtime.whatsapp.ativo,false);assert.equal(runtime.whatsapp.numero,null);
 });
 test('configuracao WhatsApp nao pode trocar linha fixada no servidor',async()=>{
   const app=setup({LEX_WHATSAPP_NUMBER:cfg.number,brazilMobile});

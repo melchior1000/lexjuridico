@@ -6,6 +6,7 @@ const {requireSuccess, rowsFromResult} = require('../lib/supabase');
 const source = fs.readFileSync(path.join(__dirname, '..', 'bot.js'), 'utf8');
 const auth = source.slice(source.indexOf('function gerarToken('), source.indexOf('// PATCH BOT FINAL: helpers faltantes'));
 const docs = source.slice(source.indexOf('function _escapeXmlPeca('), source.indexOf('const USUARIOS ='));
+const statusErro = source.slice(source.indexOf('function _statusErroLex('), source.indexOf('function lerBody('));
 const handler = source.slice(source.indexOf('const server = http.createServer('), source.indexOf('// FEATURE: Processar marcadores de ação'));
 function setup(extra = {}) {
   let callback;
@@ -21,7 +22,7 @@ function setup(extra = {}) {
     _registrarTempoUso: async () => {},
     ...extra
   });
-  vm.runInContext(docs + '\n' + auth + '\n' + handler, context);
+  vm.runInContext(docs + '\n' + auth + '\n' + statusErro + '\n' + handler, context);
   Object.assign(context, extra);
   return {
     context,
