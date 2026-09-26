@@ -1400,6 +1400,13 @@ function getEndereco(){return getEscritorio().endereco||'';}
 // Servidor Render — chave API fica só lá, nunca no navegador
 const SERVIDOR = 'https://lex-juridico.onrender.com';
 
+// Identificador novo para processo/peça: UUID (sem colisão entre aparelhos/abas).
+// Ids antigos numéricos (Date.now()) continuam válidos; toda comparação usa String().
+function novoIdLex(){
+  try{ if(typeof crypto!=='undefined' && typeof crypto.randomUUID==='function') return crypto.randomUUID(); }catch(e){}
+  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
+
 // Data de hoje no fuso do aparelho (AAAA-MM-DD). toISOString() devolve UTC e,
 // depois das 21h em Brasília, já é "amanhã" — gravava andamento/login com data errada.
 function hojeLocal(d){
@@ -1617,24 +1624,24 @@ async function executarComandoTelegramSemSync(cmd) {
       mudou = true;
       toast('✓ Processo criado via Telegram: '+novo.nome,'ok');
     } else if(cmd.acao === 'editar_processo') {
-      const idx = ps.findIndex(p=>p.id===cmd.id||p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
+      const idx = ps.findIndex(p=>String(p.id)===String(cmd.id)||p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
       if(idx>=0) { Object.assign(ps[idx], cmd.dados); mudou = true; toast('✓ Processo atualizado via Telegram','ok'); }
     } else if(cmd.acao === 'deletar_processo' && usuarioAtivo==='admin') {
-      const novo = ps.filter(p=>p.id!==cmd.id&&!p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
+      const novo = ps.filter(p=>String(p.id)!==String(cmd.id)&&!p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
       // Salva direto (mudou tudo)
       try { localStorage.setItem(SK, JSON.stringify(novo)); } catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
       atualizarUrgentes(); toast('✓ Processo removido via Telegram','ok');
       if(typeof renderProcessos==='function') { try{renderProcessos();}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); } }
       return;
     } else if(cmd.acao === 'add_andamento') {
-      const idx = ps.findIndex(p=>p.id===cmd.id||p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
+      const idx = ps.findIndex(p=>String(p.id)===String(cmd.id)||p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
       if(idx>=0) {
         if(!ps[idx].andamentos) ps[idx].andamentos=[];
         ps[idx].andamentos.unshift({data:new Date().toLocaleDateString('pt-BR'),txt:cmd.andamento});
         mudou = true; toast('✓ Andamento adicionado via Telegram','ok');
       }
     } else if(cmd.acao === 'atualizar_prazo') {
-      const idx = ps.findIndex(p=>p.id===cmd.id||p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
+      const idx = ps.findIndex(p=>String(p.id)===String(cmd.id)||p.nome.toLowerCase().includes((cmd.nome||'').toLowerCase()));
       if(idx>=0) { ps[idx].prazo=cmd.prazo; mudou = true; toast('✓ Prazo atualizado via Telegram','ok'); }
     }
     if(mudou) {
@@ -2172,7 +2179,7 @@ function varreduraInicial(){
       tipo: 'urgente',
       icone: '🚨',
       titulo: urgSemPrazo.length + ' processo(s) URGENTE(S) sem prazo',
-      detalhe: urgSemPrazo.map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--red);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', '),
+      detalhe: urgSemPrazo.map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc('${p.id}');return false" style="color:var(--red);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', '),
       acao: 'Ver processos',
       fn: () => ir('processos', null)
     });
@@ -2198,7 +2205,7 @@ function varreduraInicial(){
       tipo: 'parado15',
       icone: '🚨',
       titulo: parados15.length + ' processo(s) EMERGÊNCIA — sem atualização há 15+ dias',
-      detalhe: parados15.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--red);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados15.length>3?' e mais...':''),
+      detalhe: parados15.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc('${p.id}');return false" style="color:var(--red);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados15.length>3?' e mais...':''),
       acao: 'Ver agora',
       fn: () => {
         abrirChat(null);
@@ -2213,7 +2220,7 @@ function varreduraInicial(){
       tipo: 'parado10',
       icone: '⚠️',
       titulo: parados10.length + ' processo(s) CRÍTICO — sem atualização há 10+ dias',
-      detalhe: parados10.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--orange);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados10.length>3?' e mais...':''),
+      detalhe: parados10.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc('${p.id}');return false" style="color:var(--orange);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados10.length>3?' e mais...':''),
       acao: 'Verificar',
       fn: () => {
         abrirChat(null);
@@ -2228,7 +2235,7 @@ function varreduraInicial(){
       tipo: 'parado5',
       icone: '⏰',
       titulo: parados5.length + ' processo(s) LEMBRETE — sem atualização há 5+ dias',
-      detalhe: parados5.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc(${p.id});return false" style="color:var(--gold);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados5.length>3?' e mais...':''),
+      detalhe: parados5.slice(0,3).map(p=>`<a href="#" onclick="event.stopPropagation();abrirProc('${p.id}');return false" style="color:var(--gold);text-decoration:underline;font-weight:600">${lexEscape(p.nome)}</a>`).join(', ') + (parados5.length>3?' e mais...':''),
       acao: 'Listar',
       fn: () => {
         abrirChat(null);
@@ -3066,7 +3073,6 @@ function ativarApp(perfil){
   setTimeout(mostrarBoasVindas, 1200);
   setTimeout(conectarSSE, 2000);
   setTimeout(_tentarRefreshToken, 3000);
-  setTimeout(sincronizacaoDiariaAuto,5000);
   setTimeout(iniciarPjePolling, 4000);
   setInterval(cicloAtualizacaoInteligente,3600000);
   setInterval(_tentarRefreshToken, 6*3600000); // renova token a cada 6h se necessário
@@ -3693,7 +3699,7 @@ async function verificarAndamentosAgora(){
 }
 
 function verNoPje(id){
-  const p = getProcs().find(x => x.id===id);
+  const p = getProcs().find(x => String(x.id)===String(id));
   if(!p || !p.numero){ toast('Processo sem nÃºmero','erro'); return; }
   const trib = String(p.tribunal||'').toUpperCase();
   const num = encodeURIComponent(String(p.numero||''));
@@ -4037,7 +4043,7 @@ function verificarNotificacoes(){
   if(!alertas.length) return;
   const lista=document.getElementById('notif-lista');
   lista.innerHTML=alertas.map(p=>`
-    <div class="notif-item ${p.d<=2?'':'orange'}" onclick="fecharNotif();abrirProc(${p.id})">
+    <div class="notif-item ${p.d<=2?'':'orange'}" onclick="fecharNotif();abrirProc('${p.id}')">
       <div class="notif-item-nome">${lexEscape(p.nome)}</div>
       <div class="notif-item-det">Prazo em ${p.d===0?'HOJE':p.d+' dia(s)'} — ${p.prazo}${p.prazoReal?' (real: '+p.prazoReal+')':''}</div>
     </div>`).join('');
@@ -4122,7 +4128,7 @@ function buscarLive(q){
   ).slice(0,6);
   if(!res.length){el.className='';el.innerHTML='';return;}
   el.className='show';
-  el.innerHTML=res.map(p=>`<div class="search-item" onclick="abrirProc(${p.id})"><div class="si-nome">${lexEscape(p.nome)}</div><div class="si-det">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div></div>`).join('');
+  el.innerHTML=res.map(p=>`<div class="search-item" onclick="abrirProc('${p.id}')"><div class="si-nome">${lexEscape(p.nome)}</div><div class="si-det">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div></div>`).join('');
 }
 function fecharBusca(){document.getElementById('search-results').className='';}
 
@@ -4157,7 +4163,7 @@ function _renderPainelReal(){
   const hoje=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
 
   const alertasHtml=alertas.map(p=>`
-    <div class="alerta-banner ${p.d<=2?'':'orange'}" onclick="abrirProc(${p.id})">
+    <div class="alerta-banner ${p.d<=2?'':'orange'}" onclick="abrirProc('${p.id}')">
       <div class="alerta-left"><div style="font-size:18px">${p.d<=2?'🔴':'🟠'}</div>
         <div><div class="alerta-nome">${lexEscape(p.nome)}</div>
         <div class="alerta-msg">Prazo: ${p.prazo}${p.prazoReal?' (real: '+p.prazoReal+')':''}</div></div>
@@ -4293,7 +4299,7 @@ function cardProc(p){
       }
     }
   }
-  return `<div class="proc-card" style="border-left-color:${cor}${ehAutuacao?';box-shadow:inset 0 0 0 1px var(--setor-autuacao)33':(ehAdmin?';box-shadow:inset 0 0 0 1px var(--setor-admin)33':'')}" onclick="abrirProc(${p.id})">
+  return `<div class="proc-card" style="border-left-color:${cor}${ehAutuacao?';box-shadow:inset 0 0 0 1px var(--setor-autuacao)33':(ehAdmin?';box-shadow:inset 0 0 0 1px var(--setor-admin)33':'')}" onclick="abrirProc('${p.id}')">
     <div class="pc-top"><div><div class="pc-nome">${lexEscape(p.nome)}</div><div class="pc-partes">${lexEscape(p.partes)}</div></div>
     <div class="pc-right"><div class="pc-tribunal">${lexEscape(p.tribunal)}</div><div class="pc-prazo" style="color:${pf.cor}">${pf.txt}</div></div></div>
     <div class="pc-bottom"><span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span>${chipTipo}<span class="tag">${p.area}</span>${chip}${chipParado}${(p.frentes||[]).slice(0,2).map(f=>`<span class="tag">${f}</span>`).join('')}</div>
@@ -4352,7 +4358,7 @@ function _autuacaoDocsFaltantes(caso){
 // Marca um doc como recebido no caso (remove da lista de faltantes)
 async function _autuacaoMarcarDoc(casoId, docNome){
   const cs = getPrep();
-  const i = cs.findIndex(c=>c.id===casoId);
+  const i = cs.findIndex(c=>String(c.id)===String(casoId));
   if(i<0){ toast('Caso não encontrado','erro'); return; }
   const c = cs[i];
   const atual = (c.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
@@ -4370,7 +4376,7 @@ async function _autuacaoMarcarDoc(casoId, docNome){
 
 function _autuacaoCobrarWhatsapp(casoId){
   const cs = getPrep();
-  const c = cs.find(x=>x.id===casoId);
+  const c = cs.find(x=>String(x.id)===String(casoId));
   if(!c) return;
   const faltas = (c.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
   if(!faltas.length){ toast('Sem documentos faltantes','ok'); return; }
@@ -4386,7 +4392,7 @@ function _autuacaoCobrarWhatsapp(casoId){
 // Finaliza autuacao -> distribui para o setor correto
 function _autuacaoFinalizar(casoId){
   const cs = getPrep();
-  const c = cs.find(x=>x.id===casoId);
+  const c = cs.find(x=>String(x.id)===String(casoId));
   if(!c){ toast('Caso não encontrado','erro'); return; }
   const faltas = (c.faltando||'').split('\n').map(s=>s.trim()).filter(Boolean);
   if(faltas.length){
@@ -4418,7 +4424,7 @@ function renderAutuacao(){
       ? `<div style="background:var(--orange-soft);border:1px solid color-mix(in srgb, var(--orange) 30%, transparent);border-radius:8px;padding:8px 10px;margin:8px 0">
           <div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:4px">⚠ COBRAR DO CLIENTE (${faltas.length}):</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${faltas.map(f=>`<span onclick="_autuacaoMarcarDoc(${c.id},'${f.replace(/'/g,"\\'")}')" style="background:var(--surface);border:1px dashed var(--orange);border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;color:var(--text2)" title="Clique para marcar como recebido">✕ ${f}</span>`).join('')}
+            ${faltas.map(f=>`<span onclick="_autuacaoMarcarDoc('${c.id}','${f.replace(/'/g,"\\'")}')" style="background:var(--surface);border:1px dashed var(--orange);border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;color:var(--text2)" title="Clique para marcar como recebido">✕ ${f}</span>`).join('')}
           </div>
         </div>`
       : `<div style="background:var(--green-soft);border:1px solid color-mix(in srgb, var(--green) 30%, transparent);border-radius:8px;padding:8px 10px;margin:8px 0;color:var(--green);font-size:11px;font-weight:700">✓ Sem pendências listadas — confira os documentos antes de distribuir</div>`;
@@ -4432,10 +4438,10 @@ function renderAutuacao(){
       </div>
       ${faltasHtml}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-        <button onclick="_pDet(${c.id})" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">👁 Detalhes</button>
-        <button onclick="abrirModalPrep(${c.id})" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">✎ Editar</button>
-        ${faltas.length ? `<button onclick="_autuacaoCobrarWhatsapp(${c.id})" style="background:var(--orange);border:none;border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:#fff;font-weight:700">📱 Cobrar WhatsApp</button>` : ''}
-        <button onclick="_autuacaoFinalizar(${c.id})" style="background:${pronto?'linear-gradient(135deg,var(--green),#059669)':'var(--surface2)'};border:${pronto?'none':'1px solid var(--border)'};border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:${pronto?'#fff':'var(--text2)'};font-weight:700">📤 Distribuir</button>
+        <button onclick="_pDet('${c.id}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">👁 Detalhes</button>
+        <button onclick="abrirModalPrep('${c.id}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">✎ Editar</button>
+        ${faltas.length ? `<button onclick="_autuacaoCobrarWhatsapp('${c.id}')" style="background:var(--orange);border:none;border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:#fff;font-weight:700">📱 Cobrar WhatsApp</button>` : ''}
+        <button onclick="_autuacaoFinalizar('${c.id}')" style="background:${pronto?'linear-gradient(135deg,var(--green),#059669)':'var(--surface2)'};border:${pronto?'none':'1px solid var(--border)'};border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;color:${pronto?'#fff':'var(--text2)'};font-weight:700">📤 Distribuir</button>
       </div>
     </div>`;
   }).join('');
@@ -4798,23 +4804,6 @@ function _restaurarCachePrognostico(p){
 function _escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));}
 function _fmtBRL(v){const n=Number(v)||0;return 'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function _corProbabilidade(prob){if(prob<30)return 'var(--red)';if(prob<=60)return 'var(--gold)';return 'var(--green)';}
-function _calcProbHeuristica(p){
-  let prob = 52;
-  if(p.status==='GANHO') prob = 90;
-  else if(p.status==='PERDIDO') prob = 12;
-  else {
-    if(p.status==='URGENTE') prob -= 18;
-    if(p.status==='RECURSAL') prob -= 8;
-    if((p.andamentos||[]).length>=4) prob += 10;
-    if((p.provas||[]).length>=3) prob += 12;
-    if((p.provas||[]).length===0) prob -= 12;
-    if((p.frentes||[]).length>=2) prob += 6;
-    const d=diasRestantes(p.prazo);
-    if(d!==null&&d<90) prob -= 10;
-    if(d!==null&&d<30) prob -= 10;
-  }
-  return Math.max(5,Math.min(95,Math.round(prob)));
-}
 function _semaforoPrescricao(dias){
   if(dias==null||isNaN(dias)) return {cor:'var(--text3)',txt:'Não informado'};
   if(dias<90) return {cor:'var(--red)',txt:dias+' dias (crítico)'};
@@ -4898,35 +4887,34 @@ async function carregarPrognosticoProcesso(p, forcar){
     try { _cacheIA_set('prognostico', p, _prognosticoCache[p.id]); } catch(_){}
     alvo.innerHTML = renderCardPrognostico(p, _prognosticoCache[p.id]);
   }catch(e){
-    const fallback = {
-      probabilidade_exito:_calcProbHeuristica(p),
-      valor_estimado_ganho:Number(p.valor)||0,
-      valor_risco_perda:Math.round(((Number(p.valor)||12000)*0.08)),
-      reducao_danos:Math.round(((Number(p.valor)||12000)*0.45)),
-      fatores_positivos:(p.provas||[]).length?['Há documentos/provas vinculadas.']:['Necessário reforçar documentação.'],
-      fatores_risco:[p.status==='URGENTE'?'Prazo crítico/urgente pode comprometer o êxito.':'Risco processual padrão do tipo de demanda.'],
-      recomendacao:'Revisar provas, fortalecer tese principal e ajustar cronograma de prazos antes de decidir próximos atos.',
-      fase_atual:p.status==='RECURSAL'?'Recursal':(p.status==='EM_PREP'?'Preparação':'Conhecimento'),
-      prescricao_dias:diasRestantes(p.prazo),
-      jurisprudencia_favoravel:_calcProbHeuristica(p)>=60
-    };
-    _prognosticoCache[p.id] = fallback;
-    alvo.innerHTML = renderCardPrognostico(p, fallback) + '<div style="font-size:11px;color:var(--orange);margin-top:6px">⚠ Endpoint indisponível, exibindo estimativa local.</div>';
+    // Sem servidor não há prognóstico: nada de número heurístico apresentado
+    // como probabilidade, nem gravação em cache. Só aviso e botão para tentar de novo.
+    delete _prognosticoCache[p.id];
+    alvo.innerHTML = renderPrognosticoIndisponivel(p, e);
   }
+}
+function renderPrognosticoIndisponivel(p, e){
+  const motivo = e && e.message ? _escHtml(e.message) : '';
+  return '<div class="desc-card" style="margin-bottom:14px;border-left:4px solid var(--orange)">'
+    +'<div class="desc-label">PROGNÓSTICO DO PROCESSO</div>'
+    +'<div style="font-size:13px;color:var(--text2);margin:8px 0 4px">Prognóstico indisponível no momento.</div>'
+    +(motivo?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+motivo+'</div>':'')
+    +'<button class="btn-outline" style="font-size:11px;padding:6px 12px" onclick="carregarPrognosticoProcesso(procAtivo,true)">↻ Tentar de novo</button>'
+    +'</div>';
 }
 function abrirProc(id){
   fecharBusca(); document.getElementById('search-in').value='';
-  const ps=getProcs(), p=ps.find(x=>x.id===id);
+  const ps=getProcs(), p=ps.find(x=>String(x.id)===String(id));
   if(!p) return;
   procAtivo=p; pag='detalhe';
   document.getElementById('page-title').textContent=p.nome;
   mostrarBackBar(p.grupo||'Processos', 'processos');
   const cor=COR[p.area]||'var(--accent)', sc=SC[p.status]||'#888', pf=fmtPrazo(p);
   const ands=(p.andamentos||[]).length
-    ?p.andamentos.map((a,i)=>`<div class="andamento-line"><div class="and-dot"></div><div style="flex:1"><div class="and-txt">${lexEscape(a.txt)}</div><div class="and-data">${lexEscape(a.data)}</div></div><button class="and-del" onclick="excluirAndamento(${p.id},${i})" title="Excluir">✕</button></div>`).join('')
+    ?p.andamentos.map((a,i)=>`<div class="andamento-line"><div class="and-dot"></div><div style="flex:1"><div class="and-txt">${lexEscape(a.txt)}</div><div class="and-data">${lexEscape(a.data)}</div></div><button class="and-del" onclick="excluirAndamento('${p.id}',${i})" title="Excluir">✕</button></div>`).join('')
     :'<div style="font-size:13px;color:var(--text3);font-weight:300">Nenhum andamento registrado.</div>';
   const arquivosHtml=(p.arquivos||[]).length
-    ?p.arquivos.map((a,i)=>`<div class="arquivo-item"><div class="arquivo-icon">${a.tipo==='pdf'?'📄':a.tipo==='doc'?'📝':'📎'}</div><div><div class="arquivo-nome">${a.nome||'(sem nome)'}</div><div class="arquivo-tipo">${(a.tipo||'arquivo').toUpperCase()} · ${a.data||''}</div></div><button onclick="removerArquivo(${p.id},${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;margin-left:auto;font-size:16px">✕</button></div>`).join('')
+    ?p.arquivos.map((a,i)=>`<div class="arquivo-item"><div class="arquivo-icon">${a.tipo==='pdf'?'📄':a.tipo==='doc'?'📝':'📎'}</div><div><div class="arquivo-nome">${a.nome||'(sem nome)'}</div><div class="arquivo-tipo">${(a.tipo||'arquivo').toUpperCase()} · ${a.data||''}</div></div><button onclick="removerArquivo('${p.id}',${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;margin-left:auto;font-size:16px">✕</button></div>`).join('')
     :'<div style="font-size:13px;color:var(--text3);font-weight:300">Nenhum arquivo vinculado.</div>';
 
   document.getElementById('content').innerHTML=`
@@ -4939,7 +4927,7 @@ function abrirProc(id){
       <div class="detalhe-partes">${lexEscape(p.partes)}</div>
     </div>
 
-    <div onclick="abrirGestorWeb(${p.id})" style="background:linear-gradient(135deg,#c9a961 0%,#a88840 50%,#c9a961 100%);border-radius:12px;padding:16px 22px;margin:14px 0;cursor:pointer;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(201,169,97,0.25);transition:transform .15s, box-shadow .15s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(201,169,97,0.4)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 14px rgba(201,169,97,0.25)'">
+    <div onclick="abrirGestorWeb('${p.id}')" style="background:linear-gradient(135deg,#c9a961 0%,#a88840 50%,#c9a961 100%);border-radius:12px;padding:16px 22px;margin:14px 0;cursor:pointer;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(201,169,97,0.25);transition:transform .15s, box-shadow .15s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(201,169,97,0.4)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 14px rgba(201,169,97,0.25)'">
       <div style="font-size:17px;line-height:1">🤖</div>
       <div style="flex:1;color:#1a1a1c">
         <div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;margin-bottom:2px">Conversar com o Gestor IA</div>
@@ -4952,30 +4940,30 @@ function abrirProc(id){
       ? `<div class="proxacao-box">
            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
              <div class="proxacao-label">⚡ Próxima Ação Imediata</div>
-             <button onclick="sugerirProximaAcao(${p.id})" style="background:color-mix(in srgb, var(--gold) 13%, transparent);border:1px solid color-mix(in srgb, var(--gold) 27%, transparent);border-radius:6px;padding:3px 10px;color:var(--gold);font-family:Arial,Helvetica,sans-serif;font-size:10px;cursor:pointer;font-weight:700;">🤖 Sugerir nova</button>
+             <button onclick="sugerirProximaAcao('${p.id}')" style="background:color-mix(in srgb, var(--gold) 13%, transparent);border:1px solid color-mix(in srgb, var(--gold) 27%, transparent);border-radius:6px;padding:3px 10px;color:var(--gold);font-family:Arial,Helvetica,sans-serif;font-size:10px;cursor:pointer;font-weight:700;">🤖 Sugerir nova</button>
            </div>
            <div class="proxacao-txt">${p.proxacao}</div>
            <div id="proxacao-sugestao-${p.id}"></div>
          </div>`
       : `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
            <div style="font-size:13px;color:var(--text3);font-style:italic">Nenhuma próxima ação definida</div>
-           <button onclick="sugerirProximaAcao(${p.id})" style="background:var(--gold);border:none;border-radius:6px;padding:7px 14px;color:#000;font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;font-weight:700;">🤖 Sugerir com IA</button>
+           <button onclick="sugerirProximaAcao('${p.id}')" style="background:var(--gold);border:none;border-radius:6px;padding:7px 14px;color:#000;font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;font-weight:700;">🤖 Sugerir com IA</button>
          </div>
          <div id="proxacao-sugestao-${p.id}"></div>`
     }
 
     <div class="btn-row">
-      <button class="btn-primary" onclick="abrirGestorWeb(${p.id})" style="background:linear-gradient(135deg,var(--accent),var(--gold));color:#000;font-weight:700">🤖 Gestor IA</button>
-      <button class="btn-primary" onclick="abrirChat(${p.id})">💬 Assessor IA</button>
-      <button class="btn-outline" onclick="addAndamento(${p.id})" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>+ Andamento</button>
-      <button class="btn-outline" onclick="editarProc(${p.id})" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>✎ Editar</button>
-      <button class="btn-outline" onclick="abrirGerador(${p.id})" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>✎ Gerar Peça</button>
-      <button class="btn-outline pipeline-trigger-btn" onclick="abrirPipelinePeca(${p.id})" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>📄 Elaborar Peca</button>
-      <button class="btn-outline" onclick="verNoPje(${p.id})">🔗 Ver no PJe</button>
-      <button class="btn-outline" onclick="imprimirProcesso(${p.id})">🖨 Relatório</button>
-      <button class="btn-outline" onclick="abrirAnalisarDecisao(${p.id})" style="color:var(--gold)">⚖️ Analisar Decisão</button>
-      <button class="btn-outline" onclick="consultarLexManual(${p.id})" style="color:var(--accent)" title="Consulta IA sob demanda — orientação setor/status/próxima ação">🧠 Consultar Lex</button>
-      <button class="btn-danger" onclick="excluirProc(${p.id})" ${!podeExcluir()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeExcluir()?'disabled':''}>✕ Excluir</button>
+      <button class="btn-primary" onclick="abrirGestorWeb('${p.id}')" style="background:linear-gradient(135deg,var(--accent),var(--gold));color:#000;font-weight:700">🤖 Gestor IA</button>
+      <button class="btn-primary" onclick="abrirChat('${p.id}')">💬 Assessor IA</button>
+      <button class="btn-outline" onclick="addAndamento('${p.id}')" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>+ Andamento</button>
+      <button class="btn-outline" onclick="editarProc('${p.id}')" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>✎ Editar</button>
+      <button class="btn-outline" onclick="abrirGerador('${p.id}')" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>✎ Gerar Peça</button>
+      <button class="btn-outline pipeline-trigger-btn" onclick="abrirPipelinePeca('${p.id}')" ${!podeEditar()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeEditar()?'disabled':''}>📄 Elaborar Peca</button>
+      <button class="btn-outline" onclick="verNoPje('${p.id}')">🔗 Ver no PJe</button>
+      <button class="btn-outline" onclick="imprimirProcesso('${p.id}')">🖨 Relatório</button>
+      <button class="btn-outline" onclick="abrirAnalisarDecisao('${p.id}')" style="color:var(--gold)">⚖️ Analisar Decisão</button>
+      <button class="btn-outline" onclick="consultarLexManual('${p.id}')" style="color:var(--accent)" title="Consulta IA sob demanda — orientação setor/status/próxima ação">🧠 Consultar Lex</button>
+      <button class="btn-danger" onclick="excluirProc('${p.id}')" ${!podeExcluir()?'style="opacity:.4;cursor:not-allowed" title="Sem permissão"':''} ${!podeExcluir()?'disabled':''}>✕ Excluir</button>
     </div>
     ${(()=>{
       // V13: INDICADOR DE SAÚDE DO PROCESSO
@@ -5007,7 +4995,7 @@ function abrirProc(id){
 
       // Processos conexos (mesmo grupo ou número similar)
       const todos=getProcs();
-      const conexos=todos.filter(x=>x.id!==p.id&&(
+      const conexos=todos.filter(x=>String(x.id)!==String(p.id)&&(
         (p.grupo&&x.grupo&&x.grupo===p.grupo)||
         (p.numero&&x.numero&&x.numero.substring(0,7)===p.numero.substring(0,7)&&p.numero.length>6)
       )).slice(0,4);
@@ -5034,7 +5022,7 @@ function abrirProc(id){
         <div style="flex:2;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;">
           <div style="font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:8px;">PROCESSOS CONEXOS (${conexos.length})</div>
           ${conexos.map(cx=>`
-            <div onclick="abrirProc(${cx.id})" style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer;" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
+            <div onclick="abrirProc('${cx.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer;" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
               <div style="font-size:11px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${cx.nome}</div>
               <span style="font-size:9px;padding:2px 8px;border-radius:20px;background:${({URGENTE:'#e8454522',ATIVO:'#1a73e822',RECURSAL:'#1ab8d822'}[cx.status])||'var(--border)'};color:${({URGENTE:'var(--red)',ATIVO:'#1a73e8',RECURSAL:'var(--cyan)'}[cx.status])||'var(--text3)'};">${cx.status}</span>
             </div>`).join('')}
@@ -5051,22 +5039,22 @@ function abrirProc(id){
     </div>
     <div class="ia-box" id="ia-auto-${p.id}" style="padding:0;overflow:hidden;">
       <div style="display:flex;border-bottom:1px solid #4f6ef733;">
-        <button onclick="abaAnalise(${p.id},'julgador',this)" id="aba-julgador-${p.id}"
+        <button onclick="abaAnalise('${p.id}','julgador',this)" id="aba-julgador-${p.id}"
           style="flex:1;padding:12px 6px;background:var(--accent-soft);border:none;cursor:pointer;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:var(--accent);font-weight:700;letter-spacing:.5px;border-radius:0;">
           ⚖️ JULGADOR
         </button>
-        <button onclick="abaAnalise(${p.id},'juris',this)" id="aba-juris-${p.id}"
+        <button onclick="abaAnalise('${p.id}','juris',this)" id="aba-juris-${p.id}"
           style="flex:1;padding:12px 6px;background:transparent;border:none;border-left:1px solid #4f6ef733;cursor:pointer;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:var(--text3);font-weight:700;letter-spacing:.5px;">
           📚 JURISPRUDÊNCIA
         </button>
-        <button onclick="abaAnalise(${p.id},'estrategia',this)" id="aba-estrategia-${p.id}"
+        <button onclick="abaAnalise('${p.id}','estrategia',this)" id="aba-estrategia-${p.id}"
           style="flex:1;padding:12px 6px;background:transparent;border:none;border-left:1px solid #4f6ef733;cursor:pointer;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:var(--text3);font-weight:700;letter-spacing:.5px;">
           🎯 ESTRATÉGIA
         </button>
       </div>
       <div id="ia-content-${p.id}" style="padding:18px 22px;">
         <div class="ia-txt" style="color:var(--text3);text-align:center;padding:8px 0;">
-          <button onclick="abaAnalise(${p.id},'julgador',document.getElementById('aba-julgador-${p.id}'))" style="background:var(--accent);border:none;border-radius:8px;padding:10px 20px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;cursor:pointer;">🤖 Consultar IA — Analisar Julgador</button>
+          <button onclick="abaAnalise('${p.id}','julgador',document.getElementById('aba-julgador-${p.id}'))" style="background:var(--accent);border:none;border-radius:8px;padding:10px 20px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;cursor:pointer;">🤖 Consultar IA — Analisar Julgador</button>
           <div style="font-size:10px;color:var(--text3);margin-top:8px;font-style:italic">Clique para gerar análise (consome IA). Cache 24h.</div>
         </div>
       </div>
@@ -5088,27 +5076,27 @@ function abrirProc(id){
       <div class="desc-card"><div class="desc-label">Provas / Documentos</div>${(p.provas||[]).map(pr=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0"></div><span style="font-size:13px;font-weight:300">${pr}</span></div>`).join('')}</div>
     </div>
     <div class="desc-card" style="margin-bottom:14px">
-      <div class="desc-label" style="display:flex;justify-content:space-between;align-items:center"><span>Arquivos Vinculados</span><label style="cursor:pointer;font-size:10px;color:var(--accent);letter-spacing:1px">+ VINCULAR<input type="file" multiple style="display:none" onchange="vincularArquivos(${p.id},this)"></label></div>
+      <div class="desc-label" style="display:flex;justify-content:space-between;align-items:center"><span>Arquivos Vinculados</span><label style="cursor:pointer;font-size:10px;color:var(--accent);letter-spacing:1px">+ VINCULAR<input type="file" multiple style="display:none" onchange="vincularArquivos('${p.id}',this)"></label></div>
       <div id="arquivos-list">${arquivosHtml}</div>
     </div>
     <div class="desc-card"><div class="desc-label">Andamentos</div><div id="ands-${p.id}">${ands}</div></div>
     <div class="desc-card">
       <div class="desc-label" style="display:flex;justify-content:space-between;align-items:center">
         <span>Pecas Produzidas</span>
-        <button class="btn-outline" style="padding:6px 10px;font-size:11px" onclick="abrirHistoricoPecas(${p.id})">Ver historico</button>
+        <button class="btn-outline" style="padding:6px 10px;font-size:11px" onclick="abrirHistoricoPecas('${p.id}')">Ver historico</button>
       </div>
       <div id="pecas-list-${p.id}">
         ${
           (p.pecasProduzidas||[]).length
           ? `<div class="pipeline-historico-list">${
-              (p.pecasProduzidas||[]).slice(0,8).map(pc=>`<div class="pipeline-historico-item" onclick="abrirHistoricoPecas(${p.id})">
+              (p.pecasProduzidas||[]).slice(0,8).map(pc=>`<div class="pipeline-historico-item" onclick="abrirHistoricoPecas('${p.id}')">
                 <div>
                   <div style="font-size:13px;font-weight:700;color:#1a3a5c">${pc.tipo||'Peca Processual'}</div>
                   <div class="pipeline-mini">${pc.data||'-'} · Versao ${pc.versao||1}</div>
                 </div>
                 <div style="display:flex;gap:6px">
-                  <button class="pipeline-btn pipeline-btn-primary" onclick="event.stopPropagation();abrirPipelinePeca(${p.id});pipelineBaixarPDF()">PDF</button>
-                  <button class="pipeline-btn pipeline-btn-green" onclick="event.stopPropagation();abrirPipelinePeca(${p.id});pipelineBaixarDOCX()">DOCX</button>
+                  <button class="pipeline-btn pipeline-btn-primary" onclick="event.stopPropagation();abrirPipelinePeca('${p.id}');pipelineBaixarPDF()">PDF</button>
+                  <button class="pipeline-btn pipeline-btn-green" onclick="event.stopPropagation();abrirPipelinePeca('${p.id}');pipelineBaixarDOCX()">DOCX</button>
                 </div>
               </div>`).join('')
             }</div>`
@@ -5126,7 +5114,7 @@ function abrirProc(id){
 
 // ═══════════════ ARQUIVOS ═══════════════
 function vincularArquivos(id, input){
-  const ps=getProcs(), p=ps.find(x=>x.id===id);
+  const ps=getProcs(), p=ps.find(x=>String(x.id)===String(id));
   if(!p) return;
   if(!p.arquivos) p.arquivos=[];
   Array.from(input.files).forEach(f=>{
@@ -5138,7 +5126,7 @@ function vincularArquivos(id, input){
   abrirProc(id);
 }
 function removerArquivo(procId,idx){
-  const ps=getProcs(), p=ps.find(x=>x.id===procId);
+  const ps=getProcs(), p=ps.find(x=>String(x.id)===String(procId));
   if(!p) return;
   p.arquivos.splice(idx,1);
   saveProcs(ps);
@@ -5147,7 +5135,7 @@ function removerArquivo(procId,idx){
 
 // ═══════════════ RELATÓRIO PDF ═══════════════
 function imprimirProcesso(id){
-  const ps=getProcs(), p=ps.find(x=>x.id===id);
+  const ps=getProcs(), p=ps.find(x=>String(x.id)===String(id));
   if(!p) return;
   const esc = getEscritorio();
   const d = diasRestantes(p.prazo);
@@ -5238,7 +5226,7 @@ function abaAnalise(procId, aba, btn){
     (aba==='julgador'?'perfil do julgador':aba==='juris'?'jurisprudência':'estratégia')+'...</div>';
 
   const ps = getProcs();
-  const p = ps.find(x=>x.id===procId);
+  const p = ps.find(x=>String(x.id)===String(procId));
   if(!p) return;
 
   _gerarAba(p, aba, container, procId);
@@ -5428,7 +5416,7 @@ function addAndamento(id){
 
 function excluirAndamento(procId,idx){
   if(!confirm('Excluir este andamento?')) return;
-  const ps=getProcs(), p=ps.find(x=>x.id===procId);
+  const ps=getProcs(), p=ps.find(x=>String(x.id)===String(procId));
   if(!p) return;
   p.andamentos.splice(idx,1);
   saveProcs(ps);
@@ -5440,7 +5428,7 @@ function confirmarAndamento(id, btn){
   const txt=document.getElementById('and-txt-inp')?.value?.trim();
   const data=document.getElementById('and-data-inp')?.value?.trim()||new Date().toLocaleDateString('pt-BR');
   if(!txt){alert('Descreva o andamento.');return;}
-  const ps=getProcs(), p=ps.find(x=>x.id===id);
+  const ps=getProcs(), p=ps.find(x=>String(x.id)===String(id));
   if(!p) return;
   if(!p.andamentos) p.andamentos=[];
   p.andamentos.unshift({data,txt});
@@ -5457,7 +5445,7 @@ function confirmarAndamento(id, btn){
 function abrirModal(){document.getElementById('modal-titulo').textContent='Cadastrar Processo';document.getElementById('modal').removeAttribute('data-edit');document.getElementById('modal-bg').classList.add('open');}
 function fecharModal(){document.getElementById('modal-bg').classList.remove('open');['f-nome','f-grupo','f-num','f-partes','f-trib','f-prazo','f-desc','f-provas','f-frentes','f-valor','f-proxacao','f-honor','f-honor-status','f-prev-dist','f-docs-falt'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); const ft=document.getElementById('f-tipo'); if(ft) ft.value='judicial'; const fs=document.getElementById('f-setor'); if(fs) fs.value='autuacao';}
 function editarProc(id){
-  const p=getProcs().find(x=>x.id===id);if(!p)return;
+  const p=getProcs().find(x=>String(x.id)===String(id));if(!p)return;
   document.getElementById('f-nome').value=p.nome||'';
   document.getElementById('f-num').value=p.numero||'';
   document.getElementById('f-partes').value=p.partes||'';
@@ -5503,7 +5491,7 @@ function salvarProc(){
   }
   else {
     const hoje = hojeLocal();
-    ps.push({id:Date.now(),...dados,andamentos:[],arquivos:[],atualizado_em:hoje,ultima_atualizacao:hoje,dias_parado:0});
+    ps.push({id:novoIdLex(),...dados,andamentos:[],arquivos:[],atualizado_em:hoje,ultima_atualizacao:hoje,dias_parado:0});
   }
   const _editedId=document.getElementById('modal').getAttribute('data-edit');saveProcs(ps); atualizarUrgentes(); fecharModal(); setTimeout(sincronizarComBot,500);
   if(_editedId) {
@@ -5527,7 +5515,7 @@ function salvarProc(){
   toast('✓ Processo salvo com sucesso!');
   renderProcessos(); ir('processos',document.querySelector('.nav-btn[onclick*="processos"]'));
 }
-function excluirProc(id){if(!confirm('Excluir este processo permanentemente?'))return;saveProcs(getProcs().filter(p=>p.id!==id));atualizarUrgentes();ir('processos',document.querySelector('.nav-btn[onclick*="processos"]'));}
+function excluirProc(id){if(!confirm('Excluir este processo permanentemente?'))return;saveProcs(getProcs().filter(p=>String(p.id)!==String(id)));atualizarUrgentes();ir('processos',document.querySelector('.nav-btn[onclick*="processos"]'));}
 // Marcar ATIVO a partir do banner de urgentes (painel) — SEM confirmação (ação rápida)
 // Usa cicloStatus('set', status:'ATIVO') que já: muda status, atualizado_em=hoje, dias_parado=0,
 // saveProcs (→ sincronizarComBot → PATCH Supabase via /api/sincronizar) e re-renderiza painel.
@@ -5562,7 +5550,7 @@ function excluirProcDoBanner(id, nome){
   const _nm = (nome||'este processo').toString().replace(/\\'/g,"'");
   if(!confirm('Tem certeza que deseja excluir o processo '+_nm+'?')) return;
   try{
-    const novos = getProcs().filter(p=>p.id!==id);
+    const novos = getProcs().filter(p=>String(p.id)!==String(id));
     saveProcs(novos); // grava local + dispara sincronizarComBot() (propaga DELETE para Supabase)
     atualizarUrgentes();
     if(typeof renderPainel==='function'){ try{ renderPainel(); }catch(e){ console.warn('[Lex] renderPainel falhou:', e && e.message); } }
@@ -5586,13 +5574,13 @@ function renderPrazos(){
       <button class="btn-novo" style="font-size:12px;padding:8px 16px" onclick="calNovo(null)">+ Novo prazo/evento</button>
     </div>
     ${com.length?`<div class="secao-titulo" style="color:var(--orange)"><div style="width:8px;height:8px;border-radius:50%;background:var(--orange);flex-shrink:0"></div>COM PRAZO DEFINIDO<div class="secao-linha"></div><div class="secao-count">${com.length}</div></div>
-    ${com.map(p=>{const cor=p.d==null?'var(--text3)':p.d<=0?'var(--red)':p.d<=3?'var(--red)':p.d<=7?'var(--orange)':'var(--green)';return`<div class="prazo-card" style="border-left:3px solid ${cor}"><div onclick="abrirProc(${p.id})" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div>${p.prazoReal?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Prazo real: ${p.prazoReal}</div>`:''}</div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="prazo-num" style="color:${cor}">${p.d==null?'—':p.d===0?'HOJE':p.d<0?'VENCIDO':p.d+'d'}</div><div class="prazo-label">${p.d>=0?p.prazo:''}</div><button onclick="editarPrazoProc(${p.id})" style="background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:3px 8px;color:var(--text3);font-size:10px;cursor:pointer;margin-top:2px">✎ Prazo</button></div></div>`;}).join('')}`:''}
+    ${com.map(p=>{const cor=p.d==null?'var(--text3)':p.d<=0?'var(--red)':p.d<=3?'var(--red)':p.d<=7?'var(--orange)':'var(--green)';return`<div class="prazo-card" style="border-left:3px solid ${cor}"><div onclick="abrirProc('${p.id}')" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div>${p.prazoReal?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Prazo real: ${p.prazoReal}</div>`:''}</div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="prazo-num" style="color:${cor}">${p.d==null?'—':p.d===0?'HOJE':p.d<0?'VENCIDO':p.d+'d'}</div><div class="prazo-label">${p.d>=0?p.prazo:''}</div><button onclick="editarPrazoProc('${p.id}')" style="background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:3px 8px;color:var(--text3);font-size:10px;cursor:pointer;margin-top:2px">✎ Prazo</button></div></div>`;}).join('')}`:''}
     ${sem.length?`<div class="secao-titulo" style="color:var(--text3);margin-top:24px"><div style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></div>SEM PRAZO DEFINIDO<div class="secao-linha"></div><div class="secao-count">${sem.length}</div></div>
-    ${sem.map(p=>`<div class="prazo-card" style="border-left:3px solid var(--text3)"><div onclick="abrirProc(${p.id})" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="badge" style="background:${(SC[p.status]||'#888')}22;color:${SC[p.status]||'#888'}">${p.status}</span><button onclick="editarPrazoProc(${p.id})" style="background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent);border-radius:6px;padding:4px 10px;color:var(--accent);font-size:11px;cursor:pointer;font-weight:700">+ Prazo</button></div></div>`).join('')}`:''}`;
+    ${sem.map(p=>`<div class="prazo-card" style="border-left:3px solid var(--text3)"><div onclick="abrirProc('${p.id}')" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="badge" style="background:${(SC[p.status]||'#888')}22;color:${SC[p.status]||'#888'}">${p.status}</span><button onclick="editarPrazoProc('${p.id}')" style="background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent);border-radius:6px;padding:4px 10px;color:var(--accent);font-size:11px;cursor:pointer;font-weight:700">+ Prazo</button></div></div>`).join('')}`:''}`;
 }
 
 function editarPrazoProc(procId){
-  const ps=getProcs();const p=ps.find(x=>x.id===procId);if(!p)return;
+  const ps=getProcs();const p=ps.find(x=>String(x.id)===String(procId));if(!p)return;
   document.getElementById('_calNovOv')?.remove();
   const ov=document.createElement('div');ov.id='_calNovOv';
   ov.style.cssText='position:fixed;inset:0;background:#00000099;z-index:700;display:flex;align-items:center;justify-content:center;padding:14px';
@@ -5617,7 +5605,7 @@ function salvarPrazoProc(procId){
   const proxacao=document.getElementById('_epP')?.value.trim();
   if(!prazoReal){toast('Informe a data','erro');return;}
   if(!parsePrazo(prazoReal)){toast('Data inválida. Use dd/mm/aaaa','erro');return;}
-  const ps=getProcs();const p=ps.find(x=>x.id===procId);if(!p)return;
+  const ps=getProcs();const p=ps.find(x=>String(x.id)===String(procId));if(!p)return;
   const{prazo}=calcAjustado(prazoReal);
   p.prazo=prazo;p.prazoReal=prazoReal;
   if(proxacao)p.proxacao=proxacao;
@@ -5652,14 +5640,15 @@ function renderEstatisticas(){
   const roiPct = perdaValor>0 ? ((saldoRoi/perdaValor)*100) : (ganhoValor>0 ? 100 : 0);
   const mapaRisco = ativosRisco.map(p=>{
     const pr = _prognosticoCache[p.id] || {};
-    const prob = Number(pr.probabilidade_exito||_calcProbHeuristica(p));
+    // Só prognóstico vindo do servidor conta; sem ele, prob fica nulo (nada de estimativa local).
+    const prob = pr.probabilidade_exito!=null && !isNaN(Number(pr.probabilidade_exito)) ? Number(pr.probabilidade_exito) : null;
     const presc = Number(pr.prescricao_dias);
     const prazoLocal = presc || diasRestantes(p.prazo);
     let classe='baixo', cor='var(--green)', label='Baixo';
-    if(prob<45 || (prazoLocal!=null && prazoLocal<90) || p.status==='URGENTE'){classe='alto';cor='var(--red)';label='Alto';}
-    else if(prob<65 || (prazoLocal!=null && prazoLocal<=180)){classe='medio';cor='var(--gold)';label='Médio';}
+    if((prob!=null && prob<45) || (prazoLocal!=null && prazoLocal<90) || p.status==='URGENTE'){classe='alto';cor='var(--red)';label='Alto';}
+    else if((prob!=null && prob<65) || (prazoLocal!=null && prazoLocal<=180)){classe='medio';cor='var(--gold)';label='Médio';}
     return {id:p.id,nome:p.nome,tribunal:p.tribunal,prob,prazoLocal,classe,cor,label};
-  }).sort((a,b)=>({alto:0,medio:1,baixo:2}[a.classe])-({alto:0,medio:1,baixo:2}[b.classe]) || a.prob-b.prob).slice(0,20);
+  }).sort((a,b)=>({alto:0,medio:1,baixo:2}[a.classe])-({alto:0,medio:1,baixo:2}[b.classe]) || (a.prob??999)-(b.prob??999)).slice(0,20);
   const topValor = ps.slice().sort((a,b)=>(Number(b.valor)||0)-(Number(a.valor)||0)).slice(0,5);
   const topUrg = ps.slice().sort((a,b)=>{
     const da = diasRestantes(a.prazo), db = diasRestantes(b.prazo);
@@ -5667,7 +5656,8 @@ function renderEstatisticas(){
     const va = (da==null?999:da)+sa, vb=(db==null?999:db)+sb;
     return va-vb;
   }).slice(0,5);
-  const topProb = ps.slice().map(p=>({p,prob:Number((_prognosticoCache[p.id]||{}).probabilidade_exito||_calcProbHeuristica(p))}))
+  const topProb = ps.slice().filter(p=>(_prognosticoCache[p.id]||{}).probabilidade_exito!=null)
+    .map(p=>({p,prob:Number(_prognosticoCache[p.id].probabilidade_exito)}))
     .sort((a,b)=>b.prob-a.prob).slice(0,5);
 
   // V12: Dashboard por tribunal
@@ -5762,14 +5752,14 @@ function renderEstatisticas(){
 
     <div class="desc-card" style="margin-top:14px">
       <div class="desc-label">MAPA DE RISCO (PROCESSOS ATIVOS)</div>
-      ${mapaRisco.map(r=>`<div onclick="abrirProc(${r.id})" style="cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      ${mapaRisco.map(r=>`<div onclick="abrirProc('${r.id}')" style="cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
         <div style="min-width:0">
           <div style="font-size:12px;color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(r.nome)}</div>
           <div style="font-size:10px;color:var(--text3)">${_escHtml(r.tribunal||'')}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:11px;color:${r.cor};font-weight:700">${r.label}</div>
-          <div style="font-size:10px;color:var(--text3)">Êxito ${r.prob}% ${r.prazoLocal!=null?('· Presc '+r.prazoLocal+'d'):''}</div>
+          <div style="font-size:10px;color:var(--text3)">${r.prob!=null?('Êxito '+r.prob+'%'):'Sem prognóstico'} ${r.prazoLocal!=null?('· Presc '+r.prazoLocal+'d'):''}</div>
         </div>
       </div>`).join('') || '<div style="font-size:12px;color:var(--text3)">Nenhum processo ativo encontrado.</div>'}
     </div>
@@ -5796,12 +5786,12 @@ function trocarRankingStats(modo){
   if(modo==='urgencia'){
     html = window._statsRanking.topUrg.map((p,i)=>{
       const d = diasRestantes(p.prazo);
-      return `<div onclick="abrirProc(${p.id})" style="cursor:pointer;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:12px"><strong>#${i+1}</strong> ${_escHtml(p.nome)}</div><div style="font-size:11px;color:${d!=null&&d<4?'var(--red)':'var(--gold)'}">${d==null?'Sem prazo':(d+'d')}</div></div>`;
+      return `<div onclick="abrirProc('${p.id}')" style="cursor:pointer;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:12px"><strong>#${i+1}</strong> ${_escHtml(p.nome)}</div><div style="font-size:11px;color:${d!=null&&d<4?'var(--red)':'var(--gold)'}">${d==null?'Sem prazo':(d+'d')}</div></div>`;
     }).join('');
   } else if(modo==='probabilidade'){
-    html = window._statsRanking.topProb.map((x,i)=>`<div onclick="abrirProc(${x.p.id})" style="cursor:pointer;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:12px"><strong>#${i+1}</strong> ${_escHtml(x.p.nome)}</div><div style="font-size:11px;color:${_corProbabilidade(x.prob)}">${x.prob}%</div></div>`).join('');
+    html = window._statsRanking.topProb.length ? window._statsRanking.topProb.map((x,i)=>`<div onclick="abrirProc('${x.p.id}')" style="cursor:pointer;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:12px"><strong>#${i+1}</strong> ${_escHtml(x.p.nome)}</div><div style="font-size:11px;color:${_corProbabilidade(x.prob)}">${x.prob}%</div></div>`).join('') : '<div style="font-size:12px;color:var(--text3)">Nenhum prognóstico calculado pelo servidor ainda. Abra um processo e use "Prognóstico".</div>';
   } else {
-    html = window._statsRanking.topValor.map((p,i)=>`<div onclick="abrirProc(${p.id})" style="cursor:pointer;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:12px"><strong>#${i+1}</strong> ${_escHtml(p.nome)}</div><div style="font-size:11px;color:var(--green)">${_fmtBRL(Number(p.valor)||0)}</div></div>`).join('');
+    html = window._statsRanking.topValor.map((p,i)=>`<div onclick="abrirProc('${p.id}')" style="cursor:pointer;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:12px"><strong>#${i+1}</strong> ${_escHtml(p.nome)}</div><div style="font-size:11px;color:var(--green)">${_fmtBRL(Number(p.valor)||0)}</div></div>`).join('');
   }
   box.innerHTML = html || '<div style="font-size:12px;color:var(--text3)">Sem dados suficientes.</div>';
 }
@@ -6124,7 +6114,7 @@ async function gerarPeticaoInline(){
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Para gerar uma peça de qualidade, complete os dados faltantes:</div>
         <ul style="font-size:12px;padding-left:16px;margin:0 0 12px;">${listHTML}</ul>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button onclick="editarProc(${p.id})" style="background:var(--accent);border:none;border-radius:8px;padding:9px 16px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;cursor:pointer;">✏ Completar dados do processo</button>
+          <button onclick="editarProc('${p.id}')" style="background:var(--accent);border:none;border-radius:8px;padding:9px 16px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;cursor:pointer;">✏ Completar dados do processo</button>
           <button onclick="_gerarPeticaoForcado(${pid},'${tipo.replace(/'/g,"\\'")}','${instr.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid var(--border2);border-radius:8px;padding:9px 16px;color:var(--text2);font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;">Gerar mesmo assim →</button>
         </div>
       </div>`;
@@ -6905,22 +6895,18 @@ const AGENTE_URL = 'http://localhost:3333';
 function getPjeConfig(){ try{ return JSON.parse(localStorage.getItem(PJE_KEY)||'{}'); }catch(e){ return {}; } }
 function savePjeConfig(d){ localStorage.setItem(PJE_KEY, JSON.stringify(d)); }
 
-// ── Detecta se o agente local está rodando na máquina ──
-async function detectarAgenteLocal() {
-  try {
-    const r = await fetchComTimeout(AGENTE_URL + '/ping', {}, 2000);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch(e) { return null; }
-}
+// ── "Agente local" (localhost:3333) NÃO existe no produto. Não há ping nem
+// chamada de rede: a leitura de PJe/DJEN/Datajud é feita pelo servidor
+// (tela "PJe e fontes"). Este bloco legado fica inerte até ser removido.
+async function detectarAgenteLocal() { return null; }
 
-// ── Sincronização diária automática (chamada ao abrir o LEX) ──
+// ── Sincronização diária legada (dependia do agente local): inerte ──
 async function sincronizacaoDiariaAuto() {
   const cfg = getPjeConfig();
   if (!cfg.ativo) return; // PJe desativado — não faz nada
 
   const agente = await detectarAgenteLocal();
-  if (!agente) return; // agente não está rodando neste computador
+  if (!agente) return; // sem agente local: nada a fazer (a sincronização real é do servidor)
 
   // Verifica se já sincronizou hoje
   const hoje = new Date().toLocaleDateString('pt-BR');
@@ -6950,7 +6936,7 @@ async function sincronizacaoDiariaAuto() {
 
     (dados.resultados || []).forEach(res => {
       if (!res.ok || !res.andamentos?.length) return;
-      const p = todosProcs.find(x => x.id === res.id);
+      const p = todosProcs.find(x => String(x.id) === String(res.id));
       if (!p) return;
       if (!p.andamentos) p.andamentos = [];
       const andsSet = new Set(p.andamentos.map(a => a.data+'|'+a.txt.substring(0,30)));
@@ -7485,7 +7471,7 @@ function renderPreparacao(){
       const docsPct=Math.min(Math.round(docsOk/docsTotal*100),100);
       
       return `<div class="_pCasoCard" data-status="${p.status}" style="background:var(--surface);border:1px solid var(--border);border-left:5px solid ${bc};border-radius:14px;padding:0;margin-bottom:12px;overflow:hidden;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,0.05)" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.12)';this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 1px 3px rgba(0,0,0,0.05)';this.style.transform='none'">
-        <div style="padding:16px 18px;cursor:pointer" onclick="_pDet(${p.id})">
+        <div style="padding:16px 18px;cursor:pointer" onclick="_pDet('${p.id}')">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
             <div style="flex:1;min-width:140px">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -7520,10 +7506,10 @@ function renderPreparacao(){
 
         <!-- AÇÕES -->
         <div style="display:flex;gap:0;border-top:1px solid var(--border)">
-          <button style="flex:1;padding:10px;border:none;background:none;font-size:11px;font-weight:600;color:var(--accent);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="abrirModalPrep(${p.id})" onmouseover="this.style.background='color-mix(in srgb, var(--accent) 7%, transparent)'" onmouseout="this.style.background='none'">✎ Editar</button>
-          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--green);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="_pDistr(${p.id})" onmouseover="this.style.background='color-mix(in srgb, var(--green) 7%, transparent)'" onmouseout="this.style.background='none'">✓ Distribuir</button>
-          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--orange);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="_pSt(${p.id},'URGENTE')" onmouseover="this.style.background='color-mix(in srgb, var(--orange) 7%, transparent)'" onmouseout="this.style.background='none'">🔴 Urgente</button>
-          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--red);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="excluirPrep(${p.id})" onmouseover="this.style.background='color-mix(in srgb, var(--red) 7%, transparent)'" onmouseout="this.style.background='none'">✕ Excluir</button>
+          <button style="flex:1;padding:10px;border:none;background:none;font-size:11px;font-weight:600;color:var(--accent);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="abrirModalPrep('${p.id}')" onmouseover="this.style.background='color-mix(in srgb, var(--accent) 7%, transparent)'" onmouseout="this.style.background='none'">✎ Editar</button>
+          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--green);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="_pDistr('${p.id}')" onmouseover="this.style.background='color-mix(in srgb, var(--green) 7%, transparent)'" onmouseout="this.style.background='none'">✓ Distribuir</button>
+          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--orange);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="_pSt('${p.id}','URGENTE')" onmouseover="this.style.background='color-mix(in srgb, var(--orange) 7%, transparent)'" onmouseout="this.style.background='none'">🔴 Urgente</button>
+          <button style="flex:1;padding:10px;border:none;border-left:1px solid var(--border);background:none;font-size:11px;font-weight:600;color:var(--red);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:4px" onclick="excluirPrep('${p.id}')" onmouseover="this.style.background='color-mix(in srgb, var(--red) 7%, transparent)'" onmouseout="this.style.background='none'">✕ Excluir</button>
         </div>
       </div>`;}).join('')}
     </div>
@@ -7549,7 +7535,7 @@ function _pFiltro(status){
 
 async function abrirModalPrep(id){
   _pEId=id||null;_pTmp=[];
-  const isEd=!!id;const caso=isEd?getPrep().find(p=>p.id===id):null;
+  const isEd=!!id;const caso=isEd?getPrep().find(p=>String(p.id)===String(id)):null;
   const docsEx=isEd?await _pGtDocs(id):[];
   const slots=_PSL.map(sl=>{
     const doc=docsEx.find(d=>d.slot===sl.id);
@@ -7637,7 +7623,7 @@ function _pCap(slId,orig){
 
 function _pRmTmp(slId){
   _pTmp=_pTmp.filter(d=>d.slot!==slId);
-  const sl=_PSL.find(s=>s.id===slId)||{i:'📎',l:slId};
+  const sl=_PSL.find(s=>String(s.id)===String(slId))||{i:'📎',l:slId};
   const el=document.getElementById('ps'+slId);
   if(el)el.innerHTML=`<div style="display:flex;gap:3px"><button type="button" onclick="_pCap('${slId}','cam')" style="flex:1;background:var(--surface);border:1px dashed var(--border2);border-radius:5px;padding:5px 2px;color:var(--text3);font-size:10px;cursor:pointer;min-height:32px">📷</button><button type="button" onclick="_pCap('${slId}','gal')" style="flex:1;background:var(--surface);border:1px dashed var(--border2);border-radius:5px;padding:5px 2px;color:var(--text3);font-size:10px;cursor:pointer;min-height:32px">🖼️</button><button type="button" onclick="_pCap('${slId}','pdf')" style="flex:1;background:var(--surface);border:1px dashed var(--border2);border-radius:5px;padding:5px 2px;color:var(--text3);font-size:10px;cursor:pointer;min-height:32px">PDF</button></div>`;
 }
@@ -8685,10 +8671,10 @@ async function _pSv(){
   const btn=document.getElementById('_pBSv');if(btn){btn.textContent='⏳...';btn.disabled=true;}
   try{
     const casos=getPrep();const isEd=_pEId!==null;const id=isEd?_pEId:Date.now();
-    const caso={...(isEd?casos.find(c=>String(c.id)===String(id))||{}:{}),id,nome,tipo:document.getElementById('pt')?.value||'',area:document.getElementById('pa')?.value||'Cível',partes:document.getElementById('pp')?.value||'',tribunal:document.getElementById('ptr')?.value||'',previsao:document.getElementById('ppv')?.value||'',valor:document.getElementById('pvl')?.value||'',faltando:document.getElementById('pfl')?.value||'',obs:document.getElementById('pob')?.value||'',resumo:(document.getElementById('pob')?.value||'').substring(0,200),status:document.getElementById('pst')?.value||'EM_PREP',criadoEm:isEd?(casos.find(c=>c.id===id)?.criadoEm||new Date().toLocaleDateString('pt-BR')):new Date().toLocaleDateString('pt-BR'),docsCount:0};
+    const caso={...(isEd?casos.find(c=>String(c.id)===String(id))||{}:{}),id,nome,tipo:document.getElementById('pt')?.value||'',area:document.getElementById('pa')?.value||'Cível',partes:document.getElementById('pp')?.value||'',tribunal:document.getElementById('ptr')?.value||'',previsao:document.getElementById('ppv')?.value||'',valor:document.getElementById('pvl')?.value||'',faltando:document.getElementById('pfl')?.value||'',obs:document.getElementById('pob')?.value||'',resumo:(document.getElementById('pob')?.value||'').substring(0,200),status:document.getElementById('pst')?.value||'EM_PREP',criadoEm:isEd?(casos.find(c=>String(c.id)===String(id))?.criadoEm||new Date().toLocaleDateString('pt-BR')):new Date().toLocaleDateString('pt-BR'),docsCount:0};
     for(const doc of _pTmp)await _pSvDoc({cId:String(id),slot:doc.slot,nome:doc.nome,base64:doc.base64,tipo:doc.tipo});
     const dx=await _pGtDocs(id);caso.docsCount=dx.length;
-    if(isEd){const idx=casos.findIndex(c=>c.id===id);if(idx>=0)casos[idx]=caso;else casos.push(caso);}else casos.push(caso);
+    if(isEd){const idx=casos.findIndex(c=>String(c.id)===String(id));if(idx>=0)casos[idx]=caso;else casos.push(caso);}else casos.push(caso);
     await lexSavePreparation(caso,dx);_pSync(caso);
     document.getElementById('_pMOv')?.remove();renderPreparacao();
     toast(isEd?'✓ Atualizado!':'✓ Caso adicionado!','ok');
@@ -8697,10 +8683,10 @@ async function _pSv(){
 }
 
 async function _pSt(id,st){const c=getPrep().find(c=>String(c.id)===String(id));if(!c)return;try{await lexSavePreparation({...c,status:st});renderPreparacao();toast('Status salvo.','ok');}catch(e){toast(e.message,'erro');}}
-function excluirPrep(id){if(!confirm('Excluir este caso?'))return;savePrep(getPrep().filter(c=>c.id!==id));renderPreparacao();toast('Excluído','ok');}
+function excluirPrep(id){if(!confirm('Excluir este caso?'))return;savePrep(getPrep().filter(c=>String(c.id)!==String(id)));renderPreparacao();toast('Excluído','ok');}
 
 async function _pDistr(id){
-  const c=getPrep().find(x=>x.id===id);if(!c)return;
+  const c=getPrep().find(x=>String(x.id)===String(id));if(!c)return;
   // Modal de distribuição inteligente
   const ov=document.createElement('div');ov.id='_distrOv';
   ov.style.cssText='position:fixed;inset:0;background:#00000099;z-index:700;display:flex;align-items:center;justify-content:center;padding:14px';
@@ -8771,7 +8757,7 @@ async function _pDistrConfirm(id){
 }
 
 async function _pDet(id){
-  const c=getPrep().find(x=>x.id===id);if(!c)return;
+  const c=getPrep().find(x=>String(x.id)===String(id));if(!c)return;
   const docs=await _pGtDocs(id);const dr=diasRestantes(c.previsao);
   let al='';if(dr!==null){if(dr<0)al=`<span style="color:var(--red);font-weight:700">⚠️ ${Math.abs(dr)}d atrasado</span>`;else if(dr===0)al='<span style="color:var(--red);font-weight:700">🚨 VENCE HOJE</span>';else if(dr<=3)al=`<span style="color:var(--orange);font-weight:700">⏰ ${dr}d</span>`;}
   const stLabel={'URGENTE':'🔴 Urgente','PRONTO':'✅ Pronto','EM_PREP':'🔵 Em Preparo','INATIVO':'⚪ Inativo','AGUARDANDO_APROVACAO':'🔔 Aguardando'};
@@ -8811,7 +8797,7 @@ async function _pDet(id){
     ${contextoHtml}
     ${c.faltando?`<div style="background:var(--orange-soft);border:1px solid color-mix(in srgb, var(--orange) 20%, transparent);border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-weight:700;color:var(--orange)">⚠ Documentos pendentes</div><div style="white-space:pre-wrap;line-height:1.6">${c.faltando}</div></div>`:'<div style="color:var(--green);font-size:12px;margin-bottom:12px;display:flex;align-items:center;gap:6px;font-weight:600">✅ Sem documentos pendentes</div>'}
     <div style="font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:8px">DOCUMENTOS ANEXADOS (${docs.length})</div>
-    ${docs.length?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${docs.map(d=>`<div style="text-align:center;width:66px">${d.base64?.startsWith('data:image')?`<img src="${d.base64}" style="width:66px;height:66px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">`:`<div style="width:66px;height:66px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;border:1px solid var(--border)">📄</div>`}<div style="font-size:9px;color:var(--text3);margin-top:2px">${(_PSL.find(s=>s.id===d.slot)||{l:d.slot}).l}</div></div>`).join('')}</div>`:'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Nenhum documento anexado.</div>'}
+    ${docs.length?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${docs.map(d=>`<div style="text-align:center;width:66px">${d.base64?.startsWith('data:image')?`<img src="${d.base64}" style="width:66px;height:66px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">`:`<div style="width:66px;height:66px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;border:1px solid var(--border)">📄</div>`}<div style="font-size:9px;color:var(--text3);margin-top:2px">${(_PSL.find(s=>String(s.id)===String(d.slot))||{l:d.slot}).l}</div></div>`).join('')}</div>`:'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Nenhum documento anexado.</div>'}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-cancel" onclick="this.closest('div[style*=fixed]').remove()">← Voltar</button>
       <button class="btn-primary" onclick="this.closest('div[style*=fixed]').remove();abrirModalPrep(${id})">✎ Editar</button>
@@ -9561,7 +9547,7 @@ let _gestorPropostaAtiva = null;
 
 async function abrirGestorWeb(id) {
   const ps = getProcs();
-  const p = ps.find(x => x.id === id);
+  const p = ps.find(x => String(x.id) === String(id));
   if(!p) { alert('Processo não encontrado'); return; }
   _gestorProcAtual = p;
   _gestorHist = [];
@@ -9843,7 +9829,7 @@ async function aplicarPropostaGestor() {
 
 function abrirChat(id){
   const ps=getProcs();
-  const p=ps.find(x=>x.id===id);
+  const p=ps.find(x=>String(x.id)===String(id));
   chatCtx=p||null;
   chatMsgsAtual=(p?getChatHist(p.id):[]).slice(-20); // trava de memória ao restaurar
   const msgs=document.getElementById('chat-msgs');
@@ -10245,7 +10231,7 @@ function salvarProcPdf(){
   } else {
     // ── CADASTRA processo novo ──
     ps.push({
-      id:Date.now(),
+      id:novoIdLex(),
       nome,
       grupo:document.getElementById('pdf-grupo').value||'Outros',
       numero,
@@ -10291,7 +10277,7 @@ function limparMsgCiclo(){
 function registrarAcaoSalvar(procId,acao){
   if(!procId)return;
   const ps=getProcs();
-  const idx=ps.findIndex(p=>p.id===procId||p.id==procId);
+  const idx=ps.findIndex(p=>String(p.id)===String(procId)||p.id==procId);
   if(idx<0)return;
   const p=ps[idx];
   p._ultimaAcao=acao||'Salvo';
@@ -10314,7 +10300,7 @@ function registrarAcaoSalvar(procId,acao){
 async function consultarLexManual(procId){
   if(!procId) return;
   const ps = getProcs();
-  const p = ps.find(x=>x.id===procId||x.id==procId);
+  const p = ps.find(x=>String(x.id)===String(procId)||x.id==procId);
   if(!p) { if(typeof toast==='function') toast('Processo nao encontrado','erro'); return; }
   const ultimoAnd = (p.andamentos||[])[0];
   const ctxAcao = ultimoAnd ? (ultimoAnd.txt||'') : 'Consulta manual: analise a situacao atual do processo e oriente proximos passos.';
@@ -10331,7 +10317,7 @@ async function lexConsciencia(procId, textoAndamento, tipoAcao, forcarManual){
     return;
   }
   const ps=getProcs();
-  const p=ps.find(x=>x.id===procId||x.id==procId);
+  const p=ps.find(x=>String(x.id)===String(procId)||x.id==procId);
   if(!p) return;
   
   // Montar contexto do processo
@@ -10394,7 +10380,7 @@ Responda APENAS JSON puro (sem markdown):
     // Se não precisa mudar nada relevante, atualizar silenciosamente a próxima ação
     if(!dados.mudar_setor && !dados.mudar_status && dados.proxima_acao){
       const ps2=getProcs();
-      const idx=ps2.findIndex(x=>x.id===procId||x.id==procId);
+      const idx=ps2.findIndex(x=>String(x.id)===String(procId)||x.id==procId);
       if(idx>=0){
         ps2[idx].proxacao = dados.proxima_acao;
         saveProcs(ps2);
@@ -10494,7 +10480,7 @@ function irFiltroSetor(setor){
 function _lexAplicarSugestao(procId, dados){
   document.getElementById('_lexSugOv')?.remove();
   const ps=getProcs();
-  const idx=ps.findIndex(x=>x.id===procId||x.id==procId);
+  const idx=ps.findIndex(x=>String(x.id)===String(procId)||x.id==procId);
   if(idx<0) return;
   
   const setorLabels={'judicial':'Judicial','administrativo':'Administrativo','autuacao':'Preparação'};
@@ -10603,7 +10589,7 @@ function cicloAtualizacaoInteligente(){
 // Analisa processos sem próxima ação definida e sugere
 // ═══════════════════════════════════════════════════
 async function sugerirProximaAcao(procId){
-  const p = getProcs().find(x => x.id === procId);
+  const p = getProcs().find(x => String(x.id) === String(procId));
   if(!p) return;
   const container = document.getElementById(`proxacao-sugestao-${procId}`);
   if(!container) return;
@@ -10653,7 +10639,7 @@ FRENTES: ${(p.frentes||[]).join(', ')||'não definidas'}
 
 function aplicarSugestaoProxAcao(procId, sugestao){
   const ps = getProcs();
-  const p = ps.find(x => x.id === procId);
+  const p = ps.find(x => String(x.id) === String(procId));
   if(!p) return;
   p.proxacao = sugestao;
   saveProcs(ps);
@@ -11588,7 +11574,7 @@ function salvarPlanilhaDivida() {
   
   // Buscar processo e salvar planilha
   const ps = getProcs ? getProcs() : [];
-  const idx = ps.findIndex(p => p.numero === numeroProcesso || p.id === numeroProcesso);
+  const idx = ps.findIndex(p => p.numero === numeroProcesso || String(p.id) === String(numeroProcesso));
   
   if (idx < 0) {
     alert('Processo não encontrado. Verifique o número ou crie o processo primeiro.');
@@ -11640,7 +11626,7 @@ async function atualizarAndamentoProcessoExistente(){
   const txt = (prompt('Descreva o novo andamento:')||'').trim();
   if(!txt) return;
   const ps = getProcs();
-  const idx = ps.findIndex(p => p.id === chatCtx.id);
+  const idx = ps.findIndex(p => String(p.id) === String(chatCtx.id));
   if(idx < 0){
     alert('Processo nao encontrado.');
     return;
@@ -12312,7 +12298,7 @@ function _epRegistrarAndamento(procId, acao, titulo, tipo){
   if(!procId) return;
   try {
     const ps = getProcs();
-    const idx = ps.findIndex(p=>p.id===procId || String(p.id)===String(procId));
+    const idx = ps.findIndex(p=>String(p.id)===String(procId) || String(p.id)===String(procId));
     if(idx<0) return;
     if(!ps[idx].pecasProduzidas) ps[idx].pecasProduzidas = [];
     ps[idx].pecasProduzidas.unshift({
@@ -12357,7 +12343,7 @@ function exportarPecaLex(titulo, conteudo, opts){
   _ep_cache = { titulo:(titulo||'Peca_'+new Date().toISOString().slice(0,10)), conteudo:String(conteudo), tipo, procId, docxBlob:null, pdfBlob:null };
 
   fecharExportarPeca();
-  const proc = procId ? getProcs().find(p=>p.id===procId || String(p.id)===String(procId)) : null;
+  const proc = procId ? getProcs().find(p=>String(p.id)===String(procId) || String(p.id)===String(procId)) : null;
   const procInfo = proc ? ('Vinculado ao processo: <b>'+String(proc.nome||'').replace(/</g,'&lt;')+'</b>'+(proc.numero?' ('+proc.numero+')':'')) : '<span style="color:var(--text3)">Sem processo vinculado - peca nao sera registrada no historico.</span>';
 
   const ov = document.createElement('div');
@@ -12657,7 +12643,7 @@ function salvarContato(){
 
 function removerContato(id){
   if(!confirm('Remover contato?')) return;
-  const a = _getAgenda().filter(c=>c.id!==id);
+  const a = _getAgenda().filter(c=>String(c.id)!==String(id));
   _salvarAgenda(a);
   renderAgenda();
   toast('Contato removido','ok');
@@ -12911,7 +12897,7 @@ function atualizarContextoPeticao(){
   const sel = document.getElementById('pet-proc');
   if(!sel) return;
   const id = parseInt(sel.value);
-  const p = getProcs().find(x=>x.id===id);
+  const p = getProcs().find(x=>String(x.id)===String(id));
   if(p) chatCtx = p;
 }
 
@@ -13116,7 +13102,7 @@ function _pipelineSetState(id, st){ localStorage.setItem(_pipelineStoreKey(id), 
 function _pipelineGetHist(id){ try{return JSON.parse(localStorage.getItem(_pipelineHistoricoKey(id))||'[]');}catch(e){return [];} }
 function _pipelineSetHist(id, arr){ localStorage.setItem(_pipelineHistoricoKey(id), JSON.stringify(arr||[])); }
 function _pipelinePushHist(id, item){ const h=_pipelineGetHist(id); h.unshift(item); _pipelineSetHist(id,h.slice(0,40)); }
-function _pipelineGetProc(){ const ps=getProcs(); return ps.find(x=>x.id===_pipelineProcId)||null; }
+function _pipelineGetProc(){ const ps=getProcs(); return ps.find(x=>String(x.id)===String(_pipelineProcId))||null; }
 function _pipelineEtapaIndex(etapa){ const idx=PIPELINE_STEPS.findIndex(s=>s.key===etapa); return idx<0?0:idx; }
 function _pipelineEsc(v){ return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 async function _pipelineApi(action, payload){
@@ -13131,7 +13117,7 @@ async function _pipelineApi(action, payload){
 function abrirPipelinePeca(id){
   if(!id) return;
   _pipelineProcId=id;
-  const p=getProcs().find(x=>x.id===id);
+  const p=getProcs().find(x=>String(x.id)===String(id));
   if(!p) return;
   _pipelineAnalisando=false; _pipelineElaborando=false; _pipelineReanalisando=false; _pipelineElabProg=18;
   document.getElementById('pipeline-proc-sub').textContent=(p.nome||'Processo')+' · '+(p.numero||'numero nao informado');
@@ -13169,7 +13155,7 @@ function renderPipelineModal(){
     const prev=(st.pecaV2||st.pecaV1||'').split('\n').slice(0,6).join('\n');
     html+='<div class="pipeline-label">Liberacao</div><div class="pipeline-card"><div class="pipeline-label">Preview da peca</div><div class="pipeline-viewer" style="max-height:160px">'+_pipelineEsc(prev||'Sem conteudo de peca.')+'</div><div class="pipeline-actions"><button class="pipeline-btn pipeline-btn-primary" onclick="pipelineBaixarPDF()">Baixar PDF</button><button class="pipeline-btn pipeline-btn-green" onclick="pipelineBaixarDOCX()">Baixar DOCX</button><button class="pipeline-btn pipeline-btn-outline" onclick="pipelineEnviarPJe()">Enviar pro PJe</button><button class="pipeline-btn pipeline-btn-primary" onclick="pipelineArquivarNoProcesso()">Arquivar no Processo</button></div></div>';
   } else if(st.etapaAtual==='arquivo'){
-    html+='<div class="pipeline-label">Arquivo</div><div class="pipeline-success"><div style="font-size:18px;font-weight:700;margin-bottom:4px">Peca arquivada com sucesso!</div><div>Versao '+(st.versao||2)+' · Data '+_pipelineEsc(st.arquivadoEm||new Date().toLocaleDateString('pt-BR'))+'</div><div style="margin-top:8px"><a href="javascript:void(0)" onclick="abrirHistoricoPecas('+_pipelineProcId+')" style="color:#1a3a5c;font-weight:700;text-decoration:none">Ver no historico do processo</a></div></div>';
+    html+='<div class="pipeline-label">Arquivo</div><div class="pipeline-success"><div style="font-size:18px;font-weight:700;margin-bottom:4px">Peca arquivada com sucesso!</div><div>Versao '+(st.versao||2)+' · Data '+_pipelineEsc(st.arquivadoEm||new Date().toLocaleDateString('pt-BR'))+'</div><div style="margin-top:8px"><a href="javascript:void(0)" onclick="abrirHistoricoPecas(\''+_pipelineProcId+'\')" style="color:#1a3a5c;font-weight:700;text-decoration:none">Ver no historico do processo</a></div></div>';
   }
   html+='</div>'; content.innerHTML=html;
   _pipelineEnhanceRev2UI(st);
@@ -13282,10 +13268,10 @@ async function pipelineEnviarPJe(){ if(!_pipelineProcId) return; const r=await _
 async function pipelineArquivarNoProcesso(){
   if(!_pipelineProcId) return;
   await _pipelineApi('arquivar',{processo_id:_pipelineProcId,versao:_pipelineGetState(_pipelineProcId).versao||1});
-  const st=_pipelineGetState(_pipelineProcId), item={id:Date.now(),tipo:(st.relatorio&&st.relatorio.tipo_peca)||'Peca Processual',data:new Date().toLocaleDateString('pt-BR'),versao:st.versao||1,conteudo:_pipelineConteudoAtual()};
+  const st=_pipelineGetState(_pipelineProcId), item={id:novoIdLex(),tipo:(st.relatorio&&st.relatorio.tipo_peca)||'Peca Processual',data:new Date().toLocaleDateString('pt-BR'),versao:st.versao||1,conteudo:_pipelineConteudoAtual()};
   _pipelinePushHist(_pipelineProcId,item);
-  const ps=getProcs(), idx=ps.findIndex(x=>x.id===_pipelineProcId);
-  if(idx>=0){ if(!ps[idx].pecasProduzidas) ps[idx].pecasProduzidas=[]; ps[idx].pecasProduzidas.unshift({tipo:item.tipo,data:item.data,versao:item.versao,arquivo_pdf:true,arquivo_docx:true,id:item.id}); saveProcs(ps); if(pag==='detalhe'&&procAtivo&&procAtivo.id===_pipelineProcId) abrirProc(_pipelineProcId); }
+  const ps=getProcs(), idx=ps.findIndex(x=>String(x.id)===String(_pipelineProcId));
+  if(idx>=0){ if(!ps[idx].pecasProduzidas) ps[idx].pecasProduzidas=[]; ps[idx].pecasProduzidas.unshift({tipo:item.tipo,data:item.data,versao:item.versao,arquivo_pdf:true,arquivo_docx:true,id:item.id}); saveProcs(ps); if(pag==='detalhe'&&procAtivo&&String(procAtivo.id)===String(_pipelineProcId)) abrirProc(_pipelineProcId); }
   st.arquivadoEm=item.data; st.etapaAtual='arquivo'; st.ultimaAcao='arquivado'; _pipelineSetState(_pipelineProcId,st); renderPipelineModal();
 }
 function abrirHistoricoPecas(procId){
@@ -13300,10 +13286,10 @@ function abrirHistoricoPecas(procId){
 }
 function pipelineVerPecaHistorico(id){
   if(!_pipelineProcId) return;
-  const h=_pipelineGetHist(_pipelineProcId).find(x=>x.id===id);
+  const h=_pipelineGetHist(_pipelineProcId).find(x=>String(x.id)===String(id));
   if(!h){ toast('Peca nao encontrada no historico local.','erro'); return; }
   document.getElementById('pipeline-steps').innerHTML='<div class="pipeline-label">Visualizacao de peca</div>';
-  document.getElementById('pipeline-content').innerHTML='<div class="pipeline-content"><div class="pipeline-label">'+_pipelineEsc(h.tipo)+' · Versao '+_pipelineEsc(h.versao)+' · '+_pipelineEsc(h.data)+'</div><div class="pipeline-viewer">'+_pipelineEsc(h.conteudo||'Sem conteudo armazenado.')+'</div><div class="pipeline-actions"><button class="pipeline-btn pipeline-btn-outline" onclick="abrirHistoricoPecas('+_pipelineProcId+')">Voltar ao historico</button></div></div>';
+  document.getElementById('pipeline-content').innerHTML='<div class="pipeline-content"><div class="pipeline-label">'+_pipelineEsc(h.tipo)+' · Versao '+_pipelineEsc(h.versao)+' · '+_pipelineEsc(h.data)+'</div><div class="pipeline-viewer">'+_pipelineEsc(h.conteudo||'Sem conteudo armazenado.')+'</div><div class="pipeline-actions"><button class="pipeline-btn pipeline-btn-outline" onclick="abrirHistoricoPecas(\''+_pipelineProcId+'\')">Voltar ao historico</button></div></div>';
 }
 
 </script>
