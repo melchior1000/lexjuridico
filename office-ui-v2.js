@@ -332,6 +332,30 @@ window.lexTarefas=async function(selectedId){navMark('tarefas');stopTaskWatch();
   await loadTasks(selectedId);
   if(selectedId&&!taskWatch)taskWatch=setInterval(()=>loadTasks(selectedId),15000);
 };
+// Recibos do dia: tudo que o LEX fez hoje, com hora, alvo, quem autorizou e origem.
+const RECEIPT_LABEL={mensagem_enviada:'MENSAGEM ENVIADA',ordem_confirmada:'ORDEM CONFIRMADA',atendimento_recepcao:'CLIENTE ATENDIDO',andamento_registrado:'ANDAMENTO REGISTRADO',prazo_confirmado:'PRAZO CONFIRMADO',prazo_cumprido:'PRAZO CUMPRIDO',tarefa_concluida:'TAREFA CONCLUÍDA',minuta_pronta:'MINUTA PRONTA',rotina_noturna:'ROTINA NOTURNA'};
+const RECEIPT_SOURCE={whatsapp:'WhatsApp',telegram:'Telegram',datajud:'Datajud',djen:'DJEN',pje:'PJe',conector:'conector do navegador',task_engine:'Task Engine',lex:'LEX',manual:'cadastro manual'};
+function receiptHtml(r){
+  const fix="Corrija o recibo de "+(r.hora?r.hora+' ':'')+'('+(RECEIPT_LABEL[r.tipo]||r.tipo)+'): '+r.oque;
+  const open=r.tipo==='tarefa_concluida'||r.tipo==='minuta_pronta'?(r.ref?'<button onclick="lexTarefas(\''+esc(String(r.ref))+'\')">Ver tarefa</button>':''):r.tipo==='andamento_registrado'||r.tipo==='prazo_confirmado'||r.tipo==='prazo_cumprido'?(r.ref?'<button onclick="lexOpenProc(\''+esc(String(r.ref))+'\')">Abrir processo</button>':''):r.tipo==='atendimento_recepcao'||r.tipo==='mensagem_enviada'||r.tipo==='ordem_confirmada'?'<button onclick="lexChannel(\'all\')">Ver conversa</button>':'';
+  return '<article class="lex-receipt"><div class="lex-receipt-head"><span class="ok">✓ '+esc(RECEIPT_LABEL[r.tipo]||r.tipo)+'</span><span>'+esc(r.hora||'—')+'</span></div><dl>'
+    +'<dt>O quê</dt><dd>'+esc(r.oque||'')+'</dd>'
+    +(r.para?'<dt>Para quem</dt><dd>'+esc(r.para)+'</dd>':'')
+    +(r.autorizado_por?'<dt>Autorizado</dt><dd>por '+esc(r.autorizado_por)+'</dd>':'')
+    +(r.origem?'<dt>Origem</dt><dd>'+esc(RECEIPT_SOURCE[r.origem]||r.origem)+'</dd>':'')
+    +'</dl><div class="lex-receipt-actions">'+open+'<button class="ghost" onclick="lexChat();setTimeout(()=>lexPrefill('+JSON.stringify(fix).replace(/</g,'\\u003c')+'),120)">Enviar correção</button></div></article>';
+}
+window.lexRecibos=async function(){navMark('recibos');
+  shell('Recibos','<div class="lex-page-head"><div><small>Recibos · hoje</small><h1>O que o LEX fez hoje</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-receipts" class="lex-panel" role="status">Lendo os registros de hoje…</div>','mais');
+  const box=$('#lex-receipts');if(!box)return;
+  try{
+    const d=await lexApi('/api/escritorio/recibos');if(!box.isConnected)return;
+    const c=d.contagens||{},rows=Array.isArray(d.recibos)?d.recibos:[];
+    const counters='<div class="lex-receipt-grid"><div><strong class="g">'+Number(c.concluidas||0)+'</strong><span>concluídas</span></div><div><strong class="b">'+Number(c.em_andamento||0)+'</strong><span>em andamento</span></div><div class="'+(Number(c.aguardam_voce||0)?'hot':'')+'"><strong class="a">'+Number(c.aguardam_voce||0)+'</strong><span>aguarda'+(Number(c.aguardam_voce||0)===1?'':'m')+' você</span></div></div>';
+    const fail=Array.isArray(d.falhas)&&d.falhas.length?'<div class="lex-warning">Não consegui ler '+esc(d.falhas.join(', '))+'. A lista abaixo pode estar incompleta; não vou interpretar ausência de registro como ausência de ação.</div>':'';
+    box.innerHTML=counters+fail+(rows.length?rows.map(receiptHtml).join(''):'<div class="lex-empty">Nenhuma ação minha registrada hoje'+(fail?'':' — '+esc(String(d.mensagem||''))) +'</div>');
+  }catch(err){if(box.isConnected)box.innerHTML='<div class="lex-warning">Não consegui ler os recibos: '+esc(err.message||'falha no servidor')+'</div>'}
+};
 window.lexEscritorio=async function(){navMark('escritorio');
   let tasks=[],quadro=null;
   try{const d=await lexApi('/api/trabalho');tasks=Array.isArray(d.tarefas)?d.tarefas:[];quadro=officeCounts(d)}catch{}
