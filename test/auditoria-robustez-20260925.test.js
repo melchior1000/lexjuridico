@@ -36,7 +36,7 @@ test('LEX_MAX_BODY_MB padrão do bot.js é o mesmo do lex.env.example',()=>{
 });
 
 // ── 11. tempo de uso: memória entra no relatório; array limitado a 5.000 ──
-test('/api/tempo/logins soma logins da tabela e da memória; memória limitada a 5.000',async()=>{
+test('/api/tempo/logins usa memória apenas para dias sem registro na tabela; memória limitada a 5.000',async()=>{
   const mem=[];
   const app=setup({
     hojeBrasil:()=>'2026-09-25',horaBrasilia:()=>new Date(2026,8,25,12,0,0),
@@ -48,15 +48,21 @@ test('/api/tempo/logins soma logins da tabela e da memória; memória limitada a
   const r=await app.request('/api/tempo/logins?perfil=admin&dias=30',app.token('admin'));
   assert.equal(r.status,200);
   const body=JSON.parse(r.body);
-  assert.equal(body.tabela,2);assert.equal(body.memoria,3);assert.equal(body.total,5);
+  assert.equal(body.tabela,2);assert.equal(body.memoria,0);assert.equal(body.total,2);
   const hoje=body.logins.find(l=>l.data==='2026-09-25');
-  assert.equal(hoje.logins,4,'1 da tabela + 3 da memória');
+  assert.equal(hoje.logins,1,'o login da tabela não é duplicado pelo registro do navegador');
   assert.equal(body.logins.find(l=>l.data==='2026-09-24').logins,1);
   // sem tabela (erro), a memória ainda conta
   const app2=setup({hojeBrasil:()=>'2026-09-25',horaBrasilia:()=>new Date(2026,8,25,12,0,0),
     global:{_tokensRevogados:new Set(),_sessaoAtividade:new Map(),_tempoUsoRegistros:mem},sbRows:async()=>{throw new Error('tabela inexistente');}});
   const r2=JSON.parse((await app2.request('/api/tempo/logins?perfil=admin',app2.token('admin'))).body);
   assert.equal(r2.total,3);
+  // Um dia sem registro na tabela ainda entra pelo registro de memória.
+  mem.push({perfil:'admin',tipo:'login',data:'2026-09-23'});
+  const r3=JSON.parse((await app.request('/api/tempo/logins?perfil=admin&dias=30',app.token('admin'))).body);
+  assert.equal(r3.total,3);
+  assert.equal(r3.memoria,1);
+  mem.pop();
   // poda: nunca passa de 5.000, e o mais antigo sai primeiro
   const c=app.context;
   for(let i=0;i<5200;i++)c._registrarTempoUsoMem({perfil:'admin',tipo:'heartbeat',ts:i,data:'2026-09-25',minutos:1});
