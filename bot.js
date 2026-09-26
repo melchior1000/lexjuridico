@@ -108,9 +108,10 @@ const {readDocument,mustBlockReading,unreadMessage} = require('./lib/document-re
 const http = require('http');
 const {intakeDecision} = require('./lib/intake-door');
 const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-reception');
+const {createReceptionComposer} = require('./lib/reception-ai');
 const {createTelegramPoller} = require('./lib/telegram-poller');
 
-const {brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
+const {setReceptionComposer, brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -787,7 +788,18 @@ const processStore = new ProcessStore(sbRaw, {onCommit:(rows,version,device)=>{
 const sbReq = (method,table,data,query,headers) => table==='processos'
   ? processStore.gateway(method,data,query||{}) : sbRaw(method,table,data,query,headers);
 const recordStore = new RecordStore(sbRaw, process.env.CONFIG_TABLE || 'configuracoes');
+// Recepção inteligente dos canais: a IA escreve a conversa (modelo de canal, econômico)
+// dentro dos limites verificados em lib/reception-ai.js; a decisão continua do código.
+// `ia` e `aiAvailable` são definidos mais abaixo; o compositor só os chama em tempo de execução.
+const receptionComposer = createReceptionComposer({
+  ia:(messages,system,maxTok,modelo)=>ia(messages,system,maxTok,modelo),
+  aiAvailable:()=>aiAvailable(),
+  identity:()=>_idLex(),
+  modelo:MODELO_RAPIDO
+});
+setReceptionComposer(receptionComposer.compose);
 const telegramReception = createTelegramReception({records:recordStore,owner:CHAT_ID,
+  compose:receptionComposer.compose,
   send:(id,text)=>envTelegram(text,null,id),
   report:async text=>{
     const tg=await envTelegram(text,null,CHAT_ID).catch(()=>false);
@@ -864,12 +876,18 @@ const deadlineScheduler=createDeadlineScheduler({
   log:msg=>console.warn(msg)
 });
 // Vigia do PJe (MNI): lista expedientes pendentes, nunca abre teor sozinho.
+// Aviso imediato ao titular pelos canais (Telegram + WhatsApp do operador). É a iniciativa do LEX:
+// intimação nova, minuta pronta, tarefa travada — ele fala na hora, não espera o resumo do dia.
+async function avisarTitular(text){
+  let ok=false;
+  if(CHAT_ID) ok=(await envTelegram(text,null,CHAT_ID).catch(()=>false))||ok;
+  if(process.env.LEX_OPERATOR_WHATSAPP) ok=(await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false))||ok;
+  return ok;
+}
+const billingRoutes=require('./lib/billing-routes').createBillingRoutes({records:recordStore,authenticate:r=>validarToken(getToken(r)),headers:{},body:lerBody,log:m=>console.warn('[Cobrança]',m)});
 const pjeMonitor = createPjeMonitor({
   records:recordStore,processStore,
-  notify:async text=>{
-    await envTelegram(text,null,CHAT_ID).catch(()=>false);
-    if(process.env.LEX_OPERATOR_WHATSAPP) await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false);
-  },
+  notify:avisarTitular,
   log:msg=>console.warn(msg)
 });
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
@@ -6048,11 +6066,31 @@ async function processarMensagem(ctx, dados) {
       const pick=fresh?pickChoice(txt,pending.candidatos):null;
       if(pick)choice={texto:pending.texto,processo_id:pick.id};
     }
+    // A inteligência dirige também nos canais: com IA disponível, a mensagem do titular vai ao
+    // LEX vivo (mesmo núcleo do app, com as ferramentas na mão). O executor determinístico
+    // fica na frente só para comandos com barra, frases de confirmação e escolha pendente
+    // ("1", "2", CNJ), e serve de reserva quando a IA não está disponível.
+    const coreDeps={records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,oab:lexOab,onTaskResult:notice=>avisarTitular(notice),log:msg=>console.warn('[LEX Core]',msg)};
+    const literal=!!choice||/^\s*(\/|CONFIRMO\s+CIENCIA\b|APROVO\b)/i.test(txt);
+    const vivoOn=aiAvailable()&&IA_PROVIDER==='anthropic'&&process.env.LEX_AI_NO_CREDIT!=='1'&&lex_agente_vivo&&typeof lex_agente_vivo.conversarLex==='function'&&!global._intakeSessoes?.[chatId];
+    if(vivoOn&&!literal&&!dados.arquivo&&!dados.imagem){
+      try{
+        const vivoDeps={...coreDeps,processos,ANTHROPIC_KEY:AK,https,CORS:{},perfil:operatorProfile,sbReq,
+          sbGet:(t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v])))};
+        vivoDeps.tools=lex_agente_vivo.lexToolsFor(vivoDeps,{profile:operatorProfile,requestId:ctx.eventId||CRYPTO.randomUUID(),canal:ctx.canal});
+        const casoId=processos.find(p=>String(p.id)===String(mem.casoAtual)||String(p.nome||'').toLowerCase()===String(mem.casoAtual||'').toLowerCase())?.id||null;
+        const out=await lex_agente_vivo.conversarLex(vivoDeps,{mensagem:txt,historico:mem.hist,processo_id:casoId,canal:ctx.canal});
+        const answer=String(out?.texto||'').trim()||'Feito. (A ferramenta executou, mas não devolveu texto.)';
+        mem.hist.push({role:'user',content:txt},{role:'assistant',content:answer});
+        if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
+        salvarMemoria(ctx.chatId,ctx.threadId);
+        _registrarMsgCentral(ctx.canal,'entrada',chatId,ctx.nomeUsuario||chatId,txt);
+        await env(answer,ctx);
+        return;
+      }catch(e){console.warn('[LEX vivo] '+ctx.canal+': '+String(e?.message||e).slice(0,200)+' — usando o executor de ordens.');}
+    }
     try {
-      const execution=await executeNaturalOfficeCommand({
-        records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,oab:lexOab,
-        log:msg=>console.warn('[LEX Core]',msg)
-      },{
+      const execution=await executeNaturalOfficeCommand(coreDeps,{
         text:choice?choice.texto:txt,processo_id:choice?.processo_id,profile:operatorProfile,request_id:ctx.eventId||CRYPTO.randomUUID(),
         previous_text:[...(Array.isArray(mem.hist)?mem.hist:[])].reverse().find(m=>m?.role==='assistant'&&typeof m.content==='string')?.content||null
       });
@@ -10494,7 +10532,7 @@ const server = http.createServer(async (req, res) => {
   }
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
     await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,pje:typeof pjeMonitor==='undefined'?null:pjeMonitor,oab:typeof lexOab==='undefined'?null:lexOab,
-      engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox:typeof channelOutbox==='undefined'?null:channelOutbox,
+      engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox:typeof channelOutbox==='undefined'?null:channelOutbox,onTaskResult:notice=>avisarTitular(notice),
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
   }
@@ -10521,7 +10559,7 @@ const server = http.createServer(async (req, res) => {
   // Negação por padrão: toda rota /api/* exige sessão válida, salvo as públicas
   // abaixo, que têm autenticação própria (senha, segredo de webhook ou conector).
   const ROTAS_PUBLICAS_LEX = new Set(['/api/login', '/api/ping', '/api/webhook-whatsapp',
-    '/api/whatsapp/webhook', '/api/conector/andamento', '/api/webhook-asaas', '/api/auth/refresh']);
+    '/api/whatsapp/webhook', '/api/conector/andamento', '/api/webhook-mercadopago', '/api/auth/refresh']);
   if(url.startsWith('/api/') && !ROTAS_PUBLICAS_LEX.has(url) && !validarToken(getToken(req))) {
     res.writeHead(401, CORS);
     res.end(JSON.stringify({error:'Nao autenticado'}));
@@ -11126,7 +11164,7 @@ const server = http.createServer(async (req, res) => {
       const vivoUrl = url === '/api/agente-vivo' ? '/api/vivo/conversar' : url;
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
         req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
-        ANTHROPIC_KEY: AK, https, lerBody,records:recordStore,engine:taskEngine,processStore,
+        ANTHROPIC_KEY: AK, https, lerBody,records:recordStore,engine:taskEngine,processStore,onTaskResult:notice=>avisarTitular(notice),
         log:msg=>console.warn('[LEX Core]',msg),
         sbGet: (t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))),
         sbReq,
@@ -12336,6 +12374,11 @@ if(url==='/api/memoria' && req.method==='GET') {
   // "Enviar prazos agora", "Resumo geral"). O token do bot fica SÓ no servidor
   // (TELEGRAM_TOKEN); o navegador nunca fala com api.telegram.org. Os prazos
   // saem da fila oficial (DeadlineWatch/deadline_legal_truth), nunca de p.prazo bruto.
+  // Cobrança da licença (Mercado Pago) e licença do escritório — política central em lib/license-policy.js.
+  if(url==='/api/webhook-mercadopago' || url.startsWith('/api/billing/')) {
+    try{ if(await billingRoutes.handle(req,res,url)) return; }
+    catch(e){ res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); return; }
+  }
   if(url==='/api/telegram/enviar' && req.method==='POST') {
     try {
       const pfTg = validarToken(getToken(req));
