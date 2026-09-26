@@ -22,10 +22,12 @@
   const ROTAS = [
     // Dia a dia
     {id: 'painel',          titulo: 'LEX',                    grupo: 'dia',      icone: '◈', tela: () => call('lexChat') || call('lexHome') || call('renderPainel')},
-    {id: 'trabalho',        titulo: 'Tarefas',                grupo: 'dia',      icone: '☑', tela: () => call('lexTarefas') || call('renderTrabalho')},
-    {id: 'recepcao',        titulo: 'Recepção',               grupo: 'dia',      icone: '📥', tela: () => call('renderRecepcaoLex')},
     {id: 'processos',       titulo: 'Processos',              grupo: 'dia',      icone: '⊞', tela: () => call('lexProcessos') || call('renderProcessos')},
     {id: 'prazos',          titulo: 'Prazos',                 grupo: 'dia',      icone: '◷', tela: () => call('lexPrazos') || call('renderPrazos')},
+    {id: 'recibos',         titulo: 'O que o LEX fez hoje',   grupo: 'dia',      icone: '✓', tela: () => call('lexRecibos')},
+    // Tarefas e recepção continuam existindo, mas o dia a dia passa pela Conversa: ficam em "Mais".
+    {id: 'trabalho',        titulo: 'Tarefas',                grupo: 'mais',     icone: '☑', tela: () => call('lexTarefas') || call('renderTrabalho')},
+    {id: 'recepcao',        titulo: 'Recepção',               grupo: 'mais',     icone: '📥', tela: () => call('renderRecepcaoLex')},
     // Produção jurídica
     {id: 'peticao',         titulo: 'Peças',                  grupo: 'producao', icone: '✎', tela: () => call('openCommercialProduction', 'peticao') || call('renderPeticao')},
     {id: 'pericia',         titulo: 'Perícia',                grupo: 'producao', icone: '🔬', tela: () => call('openCommercialProduction', 'pericia') || call('renderPericia')},
@@ -47,7 +49,7 @@
     {id: 'senhas',          titulo: 'Senhas e acesso',        grupo: 'config',   icone: '🔑', admin: true, tela: () => call('renderGestaoSenhas')}
   ];
   // Nomes antigos que continuam funcionando (links internos e favoritos).
-  const APELIDOS = {agentes: 'escritorio', inicio: 'painel', hoje: 'painel', home: 'painel'};
+  const APELIDOS = {agentes: 'escritorio', inicio: 'painel', hoje: 'painel', home: 'painel', tarefas: 'trabalho', feito: 'recibos'};
   const PORID = Object.fromEntries(ROTAS.map(r => [r.id, r]));
 
   let atual = null;

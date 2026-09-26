@@ -178,6 +178,8 @@ function settings(){
   const host=document.getElementById('content');if(!host)return;
   host.innerHTML='<main class="lex-screen lex2-settings"><header class="lex-top"><div><strong>Ajustes do escritório</strong><small>INFRAESTRUTURA</small></div><div class="lex-top-actions"><button onclick="lexChat()" aria-label="Voltar ao LEX">‹</button></div></header>'
     +'<section class="lex2-settings-grid">'
+    +'<button onclick="lexRecibos()"><b>O que o LEX fez hoje</b><small>Recibos: mensagens, andamentos, prazos e tarefas, com hora e autorização.</small></button>'
+    +'<button onclick="lexTarefas()"><b>Tarefas</b><small>Entregas em andamento e minutas para sua revisão.</small></button>'
     +'<button onclick="lexEquipe()"><b>Equipe e acessos</b><small>Contas, sênior, senhas e desligamento.</small></button>'
     +'<button onclick="lexOab()"><b>Diário, PJe e eproc</b><small>Fontes oficiais e conexões judiciais.</small></button>'
     +'<button onclick="lexChannel(\'all\')"><b>WhatsApp e Telegram</b><small>Conversas e atendimento do escritório.</small></button>'

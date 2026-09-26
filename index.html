@@ -757,10 +757,9 @@ table{max-width:100%;}
   <nav aria-label="Menu principal">
     <div class="nav-section">Dia a dia</div>
     <button class="nav-btn active" data-route="painel" onclick="ir('painel',this)"><span class="nav-icon">◈</span> Início</button>
-    <button class="nav-btn" data-route="trabalho" onclick="ir('trabalho',this)"><span class="nav-icon">☑</span> Tarefas</button>
-    <button class="nav-btn" data-route="recepcao" id="lex-nav-recepcao" onclick="ir('recepcao',this)"><span class="nav-icon">📥</span> Recepção</button>
     <button class="nav-btn" data-route="processos" onclick="ir('processos',this)"><span class="nav-icon">⊞</span> Processos</button>
     <button class="nav-btn" data-route="prazos" onclick="ir('prazos',this)"><span class="nav-icon">◷</span> Prazos</button>
+    <button class="nav-btn" data-route="recibos" onclick="ir('recibos',this)"><span class="nav-icon">✓</span> O que o LEX fez hoje</button>
     <div class="nav-section">Produção jurídica</div>
     <button class="nav-btn" data-route="peticao" onclick="ir('peticao',this)"><span class="nav-icon">✎</span> Peças</button>
     <button class="nav-btn" data-route="pericia" onclick="ir('pericia',this)"><span class="nav-icon">🔬</span> Perícia</button>
@@ -768,6 +767,8 @@ table{max-width:100%;}
     <button class="nav-btn" data-route="juizes" onclick="ir('juizes',this)"><span class="nav-icon">◉</span> Padrão decisório</button>
     <details id="lex-nav-mais" class="lex-nav-mais">
       <summary class="nav-section" style="cursor:pointer;list-style:none">Mais telas ▾</summary>
+      <button class="nav-btn" data-route="trabalho" onclick="ir('trabalho',this)"><span class="nav-icon">☑</span> Tarefas</button>
+      <button class="nav-btn" data-route="recepcao" id="lex-nav-recepcao" onclick="ir('recepcao',this)"><span class="nav-icon">📥</span> Recepção</button>
       <button class="nav-btn" data-route="autuacao" onclick="ir('autuacao',this)"><span class="nav-icon">🗂</span> Autuação (casos novos)</button>
       <button class="nav-btn" data-route="processos_admin" onclick="ir('processos_admin',this)"><span class="nav-icon">▣</span> Processos administrativos</button>
       <button class="nav-btn" data-route="preparacao" onclick="ir('preparacao',this)"><span class="nav-icon">⋯</span> Em preparação</button>
