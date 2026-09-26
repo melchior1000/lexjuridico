@@ -820,7 +820,11 @@ async function montarContextoEscritorio(deps){
     const state=deps.processStore?.read?await deps.processStore.read():{processes:deps.processos||[]};
     const ps=Array.isArray(state?.processes)?state.processes:[];
     const ativos=ps.filter(p=>!/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p.status||'')));
-    let tarefas=[];try{tarefas=await deps.engine?.list?.()||[]}catch{}
+    let tarefas=null,tarefasErro=null;
+    try{tarefas=await deps.engine?.list?.()||[]}catch(e){tarefasErro=e}
+    if(!tarefas){
+      return 'ESCRITÓRIO AGORA ('+hojeBrasil()+'): '+ativos.length+' processos ativos de '+ps.length+' na carteira · estado das tarefas indisponível'+(tarefasErro?' ('+erroSeguro(tarefasErro.message)+')':'')+'. Não informe contagens de tarefas até conseguir lê-las. Use as ferramentas para detalhes; não deduza o que não leu.';
+    }
     const emAndamento=tarefas.filter(t=>['na_fila','executando'].includes(t?.status)).length;
     const aguardam=tarefas.filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
     return 'ESCRITÓRIO AGORA ('+hojeBrasil()+'): '+ativos.length+' processos ativos de '+ps.length+' na carteira · '+emAndamento+' tarefa(s) em execução · '+aguardam+' aguardando o titular. Use as ferramentas para detalhes; não deduza o que não leu.';
@@ -840,7 +844,7 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
     ? '\n\nATENÇÃO — MOVIMENTOS PJe RECÉM IMPORTADOS (analise cada um e oriente o próximo passo):\n' + movimentos_pje.map((m, i) => { if (!m) return ''; const dt = m.dataHora || m.data || '?'; const cod = m.codigo || m.codigoNacional || ''; const desc = m.descricao || m.nome || JSON.stringify(m); return `  ${i + 1}. [${dt}]${cod ? ' Código ' + cod + ':' : ''} ${desc}`; }).filter(Boolean).join('\n')
     : '';
   const canalNota = canal && canal !== 'web' ? '\n\nCANAL: ' + canal + ' — respostas curtas, sem markdown pesado; quebre em parágrafos pequenos.' : '';
-  const systemPrompt = PROMPT_GESTOR + '\n\n' + contexto + instrucaoPje + canalNota;
+  const systemPrompt = PROMPT_GESTOR + '\n\n' + contexto + instrucaoPje + canalNota + '\n\nREGRA DE APROVAÇÃO: faça no máximo uma chamada propor_atualizacao por resposta. Se houver mais de uma atualização possível, apresente uma por vez para aprovação humana.';
   const messages = sanitizarHistorico(historico);
   messages.push({ role: 'user', content: mensagem });
   garantirPrimeiroUser(messages);
@@ -849,8 +853,8 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
   const tools = processo ? [TOOL_PROPOR_ATUALIZACAO, TOOL_BUSCAR_DOCUMENTOS, ...corpo] : (corpo.length ? corpo : [TOOL_PROPOR_ATUALIZACAO, TOOL_BUSCAR_DOCUMENTOS]);
   const payload = { model: modelo, max_tokens: 4096, system: systemPrompt, tools, messages };
   const { texto, toolsUsadas, stop_reason } = await resolverToolUse(deps, payload);
-  const proposta = toolsUsadas.find(t => t.name === 'propor_atualizacao');
-  return { texto, toolsUsadas, proposta: proposta ? { id: proposta.id, ...proposta.input } : null, modelo, stop_reason };
+  const propostas = toolsUsadas.filter(t => t.name === 'propor_atualizacao').map(t => ({ id: t.id, ...t.input }));
+  return { texto, toolsUsadas, proposta: propostas[0] || null, propostas, modelo, stop_reason };
 }
 
 async function handlerConversar(req, res, body, deps) {
@@ -860,7 +864,7 @@ async function handlerConversar(req, res, body, deps) {
       return jsonResponse(res, 400, { error: 'Por favor, digite uma mensagem para o LEX.' }, deps.CORS);
     }
     const out = await conversarLex(deps, { processo_id, mensagem, historico, movimentos_pje, canal: 'web' });
-    return jsonResponse(res, 200, { ok: true, texto: out.texto, proposta: out.proposta, processo_id: processo_id || null, modelo: out.modelo, stop_reason: out.stop_reason, ferramentas: out.toolsUsadas.map(t => t.name), aviso: LEX_AVISO }, deps.CORS);
+    return jsonResponse(res, 200, { ok: true, texto: out.texto, proposta: out.proposta, propostas: out.propostas || (out.proposta ? [out.proposta] : []), processo_id: processo_id || null, modelo: out.modelo, stop_reason: out.stop_reason, ferramentas: out.toolsUsadas.map(t => t.name), aviso: LEX_AVISO }, deps.CORS);
   } catch (e) {
     console.error('[VIVO] conversar erro:', erroSeguro(String(e && e.message || e)));
     return jsonResponse(res, 500, { error: 'Erro no LEX: ' + erroSeguro(String(e && e.message || e)) }, deps.CORS);
