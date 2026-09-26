@@ -67,7 +67,7 @@ function lexTaskNeedsYouHtml(t){
 }
 async function lexReturnTask(id){const motivo=prompt('O que precisa ser corrigido na minuta? (vai para o LEX Redator)');if(!motivo||!motivo.trim())return;try{await lexApi('/api/tarefas/devolver',{method:'POST',body:JSON.stringify({id,motivo:motivo.trim()})});if(typeof window.lexTarefas==='function')window.lexTarefas(id);else renderTrabalho();}catch(e){toast(e.message,'erro');}}
 function lexTaskDetailHtml(t){
-  const steps=['na_fila','executando','aguardando_revisao','concluida'];const idx=Math.max(0,steps.indexOf(t.status));const stage=t.status==='concluida'?4:t.status==='aguardando_revisao'?3:t.status==='executando'?2:1;
+  const stage=t.status==='concluida'?4:t.status==='aguardando_revisao'?3:t.status==='executando'?2:1;
   return `<article class="work-task lex-task-detail"><div class="work-task-head"><strong>${lexEscape(t.processo_nome||t.instrucao||t.tipo)}</strong><span class="work-state ${['concluida','aguardando_revisao'].includes(t.status)?'ready':''}">${lexEscape(lexTaskStatus[t.status]||t.status)}</span></div>
     <p>${lexEscape(t.agente||'')} · ${lexEscape(t.tipo||'')} · #${lexEscape(String(t.id||'').slice(0,8))}</p>
     <div class="lex-task-grid"><div><small>ETAPA</small><strong>${stage} de 4</strong></div><div><small>TENTATIVAS</small><strong>${Number(t.tentativas||0)}</strong></div><div><small>CRIADA</small><strong>${lexEscape(t.criada_em?new Date(t.criada_em).toLocaleDateString('pt-BR'):'—')}</strong></div></div>

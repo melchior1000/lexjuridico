@@ -9,61 +9,6 @@ function days(p){
  let d;if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){const[a,b,c]=raw.split('/');d=new Date(+c,+b-1,+a)}else if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,day]=raw.split('-');d=new Date(+y,+m-1,+day)}else d=new Date(raw);
  if(Number.isNaN(d.getTime()))return 9999;const n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);return Math.round((d-n)/86400000);
 }
-const taskStates={aguardando_dados:['Informação necessária','Complete as informações indicadas na tarefa.'],aguardando_documento_nitido:['Documento ilegível','Envie uma cópia legível do documento solicitado.'],aguardando_documento:['Documento necessário','Confira o documento solicitado e anexe ao processo.'],aguardando_configuracao:['Configuração pendente','Confira a configuração indicada antes de tentar novamente.'],aguardando_revisao:['Entrega para revisão','Leia a minuta e registre sua decisão de revisão.'],bloqueada:['Tarefa bloqueada','Confira o impedimento antes de continuar.'],falhou:['Tarefa interrompida','Confira o motivo da falha antes de tentar novamente.']};
-function deadlineTitle(days){
- if(days<0)return'Prazo confirmado vencido';
- if(days===0)return'Prazo confirmado vence hoje';
- if(days===1)return'Prazo confirmado vence amanhã';
- return'Prazo confirmado em '+days+' dias';
-}
-function djenSuggestion(row){return row?.prazo_sugestao&&typeof row.prazo_sugestao==='object'?row.prazo_sugestao:null}
-function prazoLabel(s){
- if(!s?.dias)return'';
- return s.dias+' dia'+(s.dias===1?'':'s')+(s.modo==='uteis'?' úteis':s.modo==='corridos'?' corridos':'');
-}
-async function postDjenDeadline(row,due,regime,note,suggestionSourceHash=null){
- const clean=String(due||'').trim();
- if(!/^\d{4}-\d{2}-\d{2}$/.test(clean))throw new Error('Informe a data confirmada no formato AAAA-MM-DD.');
- await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:row.djen_id,due_at:clean,regime:String(regime||'manual').trim()||'manual',observacao:String(note||''),suggestion_source_hash:suggestionSourceHash||null})});
- await today();
-}
-async function confirmDjenSuggestion(row){
- const s=djenSuggestion(row);
- if(!s?.due_at_proposto)return correctDjenDeadline(row);
- const ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
- const resumo=[
-   p?.nome||p?.numero||row.cnj||'Processo',
-   row.tipo||'Intimação DJEN',
-   s.trecho?'Trecho identificado: '+s.trecho:null,
-   prazoLabel(s)?'Prazo identificado: '+prazoLabel(s):null,
-   'Vencimento PROPOSTO pelo LEX: '+s.due_at_proposto,
-   s.calendario_verificado===true?'Calendário marcado como verificado.':'Calendário local NÃO verificado: confira feriados/suspensões.',
-   '',
-   'Esta data ainda NÃO é prazo jurídico do LEX. Ela só vira prazo após sua confirmação.'
- ].filter(x=>x!==null).join('\n');
- if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfirmar este vencimento?'))return;
- await postDjenDeadline(row,s.due_at_proposto,s.regime||'manual','Confirmado a partir da sugestão assistiva do DJEN.',s.source_hash||null);
-}
-async function correctDjenDeadline(row){
- const s=djenSuggestion(row),ps=procs(),p=ps.find(x=>String(x.id)===String(row.processo_id));
- const resumo=[p?.nome||p?.numero||row.cnj||'Processo',row.tipo||'Intimação DJEN',s?.trecho?'Trecho identificado: '+s.trecho:String(row.texto||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,900)].filter(Boolean).join('\n\n');
- if(typeof confirm==='function'&&!confirm(resumo+'\n\nConfira o teor antes de informar o vencimento confirmado.'))return;
- const due=typeof prompt==='function'?prompt('Informe/corrija o vencimento CONFIRMADO (AAAA-MM-DD):',s?.due_at_proposto||''):null;
- if(due==null)return;
- const regime=typeof prompt==='function'?(prompt('Regime do prazo (cpc, clt ou manual):',s?.regime||'manual')||'manual'):(s?.regime||'manual');
- await postDjenDeadline(row,due,regime,'Vencimento informado/corrigido manualmente após leitura da intimação.',s?.source_hash||null);
-}
-function cnjDigitsOk(d){d=String(d||'').replace(/\D/g,'');if(d.length!==20)return false;if(typeof BigInt!=='function')return true;const r=Number(BigInt(d.slice(0,7)+d.slice(9)+'00')%97n);return String(98-r).padStart(2,'0')===d.slice(7,9)}
-function cnjProblem(p){if(/CONCLU|ARQUIV|ENTREGUE|GANHO|PERDIDO/i.test(String(p?.status||'')))return false;if(/administr|extrajud|consult/i.test(String(p?.tipo||'')+' '+String(p?.setor||'')))return false;const m=String(p?.numero||'').match(/^\s*(\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4})/);return !m||!cnjDigitsOk(m[1])}
-function askLex(text){if(typeof window.lexAskLex==='function')return window.lexAskLex(text);return window.lexChat?.()}
-// O que o LEX já fez sozinho hoje (leitura do Diário), dito numa linha.
-function diarioLine(v){
- if(!v||v.djen_status!=='ok'||!v.executado_em)return'';
- const d=new Date(v.executado_em);if(Number.isNaN(d.getTime()))return'';
- const hoje=new Date().toDateString()===d.toDateString();
- return' Diário lido '+(hoje?'hoje às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em '+d.toLocaleDateString('pt-BR'))+'.';
-}
-// Folha de ação: o LEX executa ali mesmo, sem abrir o chat.
 function sheet(title,onClose){
  document.querySelector?.('.lex-sheet')?.remove?.();
  const previous=document.activeElement;

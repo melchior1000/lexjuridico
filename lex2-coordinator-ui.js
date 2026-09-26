@@ -155,7 +155,7 @@ async function refreshOperationalStatus(){
   const box=document.getElementById('lex2-operational-status');if(!box)return;
   try{
     const d=await lexApi('/api/trabalho');
-    const sectors=d?.contagens?.setores||{},total=Number(d?.contagens?.total??procs().length);
+    const total=Number(d?.contagens?.total??procs().length);
     const pending=(d?.tarefas||[]).filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
     const ai=d?.ia_estado||((d?.ia_configurada===true)?'disponivel':'sem_chave');
     const aiText=ai==='sem_credito'?'IA jurídica sem crédito: análise, redação, perfil do magistrado e jurisprudência estão pausados; banco e rotinas operacionais continuam funcionando.'
