@@ -15,7 +15,7 @@ function setup(extra = {}) {
     Buffer, URL, CRYPTO: crypto, AUTH_SECRET: 'isolated-test-secret', AUTH_IDLE_MS: 1800000,
     PERMS: {admin: {}, secretaria: {}}, SENHAS_WEB: {admin: '', secretaria: ''},
     global: {_tokensRevogados: new Set(), _sessaoAtividade: new Map()},
-    corsHeaders: () => ({'Content-Type':'application/json'}), _corsOrigin: () => 'https://lexjuridico.vercel.app',
+    corsHeaders: () => ({'Content-Type':'application/json'}), _corsOrigin: () => 'https://lexjuridico.vercel.app', _corsOriginHeader: () => ({'Access-Control-Allow-Origin':'https://lexjuridico.vercel.app'}),
     http: {createServer: fn => { callback = fn; }},
     _checkLoginRate: () => true, lerBody: async req => req.body,
     _registrarTempoUso: async () => {},

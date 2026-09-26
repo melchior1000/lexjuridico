@@ -91,7 +91,7 @@ const {RecordStore} = require('./lib/record-store');
 const {NotificationDigest} = require('./lib/notification-digest');
 const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
-const {pickChoice,dailyBriefText} = require('./lib/office-queries');
+const {pickChoice,dailyBriefText,executeOfficeQuery} = require('./lib/office-queries');
 const {createMorningBrief} = require('./lib/morning-brief');
 const {createPjeMonitor} = require('./lib/pje-monitor');
 const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
@@ -266,6 +266,11 @@ const PJE_CONFIG = {
 };
 
 const AUTH_SECRET = process.env.AUTH_SECRET || CRYPTO.randomBytes(32).toString('hex');
+// Em produção (Render/NODE_ENV=production) sem AUTH_SECRET, cada reinício gera
+// um segredo novo e derruba TODAS as sessões. Avisa alto, mas não derruba o deploy.
+if(!process.env.AUTH_SECRET && (process.env.NODE_ENV === 'production' || process.env.RENDER)) {
+  console.error('\x1b[31m[LEX][SEGURANÇA] AUTH_SECRET não definido em produção: o segredo das sessões está sendo gerado a cada reinício e todos os logins caem quando o servidor reinicia. Defina AUTH_SECRET (mínimo 32 bytes aleatórios) nas variáveis de ambiente — veja config/lex.env.example.\x1b[0m');
+}
 const AUTH_IDLE_MS = 30 * 60 * 1000; // 30 min sem atividade invalida token (requisito do titular)
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -9478,14 +9483,21 @@ const ORIGENS_PERMITIDAS = [
   'http://localhost:5500',
   'http://127.0.0.1:5500'
 ];
+// Igualdade EXATA com a lista, só pelo header Origin (Referer não conta).
+// 'https://lexjuridico.vercel.app.atacante.com' ou 'http://localhost:30001'
+// não casam; sem origem permitida, nenhum Allow-Origin é emitido.
 function _corsOrigin(req) {
-  const origin = req.headers.origin || req.headers.referer || '';
-  const found = ORIGENS_PERMITIDAS.find(o => origin.startsWith(o));
-  return found || ORIGENS_PERMITIDAS[0]; // nunca retorna '*'
+  const origin = String(req?.headers?.origin || '').trim();
+  if(!origin) return null;
+  return ORIGENS_PERMITIDAS.includes(origin) ? origin : null; // nunca retorna '*'
+}
+function _corsOriginHeader(req) {
+  const o = _corsOrigin(req);
+  return o ? {'Access-Control-Allow-Origin': o, 'Vary': 'Origin'} : {'Vary': 'Origin'};
 }
 function corsHeaders(req) {
   return {
-    'Access-Control-Allow-Origin': _corsOrigin(req),
+    ..._corsOriginHeader(req),
     'Access-Control-Allow-Methods':'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Aparelho-Id',
     'Access-Control-Allow-Credentials':'true',
@@ -9558,6 +9570,32 @@ function validarToken(token) {
     global._sessaoAtividade.set(token, agora);
     return p;
   } catch(e) { return null; }
+}
+// Poda: sessão inativa há mais de AUTH_IDLE_MS sai do mapa; token revogado cujo
+// carimbo (ts) já passou de AUTH_IDLE_MS não precisa mais ficar na lista, pois
+// validarToken já o recusa pela idade. Evita crescimento sem limite em memória.
+function _tsDoToken(token) {
+  try { const d = JSON.parse(Buffer.from(String(token||''),'base64url').toString()); return Number.isSafeInteger(d.ts) ? d.ts : 0; } catch(e) { return 0; }
+}
+function podarSessoesLex(agora = Date.now()) {
+  let sessoes = 0, revogados = 0;
+  if(global._sessaoAtividade) for(const [tk, ultimo] of global._sessaoAtividade) {
+    if(agora - Number(ultimo||0) > AUTH_IDLE_MS) { global._sessaoAtividade.delete(tk); sessoes++; }
+  }
+  if(global._tokensRevogados) for(const tk of global._tokensRevogados) {
+    if(agora - _tsDoToken(tk) > AUTH_IDLE_MS) { global._tokensRevogados.delete(tk); revogados++; }
+  }
+  return {sessoes, revogados};
+}
+if(!global._podaSessoesTimer && typeof setInterval === 'function') {
+  global._podaSessoesTimer = setInterval(() => { try { podarSessoesLex(); } catch(e) {} }, 10 * 60 * 1000);
+  if(typeof global._podaSessoesTimer.unref === 'function') global._podaSessoesTimer.unref();
+}
+
+// Identidade dona de um job assíncrono: conta individual (id do token) ou perfil.
+function _donoJobAnalise(token, perfil) {
+  const conta = contaDoToken(token);
+  return conta ? 'conta:'+conta : 'perfil:'+String(perfil||'');
 }
 function getToken(req) {
   // 1. Tenta header Authorization
@@ -10455,7 +10493,7 @@ const server = http.createServer(async (req, res) => {
   if(url==='/' || url==='/health' || url==='/api/ping') {
     res.writeHead(200, {
       'Content-Type':'text/plain',
-      'Access-Control-Allow-Origin': _corsOrigin(req),
+      ..._corsOriginHeader(req),
       'Access-Control-Allow-Methods':'GET,POST,PATCH,DELETE,OPTIONS',
       'Access-Control-Allow-Headers':'Content-Type,Authorization,X-Aparelho-Id'
     });
@@ -10957,7 +10995,8 @@ const server = http.createServer(async (req, res) => {
   if(url==='/api/analisar-async' && req.method==='POST') {
     try {
       const tk = getToken(req);
-      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const pfJob = validarToken(tk);
+      if(!pfJob) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const b = await lerBody(req);
       if(!b.base64) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'base64 obrigatório'})); return; }
       const buf = Buffer.from(b.base64,'base64');
@@ -10966,6 +11005,8 @@ const server = http.createServer(async (req, res) => {
       const nomeArq = b.nome || 'documento';
       _jobsAnalise[jobId] = {
         status: 'processando',
+        // Dono do job: conta individual ou, no login compartilhado, o perfil.
+        criado_por: _donoJobAnalise(tk, pfJob),
         nome: nomeArq,
         iniciadoEm: Date.now(),
         tamanhoMB: (buf.length/1048576).toFixed(1),
@@ -11008,10 +11049,12 @@ const server = http.createServer(async (req, res) => {
   if(url.startsWith('/api/analisar-status/') && req.method==='GET') {
     try {
       const tk = getToken(req);
-      if(!validarToken(tk)) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
+      const pfJob = validarToken(tk);
+      if(!pfJob) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Não autenticado'})); return; }
       const jobId = url.replace('/api/analisar-status/','').split('?')[0].trim();
       const job = _jobsAnalise[jobId];
-      if(!job) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Job não encontrado'})); return; }
+      // Job de outra conta/perfil responde 404 (não revela que existe).
+      if(!job || job.criado_por !== _donoJobAnalise(tk, pfJob)) { res.writeHead(404,corsHeaders(req)); res.end(JSON.stringify({error:'Job não encontrado'})); return; }
       const resp = {
         status: job.status,
         nome: job.nome,
@@ -11894,7 +11937,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': _corsOrigin(req),
+      ..._corsOriginHeader(req),
       'Access-Control-Allow-Headers': 'Authorization,Content-Type'
     });
     const clientId = Date.now() + '_' + Math.random().toString(36).slice(2);
@@ -12260,6 +12303,33 @@ if(url==='/api/memoria' && req.method==='GET') {
     } catch(e) {
       res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message}));
     }
+    return;
+  }
+
+  // POST /api/telegram/enviar — botões da tela Telegram ("Testar alerta",
+  // "Enviar prazos agora", "Resumo geral"). O token do bot fica SÓ no servidor
+  // (TELEGRAM_TOKEN); o navegador nunca fala com api.telegram.org. Os prazos
+  // saem da fila oficial (DeadlineWatch/deadline_legal_truth), nunca de p.prazo bruto.
+  if(url==='/api/telegram/enviar' && req.method==='POST') {
+    try {
+      const pfTg = validarToken(getToken(req));
+      if(!pfTg || pfTg !== 'admin') { res.writeHead(403,corsHeaders(req)); res.end(JSON.stringify({error:'Somente admin pode enviar pelo Telegram'})); return; }
+      const b = await lerBody(req);
+      const tipo = String(b.tipo||'').toLowerCase();
+      if(!['teste','prazos','resumo'].includes(tipo)) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tipo deve ser teste, prazos ou resumo'})); return; }
+      if(!TK) { res.writeHead(503,corsHeaders(req)); res.end(JSON.stringify({error:'TELEGRAM_TOKEN nao configurado no servidor'})); return; }
+      const destino = String(b.chat_id||CHAT_ID||'').trim();
+      if(!destino) { res.writeHead(503,corsHeaders(req)); res.end(JSON.stringify({error:'TELEGRAM_ADMIN (chat do titular) nao configurado no servidor'})); return; }
+      let texto;
+      if(tipo==='teste') texto = '✅ LEX Jurídico conectado ao Telegram. Alertas de prazo e resumos chegarão por aqui.';
+      else {
+        const deps={records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,log:()=>{}};
+        const command = tipo==='prazos' ? {action:'deadlines',janela:'semana'} : {action:'daily_brief'};
+        texto = (await executeOfficeQuery(deps,command,{now:new Date(),profile:pfTg})).message;
+      }
+      if(!await envTelegram(texto, null, destino)) { res.writeHead(502,corsHeaders(req)); res.end(JSON.stringify({ok:false,enviado:false,error:'Telegram nao confirmou o envio'})); return; }
+      res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true, enviado:true, tipo}));
+    } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
   }
 

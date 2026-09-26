@@ -1411,57 +1411,32 @@ function fetchComTimeout(url, options={}, ms=8000){
     if(!options.headers['Authorization']) options.headers['Authorization'] = 'Bearer ' + token;
   }
   return fetch(url, {...options, signal:ctrl.signal})
-    .then(async (resp) => {
-      if(resp.status === 401 && !options._retried) {
-        // Token expirou — tenta re-login silencioso com credenciais salvas
-        console.warn('[Lex] 401 detectado — tentando re-autenticação automática...');
-        const relogged = await _tentarReloginSilencioso();
-        if(relogged) {
-          // Repete a requisição com token novo
-          const novoToken = getAuthToken();
-          if(novoToken) {
-            options.headers = options.headers || {};
-            options.headers['Authorization'] = 'Bearer ' + novoToken;
-            options._retried = true;
-            clearTimeout(timer);
-            return fetchComTimeout(url, options, ms);
-          }
-        }
-      }
+    .then((resp) => {
+      // Token expirou/revogado: a senha NUNCA fica no navegador, então não há
+      // re-login silencioso. Limpa a sessão e volta para a tela de login.
+      if(resp.status === 401 && token && !options._noAuth) _encerrarSessaoExpirada();
       return resp;
     })
     .finally(()=>clearTimeout(timer));
 }
 
-// Re-login silencioso usando credenciais do localStorage
-async function _tentarReloginSilencioso() {
-  try {
-    const sess = JSON.parse(localStorage.getItem('lex_sessao_v2') || 'null');
-    const senhaHash = localStorage.getItem('lex_pwd_cache');
-    if(!sess || !sess.perfil || !senhaHash) {
-      // Sem credenciais salvas — mostra tela de login sem erro no console
-      return false;
-    }
-    const r = await fetch(SERVIDOR + '/api/login', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify((()=>{const em=localStorage.getItem('lex_login_email');return em?{email:em,senha:senhaHash}:{perfil:sess.perfil,senha:senhaHash}})())
-    });
-    if(!r.ok) throw new Error('Servidor não confirmou a gravação.');
-    if(r.ok) {
-      const data = await r.json();
-      if(data.token) {
-        _saveSess(data.token, data.perfil, sess);
-        console.log('[Lex] Re-autenticação automática OK ✓');
-        return true;
-      }
-    }
-    console.warn('[Lex] Re-login falhou — senha pode ter mudado');
-    return false;
-  } catch(e) {
-    console.warn('[Lex] Erro no re-login:', e.message || e);
-    return false;
-  }
+// Sessão expirada (401 do servidor): limpa sessão local e mostra login com aviso.
+let _sessaoExpiradaAvisada=false;
+function _encerrarSessaoExpirada(){
+  if(_sessaoExpiradaAvisada) return;
+  _sessaoExpiradaAvisada=true;
+  try{ if(typeof _clearSess==='function') _clearSess(); }catch(e){}
+  try{ if(typeof usuarioAtivo!=='undefined') usuarioAtivo=null; }catch(e){}
+  try{ if(typeof _perms!=='undefined') _perms={}; }catch(e){}
+  try{
+    const tela=document.getElementById('login-screen');
+    if(tela) tela.style.display='flex';
+    const erro=document.getElementById('login-erro');
+    if(erro){ erro.style.color='#e8a545'; erro.textContent='Sessão expirada. Faça login novamente.'; erro.style.display='block'; }
+    const senha=document.getElementById('login-senha');
+    if(senha) senha.value='';
+  }catch(e){}
+  setTimeout(()=>{ _sessaoExpiradaAvisada=false; }, 3000);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2641,8 +2616,8 @@ async function fazerLogin(){
     }
     erroEl.style.display='none';
     _saveSess(d.token,d.perfil,d);
-    // Salva senha para re-login automático (quando servidor reinicia)
-    try { localStorage.setItem('lex_pwd_cache', senha); if(email) localStorage.setItem('lex_login_email', email); else localStorage.removeItem('lex_login_email'); } catch(e) {}
+    // Senha nunca fica no navegador; só o e-mail da conta (para preencher o campo).
+    try { if(email) localStorage.setItem('lex_login_email', email); else localStorage.removeItem('lex_login_email'); } catch(e) {}
     usuarioAtivo=d.perfil;
     _perms=d;
     _registrarLogin(d.perfil);
@@ -4006,6 +3981,8 @@ window.onload=()=>{
   // Sessão salva serve apenas para re-login silencioso (quando token expira DURANTE uso)
   // Ao abrir/recarregar a página: SEMPRE mostra tela de login
   const _sp=_loadSess();
+  // Limpeza de resíduo de versões antigas que guardavam a senha no navegador.
+  try{ localStorage.removeItem('lex_pwd_cache'); }catch(e){}
   // Relógio de Brasília ao vivo
   function _atualizarRelogioBrasilia(){
     const agora = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
@@ -4317,7 +4294,7 @@ function cardProc(p){
 
 function sair(){pararRastreamentoTempo("logout");
   pararPollingComandos();
-  desconectarSSE();_clearSess();try{localStorage.removeItem('lex_pwd_cache');}catch(e){}usuarioAtivo=null;_perms={};document.getElementById('login-screen').style.display='flex';document.getElementById('login-senha').value='';document.getElementById('login-erro').style.display='none';}
+  desconectarSSE();_clearSess();usuarioAtivo=null;_perms={};document.getElementById('login-screen').style.display='flex';document.getElementById('login-senha').value='';document.getElementById('login-erro').style.display='none';}
 
 // ═══════════════ PROCESSOS POR GRUPO ═══════════════
 let filtroAtivo='todos';
@@ -7257,69 +7234,55 @@ async function sincronizarAgora() {
 }
 
 
-// BACKUP
+// TELEGRAM — o token do bot fica SÓ no servidor (TELEGRAM_TOKEN/TELEGRAM_ADMIN).
+// O navegador nunca chama a API do Telegram diretamente.
 async function enviarMsgTelegram(texto){
-  const cfg=getTgConfig();
-  if(!cfg.token||!cfg.chatId) return false;
   try{
-    const res=await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`,{
+    const r=await fetchComTimeout(SERVIDOR+'/api/notificar-telegram',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({chat_id:cfg.chatId,text:texto,parse_mode:'HTML'})
-    });
-    const d=await res.json();
-    return d.ok;
+      body:JSON.stringify({mensagem:String(texto||'').replace(/<[^>]+>/g,'')})
+    },15000);
+    const d=await r.json().catch(()=>({}));
+    return r.ok&&d.ok===true;
   }catch(e){return false;}
+}
+
+async function _telegramServidor(tipo){
+  try{
+    const r=await fetchComTimeout(SERVIDOR+'/api/telegram/enviar',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tipo})
+    },20000);
+    const d=await r.json().catch(()=>({}));
+    return {ok:r.ok&&d.ok===true,erro:d.error||(r.ok?'':'HTTP '+r.status)};
+  }catch(e){return {ok:false,erro:e.message||'sem conexão'};}
 }
 
 async function testarTelegram(){
   const st=document.getElementById('tg-status');
-  st.innerHTML='<span style="color:var(--accent)">⏳ Enviando mensagem de teste...</span>';
-  const ok=await enviarMsgTelegram('✅ <b>Lex Jurídico</b> conectado com sucesso!\n\nSeu Assistente Jurídico IA está pronto. Use o Lex para enviar alertas de prazo e conversar com o agente diretamente aqui.');
-  st.innerHTML=ok
+  if(st) st.innerHTML='<span style="color:var(--accent)">⏳ Enviando mensagem de teste...</span>';
+  const r=await _telegramServidor('teste');
+  if(st) st.innerHTML=r.ok
     ?'<span style="color:var(--green)">✓ Mensagem enviada! Verifique seu Telegram.</span>'
-    :'<span style="color:var(--red)">✗ Erro. Verifique token e Chat ID.</span>';
+    :'<span style="color:var(--red)">✗ Não enviado: '+lexEscape(r.erro||'verifique TELEGRAM_TOKEN e TELEGRAM_ADMIN no servidor')+'</span>';
 }
 
 async function enviarAlertasPrazos(){
   const st=document.getElementById('tg-alerta-status');
-  const cfg=getTgConfig();
-  if(!cfg.token||!cfg.chatId){st.innerHTML='<span style="color:var(--red)">Configure o bot antes.</span>';return;}
-  const ps=getProcs();
-  const urgentes=ps.filter(p=>{const d=diasRestantes(p.prazo);return d!==null&&d<=7&&d>=0;}).sort((a,b)=>diasRestantes(a.prazo)-diasRestantes(b.prazo));
-  if(!urgentes.length){
-    st.innerHTML='<span style="color:var(--text3)">Nenhum prazo nos próximos 7 dias.</span>';
-    await enviarMsgTelegram('ℹ️ <b>Lex Jurídico</b> — Nenhum prazo crítico nos próximos 7 dias.');
-    return;
-  }
-  st.innerHTML='<span style="color:var(--accent)">⏳ Enviando alertas...</span>';
-  let msg='⚠️ <b>ALERTAS DE PRAZO — LEX JURÍDICO</b>\n'+new Date().toLocaleDateString('pt-BR')+'\n\n';
-  urgentes.forEach(p=>{
-    const d=diasRestantes(p.prazo);
-    const emoji=d===0?'🔴':d<=2?'🟠':'🟡';
-    msg+=`${emoji} <b>${lexEscape(p.nome)}</b>\n📋 ${p.numero||'s/n'}\n⏰ ${d===0?'HOJE':d===1?'amanhã':'em '+d+' dias'} (${p.prazo})\n⚡ ${p.proxacao||'Ver processo'}\n\n`;
-  });
-  const ok=await enviarMsgTelegram(msg);
-  st.innerHTML=ok
-    ?`<span style="color:var(--green)">✓ ${urgentes.length} alerta(s) enviados.</span>`
-    :'<span style="color:var(--red)">✗ Erro ao enviar. Verifique configuração.</span>';
+  if(st) st.innerHTML='<span style="color:var(--accent)">⏳ Enviando prazos oficiais da semana...</span>';
+  const r=await _telegramServidor('prazos');
+  if(st) st.innerHTML=r.ok
+    ?'<span style="color:var(--green)">✓ Prazos enviados ao Telegram do titular.</span>'
+    :'<span style="color:var(--red)">✗ Não enviado: '+lexEscape(r.erro||'verifique a configuração do servidor')+'</span>';
 }
 
 async function enviarResumoGeral(){
   const st=document.getElementById('tg-alerta-status');
-  const cfg=getTgConfig();
-  if(!cfg.token||!cfg.chatId){st.innerHTML='<span style="color:var(--red)">Configure o bot antes.</span>';return;}
-  st.innerHTML='<span style="color:var(--accent)">⏳ Enviando resumo...</span>';
-  const ps=getProcs();
-  const urgentes=ps.filter(p=>p.status==='URGENTE').length;
-  const ativos=ps.filter(p=>p.status==='ATIVO').length;
-  let msg=`📊 <b>RESUMO GERAL — LEX JURÍDICO</b>\n${new Date().toLocaleString('pt-BR')}\n\n`;
-  msg+=`📁 Total de processos: <b>${ps.length}</b>\n🔴 Urgentes: <b>${urgentes}</b>\n🟢 Ativos: <b>${ativos}</b>\n\n`;
-  msg+='<b>Próximas ações:</b>\n';
-  ps.filter(p=>p.proxacao&&(p.status==='URGENTE'||p.status==='ATIVO')).slice(0,5).forEach(p=>{
-    msg+=`• <b>${lexEscape(p.nome)}</b>: ${p.proxacao}\n`;
-  });
-  const ok=await enviarMsgTelegram(msg);
-  st.innerHTML=ok?'<span style="color:var(--green)">✓ Resumo enviado.</span>':'<span style="color:var(--red)">✗ Erro ao enviar.</span>';
+  if(st) st.innerHTML='<span style="color:var(--accent)">⏳ Enviando resumo...</span>';
+  const r=await _telegramServidor('resumo');
+  if(st) st.innerHTML=r.ok
+    ?'<span style="color:var(--green)">✓ Resumo enviado.</span>'
+    :'<span style="color:var(--red)">✗ Não enviado: '+lexEscape(r.erro||'verifique a configuração do servidor')+'</span>';
 }
 
 async function enviarTgChat(){
@@ -7345,9 +7308,9 @@ async function enviarTgChat(){
     document.getElementById(loadId).innerHTML=resposta.replace(/\n/g,'<br>');
     document.getElementById(loadId).style.color='var(--text)';
     document.getElementById(loadId).style.fontStyle='normal';
-    // Também envia para Telegram se configurado
+    // Também envia para o Telegram do titular (pelo servidor) se o modo pedir
     const cfg=getTgConfig();
-    if(cfg.token&&cfg.chatId) enviarMsgTelegram(`💬 <b>Chat Lex</b>\n\n<b>Pergunta:</b> ${txt}\n\n<b>Resposta:</b> ${resposta.substring(0,800)}${resposta.length>800?'...':''}`);
+    if(cfg.modo==='completo') enviarMsgTelegram(`💬 Chat Lex\n\nPergunta: ${txt}\n\nResposta: ${resposta.substring(0,800)}${resposta.length>800?'...':''}`);
   }catch(e){document.getElementById(loadId).textContent='Erro. Erro de conexão com o servidor LEX.';}
   msgs.scrollTop=msgs.scrollHeight;
 }
@@ -12550,8 +12513,9 @@ async function _epEnviarWhatsapp(){
 }
 
 function getTgConfig(){
-  try{ return JSON.parse(localStorage.getItem('lex_tg_config')||'{}'); }
-  catch(e){ return {}; }
+  // Só o modo fica no navegador; token e chat ID do bot nunca (ficam no servidor).
+  try{ const c=JSON.parse(localStorage.getItem('lex_tg_config')||'{}')||{}; return {modo:c.modo||'alertas'}; }
+  catch(e){ return {modo:'alertas'}; }
 }
 function saveTgConfig(cfg){ localStorage.setItem('lex_tg_config', JSON.stringify(cfg)); }
 
@@ -12886,24 +12850,19 @@ function renderTelegram(){
       <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;margin-bottom:20px">✈️ Telegram</div>
       
       <div class="desc-card" style="margin-bottom:16px">
-        <div class="desc-label">CONFIGURAÇÃO DO BOT</div>
+        <div class="desc-label">BOT DO ESCRITÓRIO</div>
+        <div style="margin-top:12px;font-size:13px;color:var(--text2)">
+          O token do bot e o chat do titular ficam somente no servidor (TELEGRAM_TOKEN e TELEGRAM_ADMIN). Nada disso é digitado nem guardado neste navegador.
+        </div>
         <div class="fg" style="margin-top:12px">
-          <label class="fl">Token do Bot (BotFather)</label>
-          <input class="fi" id="tg-token" value="${cfg.token||''}" placeholder="123456789:ABCdef...">
-        </div>
-        <div class="fg">
-          <label class="fl">Chat ID (seu ID do Telegram)</label>
-          <input class="fi" id="tg-chatid" value="${cfg.chatId||''}" placeholder="Ex: 123456789">
-        </div>
-        <div class="fg">
           <label class="fl">Modo</label>
           <select class="fs" id="tg-modo">
-            <option value="alertas" ${cfg.modo==='alertas'?'selected':''}>Apenas alertas de prazo</option>
+            <option value="alertas" ${cfg.modo!=='completo'?'selected':''}>Apenas alertas de prazo</option>
             <option value="completo" ${cfg.modo==='completo'?'selected':''}>Assessor completo (chat)</option>
           </select>
         </div>
         <div class="btn-row" style="margin-top:14px">
-          <button class="btn-primary" onclick="salvarTgConfig()">💾 Salvar configuração</button>
+          <button class="btn-primary" onclick="salvarTgConfig()">💾 Salvar modo</button>
           <button class="btn-outline" onclick="testarTelegram()">🔔 Testar</button>
           <button class="btn-outline" onclick="enviarAlertasPrazos()">📅 Enviar prazos agora</button>
           <button class="btn-outline" onclick="enviarResumoGeral()">📋 Resumo geral</button>
@@ -12911,31 +12870,13 @@ function renderTelegram(){
         <div id="tg-status" style="margin-top:10px;font-size:12px;color:var(--text3)"></div>
         <div id="tg-alerta-status" style="margin-top:6px;font-size:12px;color:var(--text3)"></div>
       </div>
-
-      <div class="desc-card">
-        <div class="desc-label">STATUS DA INTEGRAÇÃO</div>
-        <div style="margin-top:12px;font-size:13px;color:var(--text2)">
-          ${cfg.token && cfg.chatId 
-            ? '✅ Bot configurado — Token: ...'+cfg.token.slice(-8)+' · Chat: '+cfg.chatId
-            : '⚠️ Configure o token e o Chat ID para ativar o bot.'}
-        </div>
-        <div style="margin-top:8px;font-size:11px;color:var(--text3)">
-          Como obter: Fale com <strong>@BotFather</strong> no Telegram → /newbot → copie o token.<br>
-          Chat ID: Fale com <strong>@userinfobot</strong> → copie o ID.
-        </div>
-      </div>
     </div>`;
 }
 
 function salvarTgConfig(){
-  const cfg={
-    token: document.getElementById('tg-token')?.value.trim(),
-    chatId: document.getElementById('tg-chatid')?.value.trim(),
-    modo: document.getElementById('tg-modo')?.value
-  };
-  if(!cfg.token||!cfg.chatId){ toast('Preencha token e Chat ID','erro'); return; }
+  const cfg={ modo: document.getElementById('tg-modo')?.value||'alertas' };
   saveTgConfig(cfg);
-  toast('✓ Telegram configurado!','ok');
+  toast('✓ Modo do Telegram salvo.','ok');
 }
 
 // ── GERADOR DE .DOCX ──
