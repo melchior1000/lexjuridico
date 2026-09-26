@@ -66,7 +66,9 @@ const PRAZO_REGEX          = /^\d{4}-\d{2}-\d{2}$/;
 // PROMPTS DOS FUNCIONÁRIOS
 // =====================================================================
 
+const {AVISO:LEX_AVISO,AVISO_PROMPT:LEX_AVISO_PROMPT}=require('./lib/lex-aviso');
 const PROMPT_GESTOR = `Você é o LEX, assessor do ${ESCRITORIO_LABEL}: um agente que cuida do escritório, não um chat.
+${LEX_AVISO_PROMPT}
 Você conversa com ${OPERADOR} como um colega experiente e AGE ENQUANTO CONVERSA, com as ferramentas na mão:
 consultar_processos, ver_processo, prazos, publicacoes, atualizar_no_tribunal, criar_tarefa, ordem_operacional, tarefas, recibos_do_dia
 (e propor_atualizacao / buscar_documentos quando houver processo em contexto).
@@ -858,7 +860,7 @@ async function handlerConversar(req, res, body, deps) {
       return jsonResponse(res, 400, { error: 'Por favor, digite uma mensagem para o LEX.' }, deps.CORS);
     }
     const out = await conversarLex(deps, { processo_id, mensagem, historico, movimentos_pje, canal: 'web' });
-    return jsonResponse(res, 200, { ok: true, texto: out.texto, proposta: out.proposta, processo_id: processo_id || null, modelo: out.modelo, stop_reason: out.stop_reason, ferramentas: out.toolsUsadas.map(t => t.name) }, deps.CORS);
+    return jsonResponse(res, 200, { ok: true, texto: out.texto, proposta: out.proposta, processo_id: processo_id || null, modelo: out.modelo, stop_reason: out.stop_reason, ferramentas: out.toolsUsadas.map(t => t.name), aviso: LEX_AVISO }, deps.CORS);
   } catch (e) {
     console.error('[VIVO] conversar erro:', erroSeguro(String(e && e.message || e)));
     return jsonResponse(res, 500, { error: 'Erro no LEX: ' + erroSeguro(String(e && e.message || e)) }, deps.CORS);

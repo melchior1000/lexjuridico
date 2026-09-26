@@ -48,6 +48,12 @@ Estas regras complementam a missão acima. Não substituem a lista-mestra nem au
 
 ### O LEX é vivo: a inteligência dirige, o código é o cinto de segurança
 
+**Aviso legal obrigatório (fonte única: `lib/lex-aviso.js`):** o LEX é um assistente jurídico e
+não substitui as funções do advogado (Lei 8.906/1994). O aviso aparece embaixo da marca em toda
+tela (`lexAvisoHtml()` em `office-ui-base.js`, tela de login), entra nos prompts que governam a
+inteligência (gestor e recepção), volta no campo `aviso` de `/api/vivo/conversar` e consta do
+contrato de licença. Nenhuma tela, canal ou prompt novo pode nascer sem ele.
+
 O LEX é um agente, não um chat com botões nem um roteiro de comandos. O titular fala
 com ele como fala com um assessor — em qualquer forma de dizer, por app, WhatsApp ou
 Telegram — e o LEX entende, age enquanto conversa, toma iniciativa e volta com o

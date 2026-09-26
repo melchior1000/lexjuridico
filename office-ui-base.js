@@ -1,4 +1,8 @@
 /* Interface de trabalho: usa os controles e temas do LEX existente. */
+// Aviso legal fixo, embaixo da marca em toda tela (fonte única no servidor: lib/lex-aviso.js).
+const LEX_AVISO_CURTO='Assistente jurídico · não substitui as funções do advogado';
+function lexAvisoHtml(){return '<em class="lex-aviso" title="O LEX é um assistente jurídico e não substitui as funções do advogado (Lei 8.906/1994).">'+LEX_AVISO_CURTO+'</em>'}
+window.lexAvisoHtml=lexAvisoHtml;
 let lexWorkTimer=null;
 const lexTaskStatus={na_fila:'Na fila',executando:'Em execução',aguardando_dados:'Precisa de informação',aguardando_documento_nitido:'Documento legível necessário',aguardando_configuracao:'Configuração pendente',aguardando_revisao:'Revisar entrega',concluida:'Concluída',falhou:'Falhou'};
 async function lexApi(path,options={}) {
