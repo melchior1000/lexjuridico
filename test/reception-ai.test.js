@@ -21,7 +21,7 @@ test('com IA disponível a resposta vem da IA, natural e dentro dos limites', as
   assert.match(out.reply, /Dra\. Ana/);
   assert.equal(seen.messages.at(-1).role, 'user');
   assert.match(seen.system, /não dê orientação jurídica/);
-  assert.match(seen.system, /tipo "new_case"/);
+  assert.match(seen.system, /assunto provável "new_case"/);
   assert.equal(c.stats().ia, 1);
 });
 
@@ -99,6 +99,6 @@ test('o prompt do sistema carrega identidade white-label e a referência fixa co
   const sys = systemPrompt(identity, decision);
   assert.match(sys, /escritório Silva Advogados/);
   assert.match(sys, /a Dra\. Ana/);
-  assert.match(sys, /Referência do sistema/);
+  assert.doesNotMatch(sys, /Referência do sistema/, 'a IA conduz; a frase fixa não é roteiro');assert.match(sys, /recepção viva/);
   assert.doesNotMatch(sys, /undefined/);
 });

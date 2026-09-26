@@ -1,7 +1,14 @@
 'use strict';
 
 const core = require('./lex_agente_vivo_core');
-const {executeNaturalOfficeCommand}=require('./lib/office-routes');
+const {executeNaturalOfficeCommand,runTaskThroughOffice,assertTaskGate}=require('./lib/office-routes');
+const LexTools=require('./lib/lex-tools');
+
+// Corpo do LEX (ferramentas) montado sobre as dependências do servidor.
+function lexToolsFor(deps,ctx={}){
+  const toolDeps={...deps,executeNaturalOfficeCommand,assertTaskGate,runTask:task=>runTaskThroughOffice(deps,task,ctx.profile||'admin')};
+  return{definitions:LexTools.definitions,executar:LexTools.executar,deps:toolDeps,ctx};
+}
 
 function jsonResponse(res, status, obj, CORS) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, CORS || {
@@ -47,6 +54,7 @@ async function tratarRota(req, res, url, deps) {
       nextDeps = { ...nextDeps, body };
     }
     body = body && typeof body === 'object' ? body : {};
+    if (typeof nextDeps.lerBody !== 'function') nextDeps = { ...nextDeps, lerBody: async () => body };
 
     const processoId = body.processo_id;
     if (processoId != null && String(processoId).trim() && !processoExiste(nextDeps.processos, processoId)) {
@@ -85,7 +93,12 @@ async function tratarRota(req, res, url, deps) {
       return core.tratarRota(req,res,'/api/vivo/juiz/conversar',{...nextDeps,body:specialistBody});
     }
 
-    if (nextDeps.engine && nextDeps.processStore) {
+    // A inteligência dirige: com IA disponível, a conversa vai ao LEX vivo (que usa o executor
+    // de ordens como ferramenta). O executor determinístico fica na frente só para comandos com
+    // barra e frases de confirmação que exigem a digitação do titular, e como reserva sem IA.
+    const aiOn=nextDeps.ANTHROPIC_KEY&&process.env.LEX_AI_NO_CREDIT!=='1'&&nextDeps.lexVivo!==false;
+    const literal=/^\s*(\/|CONFIRMO\s+CIENCIA\b|APROVO\b|\d{1,2}\s*$)/i.test(String(body.mensagem||''));
+    if (nextDeps.engine && nextDeps.processStore && (!aiOn || literal)) {
       try {
         const execution=await executeNaturalOfficeCommand(nextDeps,{
           text:body.mensagem,processo_id:processoId,profile:nextDeps.perfil,
@@ -106,6 +119,9 @@ async function tratarRota(req, res, url, deps) {
         return true;
       }
     }
+    if (aiOn && nextDeps.engine && nextDeps.processStore && !nextDeps.tools) {
+      nextDeps={...nextDeps,tools:lexToolsFor(nextDeps,{profile:nextDeps.perfil,requestId:body.request_id||req?.headers?.['x-request-id']||undefined})};
+    }
   }
 
   if(cleanUrl==='/api/vivo/conversar'&&req&&req.method==='POST'&&process.env.LEX_AI_NO_CREDIT==='1'){
@@ -119,6 +135,7 @@ async function tratarRota(req, res, url, deps) {
 module.exports = {
   ...core,
   tratarRota,
+  lexToolsFor,
   specializedIntent,
   namedJudgeFromMessage
 };

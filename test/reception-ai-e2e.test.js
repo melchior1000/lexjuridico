@@ -26,7 +26,7 @@ test('WhatsApp: a resposta que sai pelo canal é a da IA, registrada como saida_
   assert.ok(toOwner.length>=1,'titular recebeu o resumo');
   assert.match(toOwner.at(-1).text,/caso novo|cadastro/);
   assert.equal(calls.length,1);
-  assert.match(calls[0].system,/tipo "new_case"/);
+  assert.match(calls[0].system,/assunto provável "new_case"/);
   // Segundo turno: o histórico vai para a IA e a mensagem atual fica por último.
   await publicWhatsappReception(body('fui desligado mês passado','m2'),'LEX',{...cfg,store,request,compose:composer.compose});
   const msgs=calls[1].messages;

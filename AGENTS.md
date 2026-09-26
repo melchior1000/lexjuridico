@@ -46,16 +46,38 @@ Relatório histórico não prevalece sobre evidência atual. Não marcar pendên
 
 Estas regras complementam a missão acima. Não substituem a lista-mestra nem autorizam redesenhar o produto.
 
-### Determinístico primeiro; IA somente onde há julgamento
+### O LEX é vivo: a inteligência dirige, o código é o cinto de segurança
 
-Antes de implementar, separar o problema em duas partes:
+O LEX é um agente, não um chat com botões nem um roteiro de comandos. O titular fala
+com ele como fala com um assessor — em qualquer forma de dizer, por app, WhatsApp ou
+Telegram — e o LEX entende, age enquanto conversa, toma iniciativa e volta com o
+resultado. Isso é o produto. Mecanizá-lo (frases fixas, padrões de comando, cartões
+prontos, "IA só escreve") é regressão, não segurança.
 
-- **determinística:** identidade, tenant, autorização, RLS, seleção de processo por ID/número, datas, prazos calculáveis, cálculos, hashes, idempotência, estados, roteamento, persistência, auditoria e contratos;
-- **IA:** interpretação de linguagem natural, análise jurídica, redação, síntese e outras tarefas que exijam julgamento.
+Divisão de papéis, fixa:
 
-Se a mesma entrada deve produzir a mesma resposta correta por definição, implementar em código determinístico e cobrir com teste. A IA não pode ser fonte de verdade para prazo, permissão, tenant, saldo, hash, estado de tarefa, entrega de canal ou existência de documento.
+- **A IA dirige:** entende a intenção pelo contexto, decide o que fazer, escolhe e chama
+  as ferramentas (`lib/lex-tools.js` + as do processo em contexto), lê antes de afirmar,
+  pergunta quando há ambiguidade (nunca escolhe o primeiro), toma iniciativa ao ver risco,
+  conversa como gente. O mesmo núcleo (`conversarLex`) atende as três portas.
+- **O código é o cinto**, e mora DENTRO dos executores das ferramentas, nunca na frente
+  da conversa: identidade, tenant/RLS, permissões por perfil, seleção de processo por ID,
+  cálculo de prazo, hashes, idempotência, persistência, auditoria e recibos. A IA nunca é
+  fonte de verdade para prazo, permissão, tenant, saldo, hash, estado de tarefa, entrega
+  de canal ou existência de documento — mas é ela quem decide pedir essas verdades ao código.
+- **Atos que só o humano pratica** (a frase exata digitada por ele, jamais pelo modelo):
+  protocolo, ciência em intimação, confirmação de prazo, envio de mensagem com posição do
+  escritório, aprovação de negociação. O executor recusa essas ordens vindas da ferramenta.
+- **O executor determinístico de ordens** (`executeNaturalOfficeCommand`) é uma FERRAMENTA
+  do LEX (`ordem_operacional`) e a RESERVA quando a IA não está disponível. Ele fica na
+  frente da conversa apenas para comandos com barra, frases de confirmação e escolha
+  pendente ("1", "2", CNJ).
+- **Sem IA (sem chave, sem crédito, falha):** o LEX diz isso com clareza e opera pelo
+  executor. Nunca fabrica sucesso, nunca finge que conversou.
 
-Quando o fluxo tiver as duas partes, a IA propõe/interpreta e o código valida/executa.
+Se a mesma entrada deve produzir a mesma resposta correta por definição (um cálculo, uma
+permissão, um estado), implemente em código determinístico e cubra com teste — como
+ferramenta ou cinto, não como porta.
 
 ### Dimensionar antes de alterar
 
