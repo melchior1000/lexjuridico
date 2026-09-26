@@ -6,7 +6,6 @@ const Workflow=require('../lib/workflow');
 const {NotificationDigest,formatDigest,digestItems}=require('../lib/notification-digest');
 const {TaskEngine,resolveCase}=require('../lib/task-engine');
 const {issueToken,verifyToken,captureMovement}=require('../lib/connector');
-const {officeRoutes}=require('../lib/office-routes');
 const {setup}=require('./runtime');
 
 function database() {

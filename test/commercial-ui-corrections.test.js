@@ -78,11 +78,11 @@ test('carteira grande usa paginação explícita e não corta silenciosamente em
   assert.doesNotMatch(js,/function procRows\(list\)\{return list\.slice\(0,30\)/);
 });
 
-test('processos possuem busca global, encerrados e ordenação',()=>{
+test('processos possuem busca global e acesso aos encerrados (tela enxuta, sem abas nem ordenação)',()=>{
   assert.match(js,/procTab==='arquivados'/);
-  assert.match(js,/lexSetProcSort/);
-  assert.match(js,/Atualizados/);
-  assert.match(js,/Buscar número, cliente, parte, assunto/);
+  assert.match(js,/lex-proc-closed/,'encerrados ficam acessíveis num grupo recolhido');
+  assert.doesNotMatch(js,/<label class="lex-sort">/,'ordenação saiu da tela; a busca resolve');
+  assert.match(js,/Cliente, número, parte ou assunto/);
   assert.match(js,/cliente/);
   assert.match(js,/responsavel/);
 });

@@ -124,22 +124,39 @@ function render(selectedId){
   window.lexSelectChatProcess?.(id);if(id)rememberProcess(id);
   document.body.classList.add('lex-commercial','lex2-core','lex2-coordinator');
   host.innerHTML='<main class="lex-screen lex2-lex">'
-    +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
-    +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'PORTA DO ESCRITÓRIO')+'</small><h1>'+(p?'Vamos resolver este processo.':'O que precisamos resolver?')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'Dê a ordem. O banco de processos permanece no centro; eu identifico o assunto, escolho entre os 9 setores oficiais, encaminho e devolvo o resultado aqui.')+'</p></section>'
-    +'<section class="lex2-office-tools">'+officeMap()+specialistMap()+'<div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div>'+chips(id)+'</section>'
-    +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+history(id)+'</section>'
+    +'<header class="lex-top"><div><strong>LEX</strong><small>COORDENADOR DO ESCRITÓRIO</small></div><div class="lex-top-actions"><span class="lex2-autonomy" title="O LEX executa as tarefas; atos externos e protocolo dependem da sua aprovação">EXECUTA · APROVA</span><button onclick="lexToggleTheme()" aria-label="Tema">◐</button><button onclick="lexMais()" aria-label="Mais opções">☰</button></div></header>'
+    +'<section class="lex2-lex-head"><small>'+(p?'PROCESSO EM CONTEXTO':'PORTA DO ESCRITÓRIO')+'</small><h1>'+(p?'Vamos resolver este processo.':'O que precisamos resolver?')+'</h1><p>'+(p?esc(safeLabel(p)+(p.numero?' · '+p.numero:'')):'Dê a ordem. O banco de processos permanece no centro; eu identifico o assunto, escolho entre os 9 setores oficiais, encaminho e devolvo o resultado aqui.')+'</p><div id="lex2-operational-status" class="lex2-operational-status" role="status">Conferindo o estado do escritório…</div></section>'
+    // Mapas de setores e especialistas ficam recolhidos: a conversa é a tela, não o painel.
+    +'<section class="lex2-office-tools">'+chips(id)+'<details class="lex2-tools-details"><summary>Setores e especialistas do escritório</summary>'+officeMap()+specialistMap()+'</details></section>'
+    +'<section id="lex-conversation" class="lex-conversation" role="log" aria-label="Conversa com o LEX" aria-live="polite">'+(id?'':'<div id="lex2-briefing" class="lex2-briefing"><div class="lex-msg bot lex2-briefing-wait">Um instante. Estou lendo o estado do escritório.</div></div>')+history(id)+'</section>'
     +'<form class="lex2-command" onsubmit="return lexSendChat(event)">'
     +processPickerHtml(id)
     +'<div class="lex2-command-row"><button class="lex2-attach" data-lex-attachment type="button" aria-label="Anexar documento ao processo">＋</button><textarea id="lex-chat-input" aria-label="Sua ordem ao LEX" rows="2" placeholder="Dê uma ordem ao LEX…"></textarea><button class="lex2-send" type="submit" aria-label="Enviar">↑</button></div>'
     +'<small class="lex2-command-note">Ex.: “LEX, quero X no processo Y, faça desse jeito Z”. O banco processual é preservado; eu encaminho internamente. Atos críticos continuam sujeitos à autorização humana.</small></form>'
     +dock()+'</main>';
-  setTimeout(()=>{const conv=document.getElementById('lex-conversation');if(conv)conv.scrollTop=conv.scrollHeight;refreshOperationalStatus()},40)
+  setTimeout(()=>{const conv=document.getElementById('lex-conversation');if(conv)conv.scrollTop=conv.scrollHeight;if(id)refreshOperationalStatus();else renderBriefing()},40)
+}
+// O LEX fala primeiro: cada aviso é uma mensagem com o botão que executa a ação
+// (mesmo caminho das ordens do WhatsApp/Telegram). Só prazo confirmado vira urgência.
+async function renderBriefing(){
+  const box=document.getElementById('lex2-briefing');if(!box||typeof window.lexBriefing!=='function')return;
+  let b;
+  try{b=await window.lexBriefing()}catch(e){box.innerHTML='<div class="lex-msg bot">Não consegui ler o estado do escritório agora. Não vou interpretar ausência de dado como ausência de problema.</div>';return}
+  if(!box.isConnected)return;
+  const items=(b.messages||[]).filter(m=>m.actions&&m.actions.length);
+  const html=items.map(m=>'<div class="lex-msg bot lex2-says '+esc(m.tone||'info')+'"><p>'+esc(m.text)+'</p><div class="lex2-says-actions">'+m.actions.map(a=>'<button type="button" onclick="'+esc(a.onclick)+'">'+esc(a.label)+'</button>').join('')+'</div></div>').join('');
+  const failed=b.failures&&b.failures.length?'<div class="lex-msg bot lex2-says warn"><p>Não consegui ler '+esc(b.failures.join(', '))+'. Não vou interpretar ausência de dado como ausência de problema.</p></div>':'';
+  // Sem leitura completa não se afirma "nada exige você": ausência de dado não é ausência de problema.
+  const needsYou=(b.messages||[]).some(m=>m?.needsYou===true);
+  box.innerHTML=failed+html+((needsYou||failed)?'':'<div class="lex-msg bot lex2-says ok"><p>Nada exige você agora. Aviso aqui e no WhatsApp quando chegar intimação, prazo ou mensagem de cliente.</p></div>');
+  const status=document.getElementById('lex2-operational-status');
+  if(status&&b.status)status.innerHTML='<b>LEX</b><span>'+esc(b.status)+' · '+esc(b.active.length)+' processo'+(b.active.length===1?'':'s')+' acompanhado'+(b.active.length===1?'':'s')+'.</span>';
 }
 async function refreshOperationalStatus(){
   const box=document.getElementById('lex2-operational-status');if(!box)return;
   try{
     const d=await lexApi('/api/trabalho');
-    const sectors=d?.contagens?.setores||{},total=Number(d?.contagens?.total??procs().length);
+    const total=Number(d?.contagens?.total??procs().length);
     const pending=(d?.tarefas||[]).filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
     const ai=d?.ia_estado||((d?.ia_configurada===true)?'disponivel':'sem_chave');
     const aiText=ai==='sem_credito'?'IA jurídica sem crédito: análise, redação, perfil do magistrado e jurisprudência estão pausados; banco e rotinas operacionais continuam funcionando.'
@@ -162,6 +179,8 @@ function settings(){
   const host=document.getElementById('content');if(!host)return;
   host.innerHTML='<main class="lex-screen lex2-settings"><header class="lex-top"><div><strong>Ajustes do escritório</strong><small>INFRAESTRUTURA</small></div><div class="lex-top-actions"><button onclick="lexChat()" aria-label="Voltar ao LEX">‹</button></div></header>'
     +'<section class="lex2-settings-grid">'
+    +'<button onclick="lexRecibos()"><b>O que o LEX fez hoje</b><small>Recibos: mensagens, andamentos, prazos e tarefas, com hora e autorização.</small></button>'
+    +'<button onclick="lexTarefas()"><b>Tarefas</b><small>Entregas em andamento e minutas para sua revisão.</small></button>'
     +'<button onclick="lexEquipe()"><b>Equipe e acessos</b><small>Contas, sênior, senhas e desligamento.</small></button>'
     +'<button onclick="lexOab()"><b>Diário, PJe e eproc</b><small>Fontes oficiais e conexões judiciais.</small></button>'
     +'<button onclick="lexChannel(\'all\')"><b>WhatsApp e Telegram</b><small>Conversas e atendimento do escritório.</small></button>'

@@ -116,3 +116,14 @@ test('office-ui.js carrega o roteador por último', () => {
   const loader = fs.readFileSync(path.join(RAIZ, 'office-ui.js'), 'utf8').trim().split('\n');
   assert.match(loader[loader.length - 1], /lex-nav\.js/);
 });
+
+test('dia a dia = Conversa, Processos, Prazos e Recibos; Tarefas e Recepção ficam em Mais; apelidos antigos seguem', () => {
+  const {win} = montar({telas: {lexRecibos: () => {}}});
+  const grupo = id => win.lexNav.rotas.find(r => r.id === id)?.grupo;
+  for (const id of ['painel', 'processos', 'prazos', 'recibos']) assert.equal(grupo(id), 'dia', id);
+  for (const id of ['trabalho', 'recepcao']) assert.equal(grupo(id), 'mais', id);
+  assert.equal(win.lexNav.resolver('recibos'), 'recibos');
+  assert.equal(win.lexNav.resolver('feito'), 'recibos');
+  assert.equal(win.lexNav.resolver('tarefas'), 'trabalho');
+  assert.equal(win.ir('recibos'), true);
+});

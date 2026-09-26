@@ -3,7 +3,7 @@
 Sistema legado de gestão jurídica em evolução. Este checkout contém a versão
 completa recebida e correções isoladas em branch. Não é uma release comercial.
 
-Verificação mais recente: [resultados e pendências de 08/09/2026](docs/VERIFICACAO_20260908.md).
+Verificação mais recente: [resultados e pendências de 08/09/2026](docs/historico/VERIFICACAO_20260908.md).
 93 testes locais passam. O deploy de produção ainda está na base de abril.
 
 ## Verificar localmente
@@ -31,7 +31,7 @@ serviços de produção durante testes. Não versionar credenciais.
 A configuração fornecida é parcial e não substitui a implantação do schema.
 As tabelas reais ainda precisam de inventário antes de uma instalação reproduzível.
 
-- [Auditoria e correções](AUDITORIA.md)
+- [Auditoria e correções (histórico)](docs/historico/AUDITORIA_20260907.md)
 - [Arquitetura e armazenamento híbrido](docs/ARQUITETURA_E_ARMAZENAMENTO.md)
 - [Especificações, tickets e gate comercial](docs/ESPECIFICACOES_E_BACKLOG.md)
 - [Preparação de WhatsApp, Telegram e agentes](docs/CANAIS_E_AGENTES.md)

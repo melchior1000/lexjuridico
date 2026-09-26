@@ -1,7 +1,6 @@
 document.write('<script src="lex-text.js"><\/script>');
 document.write('<script src="office-ui-base.js"><\/script>');
 (function(){
-  function esc(v){const s=String(v??'');if(typeof window.lexEscape==='function')return window.lexEscape(s);return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));}
   function setPageTitle(text){const el=document.querySelector('.page-title');if(el)el.textContent=text;}
   function activate(btn){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');const sidebar=document.getElementById('sidebar'),overlay=document.getElementById('overlay');if(window.innerWidth<=900){sidebar?.classList.remove('open');overlay?.classList.remove('show')}}
   function openWhatsapp(btn){activate(btn||document.getElementById('lex-nav-whatsapp'));setPageTitle('WhatsApp do escritório');renderWhatsappCanal()}

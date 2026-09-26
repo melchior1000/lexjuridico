@@ -1,7 +1,7 @@
 # Canais e agentes — preparação de implantação
 
 Registro iniciado em 07/09/2026. A atualização de 08/09/2026 está no
-[relatório de verificação](VERIFICACAO_20260908.md), que prevalece sobre os
+[relatório de verificação](historico/VERIFICACAO_20260908.md), que prevalece sobre os
 estados históricos abaixo. Integrações reais continuam sem homologação.
 
 ## WhatsApp
