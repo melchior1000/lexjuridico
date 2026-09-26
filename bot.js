@@ -92,6 +92,7 @@ const {NotificationDigest} = require('./lib/notification-digest');
 const {TaskEngine,resolveCase} = require('./lib/task-engine');
 const {officeRoutes,executeNaturalOfficeCommand} = require('./lib/office-routes');
 const {pickChoice,dailyBriefText,executeOfficeQuery} = require('./lib/office-queries');
+const {hojeBrasil} = require('./lib/data-brasil');
 const {createMorningBrief} = require('./lib/morning-brief');
 const {createPjeMonitor} = require('./lib/pje-monitor');
 const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
@@ -12382,7 +12383,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
-      global._tempoUsoRegistros.push({perfil:pf, tipo:'login', ts:Date.now(), data:new Date().toISOString().slice(0,10)});
+      global._tempoUsoRegistros.push({perfil:pf, tipo:'login', ts:Date.now(), data:hojeBrasil()});
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -12395,7 +12396,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       if(!global._tempoUsoRegistros) global._tempoUsoRegistros = [];
-      global._tempoUsoRegistros.push({perfil:pf, tipo:'heartbeat', ts:Date.now(), data:new Date().toISOString().slice(0,10), minutos:b.minutos||1});
+      global._tempoUsoRegistros.push({perfil:pf, tipo:'heartbeat', ts:Date.now(), data:hojeBrasil(), minutos:b.minutos||1});
       res.writeHead(200,corsHeaders(req)); res.end(JSON.stringify({ok:true}));
     } catch(e) { res.writeHead(500,corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
     return;
@@ -14115,7 +14116,7 @@ function _coletarEventosCalendario() {
     if(p.proxacao) {
       eventos.push({
         tipo: 'tarefa',
-        data: _toIsoDataBr(p.prazo) || new Date().toISOString().slice(0,10),
+        data: _toIsoDataBr(p.prazo) || hojeBrasil(),
         titulo: p.nome || p.titulo,
         descricao: String(p.proxacao),
         processo_id: p.id
@@ -14142,7 +14143,7 @@ function _coletarEventosCalendario() {
       if(low.includes('lembrete') || low.includes('audi') || low.includes('sessão') || low.includes('sessao') || low.includes('pericia') || low.includes('perícia')) {
         eventos.push({
           tipo: 'lembrete',
-          data: _toIsoDataBr(a?.data) || new Date().toISOString().slice(0,10),
+          data: _toIsoDataBr(a?.data) || hojeBrasil(),
           titulo: p.nome || p.titulo,
           descricao: txt.substring(0,220),
           processo_id: p.id
@@ -14203,7 +14204,7 @@ REGRAS: Seja tecnico, preciso, cirurgico. Nao invente jurisprudencia. Identifiqu
     await processStore.update(processoId,current=>({
       analises_estrategicas:[...(Array.isArray(current.analises_estrategicas)?current.analises_estrategicas:[]),{
         id:Date.now(),data:new Date().toISOString(),tipo_documento:tipoDoc,analise:analiseCompleta,paginas_estimadas:pagEst,analisado_por:perfil}],
-      andamentos:[{id:Date.now(),data:new Date().toISOString().slice(0,10),
+      andamentos:[{id:Date.now(),data:hojeBrasil(),
         descricao:'Analise estrategica concluida: '+tipoDoc+' ('+pagEst+' pg)',tipo:'analise_estrategica'},
         ...(Array.isArray(current.andamentos)?current.andamentos:[])]
     }),perfil);

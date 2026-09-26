@@ -1400,6 +1400,14 @@ function getEndereco(){return getEscritorio().endereco||'';}
 // Servidor Render — chave API fica só lá, nunca no navegador
 const SERVIDOR = 'https://lex-juridico.onrender.com';
 
+// Data de hoje no fuso do aparelho (AAAA-MM-DD). toISOString() devolve UTC e,
+// depois das 21h em Brasília, já é "amanhã" — gravava andamento/login com data errada.
+function hojeLocal(d){
+  const x=d instanceof Date?d:new Date(d===undefined?Date.now():d);
+  const p=n=>String(n).padStart(2,'0');
+  return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate());
+}
+
 // Fetch com timeout — evita app pendurado se servidor travar
 function fetchComTimeout(url, options={}, ms=8000){
   const ctrl = new AbortController();
@@ -2711,12 +2719,12 @@ const _LOGIN_COUNT_KEY = 'lex_logins_v1';
 
 function _registrarLogin(perfil) {
   try {
-    const hoje = new Date().toISOString().slice(0,10);
+    const hoje = hojeLocal();
     const raw = JSON.parse(localStorage.getItem(_LOGIN_COUNT_KEY) || '{}');
     if (!raw[hoje]) raw[hoje] = {};
     raw[hoje][perfil] = (raw[hoje][perfil] || 0) + 1;
     // Mantém só últimos 30 dias
-    const limite = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+    const limite = hojeLocal(Date.now() - 30*86400000);
     Object.keys(raw).forEach(d => { if (d < limite) delete raw[d]; });
     localStorage.setItem(_LOGIN_COUNT_KEY, JSON.stringify(raw));
     // Envia para o servidor (best-effort)
@@ -2734,7 +2742,7 @@ function _registrarLogin(perfil) {
 function _getLoginCount(perfil, data) {
   try {
     const raw = JSON.parse(localStorage.getItem(_LOGIN_COUNT_KEY) || '{}');
-    const hoje = data || new Date().toISOString().slice(0,10);
+    const hoje = data || hojeLocal();
     return (raw[hoje] && raw[hoje][perfil]) || 0;
   } catch(e) { return 0; }
 }
@@ -2742,7 +2750,7 @@ function _getLoginCount(perfil, data) {
 function _getTotalLoginsSemana(perfil) {
   try {
     const raw = JSON.parse(localStorage.getItem(_LOGIN_COUNT_KEY) || '{}');
-    const limite = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+    const limite = hojeLocal(Date.now() - 7*86400000);
     return Object.entries(raw)
       .filter(([d]) => d >= limite)
       .reduce((sum, [, v]) => sum + (v[perfil] || 0), 0);
@@ -2911,9 +2919,9 @@ function _calcularRelatorioLocal() {
   try {
     const raw = JSON.parse(localStorage.getItem(_TEMPO_KEY) || '[]');
     const agora  = new Date();
-    const hojeStr = agora.toISOString().slice(0,10);
-    const semanaStr = new Date(agora - 7*86400000).toISOString().slice(0,10);
-    const mesStr  = new Date(agora - 30*86400000).toISOString().slice(0,10);
+    const hojeStr = hojeLocal(agora);
+    const semanaStr = hojeLocal(agora - 7*86400000);
+    const mesStr  = hojeLocal(agora - 30*86400000);
     const perfis = {};
     raw.forEach(s => {
       if (!perfis[s.perfil]) perfis[s.perfil] = {hoje:0, semana:0, mes:0};
@@ -3789,7 +3797,7 @@ function cicloStatus(procId, evento, opts){
   if(idx < 0) { console.warn('[cicloStatus] proc não encontrado:', procId); return null; }
   const p = ps[idx];
   const stAtual = String(p.status || '').toUpperCase();
-  const hoje = new Date().toISOString().slice(0,10);
+  const hoje = hojeLocal();
   const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
   switch(evento){
     case 'andamento':
@@ -5494,7 +5502,7 @@ function salvarProc(){
     }
   }
   else {
-    const hoje = new Date().toISOString().slice(0,10);
+    const hoje = hojeLocal();
     ps.push({id:Date.now(),...dados,andamentos:[],arquivos:[],atualizado_em:hoje,ultima_atualizacao:hoje,dias_parado:0});
   }
   const _editedId=document.getElementById('modal').getAttribute('data-edit');saveProcs(ps); atualizarUrgentes(); fecharModal(); setTimeout(sincronizarComBot,500);
@@ -5534,7 +5542,7 @@ function marcarAtivoDoBanner(id, nome){
       cicloStatus(id, 'set', {status:'ATIVO'});
     } else {
       // fallback defensivo (não deve ocorrer)
-      const hoje = new Date().toISOString().slice(0,10);
+      const hoje = hojeLocal();
       p.status='ATIVO'; p.atualizado_em=hoje; p.ultima_atualizacao=hoje; p.dias_parado=0; p.diasParado=0;
       saveProcs(ps);
       if(typeof atualizarUrgentes==='function') atualizarUrgentes();
@@ -8525,8 +8533,8 @@ async function _pDistribuirDireto(setor){
       descricao: descricao,
       frentes: [],
       provas: (dados.demanda && Array.isArray(dados.demanda.provas_indicadas)) ? dados.demanda.provas_indicadas : [],
-      atualizado_em: new Date().toISOString().slice(0,10),
-      ultima_atualizacao: new Date().toISOString().slice(0,10),
+      atualizado_em: hojeLocal(),
+      ultima_atualizacao: hojeLocal(),
       dias_parado: 0,
       andamentos: [{
         data: hoje,
@@ -10894,7 +10902,7 @@ function calcularEvolucaoDivida() {
   const numeroProcesso = document.getElementById('divida-numero-processo')?.value || '';
   const tipo = document.getElementById('divida-tipo')?.value || '';
   const dataOrigem = document.getElementById('divida-data-origem')?.value;
-  const dataAtual = document.getElementById('divida-data-atual')?.value || new Date().toISOString().split('T')[0];
+  const dataAtual = document.getElementById('divida-data-atual')?.value || hojeLocal();
   
   const principal = parseMoeda(document.getElementById('divida-principal-inicial')?.value);
   const multaPercentual = parseFloat(document.getElementById('divida-multa-percentual')?.value) || 20;
@@ -11638,7 +11646,7 @@ async function atualizarAndamentoProcessoExistente(){
     return;
   }
   if(!ps[idx].andamentos) ps[idx].andamentos = [];
-  const hoje = new Date().toISOString().slice(0,10);
+  const hoje = hojeLocal();
   ps[idx].andamentos.unshift({data:hoje, txt});
   saveProcs(ps);
   // Regra CEO centralizada: ATIVO + zera dias, preservando prazo
@@ -12324,7 +12332,7 @@ function _epRegistrarAndamento(procId, acao, titulo, tipo){
       aberto_word:'Peca aberta no Word'
     }[acao] || ('Peca exportada ('+acao+')');
     ps[idx].andamentos.unshift({
-      data: new Date().toISOString().slice(0,10),
+      data: hojeLocal(),
       txt: descAcao+': '+(titulo||tipo||'Peca')
     });
     saveProcs(ps);

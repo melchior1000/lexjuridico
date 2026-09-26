@@ -22,6 +22,7 @@
 'use strict';
 const { rowsFromResult } = require('./lib/supabase');
 const { withProcessLock } = require('./lib/process-lock');
+const { hojeBrasil } = require('./lib/data-brasil');
 const { modelsFor, positiveInteger, admission: aiAdmission } = require('./lib/ai-runtime');
 
 // ── Identidade white-label do operador/escritório nos prompts dos agentes ──
@@ -886,7 +887,7 @@ async function handlerAplicarSerial(req, res, body, deps) {
 
     const antes = JSON.parse(JSON.stringify(atual));
     const processo = JSON.parse(JSON.stringify(atual));
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeBrasil();
     // Status considerados "finais" — não voltam para ATIVO sozinhos
     const FINAIS = ['CONCLUIDO','ENTREGUE','ARQUIVADO','GANHO','PERDIDO'];
     // Detecta "houve trabalho" — qualquer campo substantivo preenchido conta
@@ -1181,7 +1182,7 @@ Redija a peça completa agora.`;
     // AUTO-GRAVAR no processo: peça elaborada = atualiza andamento + ATIVO
     if (processo && deps.sbReq) {
       try {
-        const hoje = new Date().toISOString().slice(0, 10);
+        const hoje = hojeBrasil();
         const atualizado = JSON.parse(JSON.stringify(processo));
         atualizado.andamentos = atualizado.andamentos || [];
         atualizado.andamentos.push({

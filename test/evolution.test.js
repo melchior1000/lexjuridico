@@ -190,7 +190,7 @@ test('frontend: novo andamento mantém prazo e prazoReal', () => {
   const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
   const code=html.slice(html.indexOf('function cicloStatus('),html.indexOf('function fmtPrazo('));
   const processos=[{id:1,status:'ATIVO',prazo:'08/09/2026',prazoReal:'11/09/2026'}];
-  const ctx=vm.createContext({getProcs:() => processos,saveProcs() {},diasRestantes:() => 1});
+  const ctx=vm.createContext({getProcs:() => processos,saveProcs() {},diasRestantes:() => 1,hojeLocal:() => '2026-09-25'});
   vm.runInContext(code,ctx);
   ctx.cicloStatus(1,'andamento',{skipRender:true});
   assert.equal(processos[0].prazo,'08/09/2026');
