@@ -30,7 +30,7 @@ test('Precisa de você aparece só quando o motor espera o humano, com quem/o qu
   assert.match(waiting,/<dt>Quem<\/dt><dd>Banco Alfa/);
   assert.match(waiting,/<dt>O quê<\/dt><dd>Revisar a minuta/);
   assert.match(waiting,/lexReviewTask\('a1b2c3d4/);
-  assert.match(waiting,/lexReturnTaskDetail\\('a1b2c3d4/);
+  assert.match(waiting,/lexReturnTaskDetail\('a1b2c3d4/);
   assert.match(waiting,/lexDownloadTask\('a1b2c3d4/);
   assert.match(waiting,/Minuta pronta — aguarda sua revisão/);
   assert.match(waiting,/ETAPA<\/small><strong>3 de 4/);
