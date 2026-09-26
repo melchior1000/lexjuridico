@@ -87,7 +87,8 @@ test('upload de documento rejeitado não informa sucesso', async () => {
   const app = setup({_extrairTextoPdf:() => 'documento',
     sbReq:async () => ({ok:false,status:403})});
   const result = await app.request('/api/documentos/upload',app.token('admin'),{pdf_base64:'test'},'POST');
-  assert.equal(result.status, 500);
+  // Banco recusou: erro de upstream (502, e.status do requireSuccess), nunca 2xx.
+  assert.equal(result.status, 502);
   assert.match(result.body, /banco/);
 });
 test('troca de senha respeita perfilAlvo enviado pelo frontend', async () => {
@@ -190,7 +191,7 @@ test('frontend: novo andamento mantém prazo e prazoReal', () => {
   const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
   const code=html.slice(html.indexOf('function cicloStatus('),html.indexOf('function fmtPrazo('));
   const processos=[{id:1,status:'ATIVO',prazo:'08/09/2026',prazoReal:'11/09/2026'}];
-  const ctx=vm.createContext({getProcs:() => processos,saveProcs() {},diasRestantes:() => 1});
+  const ctx=vm.createContext({getProcs:() => processos,saveProcs() {},diasRestantes:() => 1,hojeLocal:() => '2026-09-25'});
   vm.runInContext(code,ctx);
   ctx.cicloStatus(1,'andamento',{skipRender:true});
   assert.equal(processos[0].prazo,'08/09/2026');

@@ -126,7 +126,7 @@ test('cadastro pelo canal usa IA existente e confirma registro retornado',async(
 for(const failWrite of [false,true])test('análise estratégica visual '+(failWrite?'não confirma escrita recusada':'preserva andamentos atuais ao persistir'),async()=>{
   let persisted,content;const events=[];
   const current={andamentos:[{txt:'Atualização concorrente'}],analises_estrategicas:[]};
-  const ctx=vm.createContext({Buffer,console,require:createRequire(path.join(__dirname,'../bot.js')),MODELO_TOP:'test',PDF_PGS_POR_CHUNK:50,PDF_MAX_PGS_DIRETO:80,
+  const ctx=vm.createContext({Buffer,console,require:createRequire(path.join(__dirname,'../bot.js')),MODELO_TOP:'test',hojeBrasil:require('../lib/data-brasil').hojeBrasil,PDF_PGS_POR_CHUNK:50,PDF_MAX_PGS_DIRETO:80,
     _dividirPDFEmChunks:async buffer=>[{buffer,paginas:1}],_bufferDoChunk:c=>c.buffer,_liberarChunk:c=>{c.buffer=null;},_extrairTextoDocxBasico:()=>'',
     ia:async m=>{content=m[0].content;return 'Análise de teste';},processStore:{update:async(id,fn)=>{if(failWrite)throw Error('Banco recusou');persisted=fn(current);}},
     _auditarAcao(){},_sseNotificar:(type,data)=>events.push(data),envTelegramAgendado:async()=>{}});
