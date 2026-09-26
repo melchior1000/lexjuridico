@@ -64,7 +64,8 @@ test('sem pendências o LEX diz que nada exige você; com falha de leitura não 
   const html=calm.byId('lex2-briefing').innerHTML;
   assert.doesNotMatch(html,/venceu|aguardando sua revisão|conversa de cliente|publicação aguardando/);
   assert.match(html,/lex2-says ok[\s\S]*Atualizar no tribunal/);
-  assert.equal((html.match(/class="lex-msg bot/g)||[]).length,1,'um único aviso, informativo');
+  assert.match(html,/Nada exige você agora/,'o informativo do PJe não elimina o estado de escritório em dia');
+  assert.equal((html.match(/class="lex-msg bot/g)||[]).length,2,'um aviso informativo e um all-clear');
   assert.match(calm.byId('lex2-operational-status').innerHTML,/nenhuma tarefa em andamento · nada aguarda você/);
   const broken=boot(async()=>{throw new Error('indisponível')});
   await broken.flush();broken.ctx.window.lexHome();await broken.flush();
