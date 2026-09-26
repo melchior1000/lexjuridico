@@ -40,10 +40,12 @@ test('com 500 processos a tela mostra clientes recolhidos, não 500 cartões',()
   assert.equal((html.match(/class="lex-proc-group/g)||[]).length,3,'CEF, Banco do Brasil e demais');
   assert.equal((html.match(/class="lex-proc-line"/g)||[]).length,0,'nada aberto de início');
   assert.doesNotMatch(html,/class="lex-proc-row"/);
-  // Só prazo confirmado aparece como urgência; os demais dados legados ficam para conferência.
-  assert.match(html,/lex-proc-says[\s\S]*1 vencido<[\s\S]*1 hoje<[\s\S]*200 nº CNJ a corrigir[\s\S]*lexPrazosVencidos\(\)[\s\S]*Resolver agora/);
+  // Tela enxuta: sem quadro de urgência, sem abas, sem ordenação; só busca, grupos e a ordem ao LEX.
+  assert.doesNotMatch(html,/lex-proc-says|lex-tabs|lex-sort|Resolver agora|lex-proc-urgent|lex-view-toggle/);
+  assert.match(html,/class="lex-proc-order"[\s\S]*lexAskLex\(q\.value\.trim\(\)\)/,'barra de ordem ao LEX');
+  // Só prazo confirmado aparece como urgência no grupo; o CNJ inválido não vira urgência.
+  assert.match(html,/>CEF<\/strong><small>300 processos<\/small><\/span><span class="chips"><em class="late">1 vencido<\/em>/);
   assert.doesNotMatch(html,/CEF[^<]*<\/strong><small>[^<]*<\/small><\/span><span class="chips"><em class="late">1 vencido<\/em><\/span>[\s\S]*nº CNJ inválido/);
-  assert.doesNotMatch(html,/lex-proc-urgent|lex-view-toggle/);
   assert.ok(html.indexOf('>CEF<')<html.indexOf('>Banco do Brasil<'));
   assert.match(html,/501 processos · 2 clientes/);
 });
@@ -54,6 +56,7 @@ test('abrir o cliente mostra linhas compactas em lotes, com o urgente primeiro e
   ui.ctx.lexToggleProcGroup('cef');
   const list=ui.list();
   assert.equal((list.match(/class="lex-proc-line"/g)||[]).length,30);
+  assert.equal((list.match(/onclick="lexChat\('c\d+'\)"/g)||[]).length,30,'cada linha fala com o LEX sobre o processo');
   assert.match(list,/^[\s\S]*?<strong>Execução 5<\/strong>[\s\S]*?Vencido/,'vencido no topo do grupo');
   assert.doesNotMatch(list,/<strong>CEF — /);
   assert.match(list,/Mostrar mais 30 de 270 restantes/);

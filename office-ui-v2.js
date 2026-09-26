@@ -78,7 +78,8 @@ function trustedDeadline(p){return p?.deadline_truth===true||p?.prazo_confirmado
 function procTitle(p,client){if(judicial(p)&&active(p)&&!processOfficial(p)){const num=procShortNum(p);return num?'Processo '+num+' — dados a conferir':'Processo — dados a conferir'}const n=String((globalThis.lexFixText||String)(p.nome_oficial||p.nome||p.partes||'Processo')).trim();if(!client)return n;const rest=n.slice(0,client.length).toLowerCase()===client.toLowerCase()?n.slice(client.length).replace(/^\s*(?:[—–-]|x|×|vs\.?|versus)\s+/i,'').trim():n;return rest||n}
 function procShortNum(p){const m=String(p.numero||'').match(/^\s*(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);return m?m[1]:''}
 function procLine(p,opts){const d=trustedDeadline(p)?days(p):9999,num=procShortNum(p),where=p.tribunal||p.vara||p.area||'',unverified=judicial(p)&&active(p)&&!processOfficial(p),tone=unverified?'soon':d<0?'late':d<=2?'urgent':d<=7?'soon':active(p)?'ok':'done';
-  return '<button class="lex-proc-line" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><i class="dot '+tone+'"></i><span class="txt"><strong>'+esc(procTitle(p,opts?.client))+'</strong><small>'+(num?(cnjOk(num)||!judicial(p)?'<code>'+esc(num)+'</code>':'<span class="nocnj">nº CNJ inválido</span>'):'<span class="nocnj">'+(judicial(p)?'sem nº CNJ':'administrativo')+'</span>')+(where?' · '+esc(where):'')+(unverified?' · <span class="nocnj">dados não conferidos no tribunal</span>':'')+'</small></span>'+(d<9999?'<span class="chips">'+badge(d)+'</span>':'')+'</button>'}
+  // Linha enxuta: bolinha de estado, título, número e UM botão "falar com o LEX sobre este".
+  return '<div class="lex-proc-line"><button class="open" onclick="lexOpenProc(\''+esc(String(p.id))+'\')"><i class="dot '+tone+'"></i><span class="txt"><strong>'+esc(procTitle(p,opts?.client))+'</strong><small>'+(num?(cnjOk(num)||!judicial(p)?'<code>'+esc(num)+'</code>':'<span class="nocnj">nº CNJ inválido</span>'):'<span class="nocnj">'+(judicial(p)?'sem nº CNJ':'administrativo')+'</span>')+(where?' · '+esc(where):'')+(unverified?' · <span class="nocnj">dados não conferidos no tribunal</span>':'')+'</small></span>'+(d<9999?'<span class="chips">'+badge(d)+'</span>':'')+'</button><button class="lex" onclick="lexChat(\''+esc(String(p.id))+'\')" aria-label="Falar com o LEX sobre este processo" title="Falar com o LEX sobre este processo">◉</button></div>'}
 function procUrgency(list){const r={vencidos:0,hoje:0,semana:0};for(const p of list){if(!active(p)||!trustedDeadline(p))continue;const d=days(p);if(d<0)r.vencidos++;else if(d===0)r.hoje++;else if(d<=7)r.semana++}return r}
 function procGroups(list){const map=new Map();for(const p of list){const name=procClient(p),key=procKey(name)||'~';if(!map.has(key))map.set(key,{key,name:name||'Sem cliente identificado',items:[]});map.get(key).items.push(p)}
   const groups=[],single=[];for(const g of map.values()){if(g.key!=='~'&&g.items.length>1)groups.push(g);else single.push(...g.items)}
@@ -279,21 +280,22 @@ function officeBoardHtml(counts){
 window.lexHome=function(){navMark('home');return home()};
 window.lexProcessos=function(){
   navMark('processos');
-  const all=procs(),filtered=filteredProcesses(),u=procUrgency(all),urgentTab=['vencidos','hoje','semana','semcnj'].includes(procTab);
-  const bad=all.filter(cnjProblem).length,chip=(tab,n,label,tone)=>n?'<button class="'+tone+(procTab===tab?' on':'')+'" onclick="lexSetProcFilter(\''+(procTab===tab?'ativos':tab)+'\')">'+n+' '+label+'</button>':'';
-  const need=u.vencidos+u.hoje+bad;
+  const all=procs(),filtered=filteredProcesses(),urgentTab=['vencidos','hoje','semana','semcnj'].includes(procTab);
+  const closed=all.filter(x=>!active(x)).length;
+  // Tela enxuta: busca, grupos por cliente e a barra de ordem ao LEX. Urgências e conferências
+  // são avisos na Conversa (Início); aqui só se consulta e se fala com o LEX sobre um processo.
   const body='<div class="lex-page-head"><div><small>Carteira jurídica</small><h1>Processos</h1></div><button onclick="goLex(\'autuacao\')" aria-label="Cadastrar processo">＋</button></div>'
-    +(need?'<div class="lex-proc-says"><div class="chips-row">'+chip('vencidos',u.vencidos,'vencido'+(u.vencidos>1?'s':''),'late')+chip('hoje',u.hoje,'hoje','urgent')+chip('semcnj',bad,'nº CNJ a corrigir','soon')+'</div><button onclick="'+(u.vencidos?'lexPrazosVencidos()':bad?'lexFixCnj()':'lexAskLex(\'prazos de hoje\')')+'">Resolver agora</button></div>':'<div class="lex-proc-says calm">✓ Nenhum prazo vencido e todos os números CNJ válidos.</div>')
-    +'<div class="lex-search"><span>⌕</span><input id="lex-q" value="'+esc(procQuery)+'" placeholder="Buscar número, cliente, parte, assunto..." oninput="lexFilterProc(this.value)"></div>'
-    +'<div class="lex-process-toolbar"><div class="lex-tabs"><button class="'+(procTab==='ativos'?'on':'')+'" onclick="lexSetProcFilter(\'ativos\')">Ativos <b>'+all.filter(active).length+'</b></button><button class="'+(procTab==='prazos'?'on':'')+'" onclick="lexSetProcFilter(\'prazos\')">Com prazo <b>'+all.filter(x=>days(x)<9999).length+'</b></button><button class="'+(procTab==='arquivados'?'on':'')+'" onclick="lexSetProcFilter(\'arquivados\')">Encerrados <b>'+all.filter(x=>!active(x)).length+'</b></button><button class="'+(procTab==='todos'?'on':'')+'" onclick="lexSetProcFilter(\'todos\')">Todos <b>'+all.length+'</b></button></div>'
-    +(procView==='lista'||procQuery?'<label class="lex-sort">Ordenar <select onchange="lexSetProcSort(this.value)"><option value="recentes" '+(procSort==='recentes'?'selected':'')+'>Atualizados</option><option value="nome" '+(procSort==='nome'?'selected':'')+'>Nome</option><option value="numero" '+(procSort==='numero'?'selected':'')+'>Número</option></select></label>':'')+'</div>'
+    +'<div class="lex-search"><span>⌕</span><input id="lex-q" value="'+esc(procQuery)+'" placeholder="Cliente, número, parte ou assunto" oninput="lexFilterProc(this.value)"></div>'
     +'<div class="lex-list-summary" id="lex-proc-summary">'+procSummary(filtered,urgentTab)+'</div>'
-    +'<div id="lex-proc-list">'+procListHtml(filtered)+procGroupPager(filtered)+'</div>';
+    +'<div id="lex-proc-list">'+procListHtml(filtered)+procGroupPager(filtered)+'</div>'
+    +(procTab!=='arquivados'&&closed?'<section class="lex-proc-group lex-proc-closed"><button class="head" aria-expanded="false" onclick="lexSetProcFilter(\'arquivados\')"><span class="ava">▣</span><span class="who"><strong>Encerrados</strong><small>'+closed+' processo'+(closed>1?'s':'')+' · toque para ver</small></span><b>⌄</b></button></section>':'')
+    +'<form class="lex-proc-order" onsubmit="event.preventDefault();var q=this.querySelector(\'input\');if(q.value.trim())lexAskLex(q.value.trim())"><input type="text" placeholder="Diga ao LEX o que fazer… ex.: cadastre o processo do PDF" aria-label="Ordem ao LEX"><button type="submit" aria-label="Enviar ordem">↑</button></form>';
   shell('Processos',body,'processos')
 };
 function procSummary(list,urgentTab){const label={vencidos:'com prazo vencido',hoje:'com prazo hoje',semana:'com prazo nos próximos 7 dias',semcnj:'com número CNJ faltando ou errado — o LEX acha o número certo: toque em Resolver'}[procTab];
   if(label)return list.length+' processo'+(list.length===1?'':'s')+' '+label+' · <button class="link" onclick="lexSetProcFilter(\'todos\')">ver todos</button>';
   if(procView==='clientes'&&!procQuery&&!urgentTab){const g=procGroups(list);const n=g.filter(x=>!x.rest).length;return list.length+' processo'+(list.length===1?'':'s')+(n?' · '+n+' cliente'+(n===1?'':'s')+' · toque para abrir':'')}
+  if(procTab==='arquivados')return list.length+' processo'+(list.length===1?' encerrado':'s encerrados')+' · <button class="link" onclick="lexSetProcFilter(\'ativos\')">voltar aos ativos</button>';
   return list.length+' processo'+(list.length===1?'':'s')+(procQuery?' encontrados':' neste filtro')}
 window.lexSetProcFilter=tab=>{procTab=['todos','ativos','prazos','arquivados','vencidos','hoje','semana','semcnj'].includes(tab)?tab:'todos';procPage=1;window.lexProcessos()};
 window.lexSetProcView=view=>{procView=view==='lista'?'lista':'clientes';procPage=1;window.lexProcessos()};
