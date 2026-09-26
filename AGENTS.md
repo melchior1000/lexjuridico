@@ -765,3 +765,15 @@ Não reconstrua o LEX.
 Não pare entre etapas sem bloqueio humano real.
 
 **MISSÃO FINAL: ENTREGUE O LEX JURÍDICO FUNCIONAL E COMERCIAL.**
+
+## MÉTODO DE ENGENHARIA — AGENT SKILLS
+
+Este repositório traz em `.claude/` o pacote **addyosmani/agent-skills** (25 skills de engenharia, 9 comandos, 4 subagentes). Leia `.claude/AGENT-SKILLS.md` e a skill `using-agent-skills` no início de cada sessão. Fluxo obrigatório para qualquer frente:
+
+`/spec` (o que) → `/plan` (tarefas pequenas) → `/build` (uma fatia, teste antes do código) → `/test` (prova) → `/review` (cinco eixos: correção, legibilidade, arquitetura, segurança, desempenho) → `/ship` (deploy + homologação).
+
+Regras que se somam às deste arquivo, sem substituí-las:
+- Nenhuma tarefa é "concluída" sem teste passando e evidência registrada (skill `test-driven-development`).
+- Toda mudança em autenticação, chaves, webhooks, tenant/isolamento ou dados de cliente passa pela skill `security-and-hardening` e pelo subagente `security-auditor` antes do PR.
+- Código legado só é removido pela skill `deprecation-and-migration` (medir uso → avisar → migrar → remover).
+- Ao se perder ou quebrar algo: skill `debugging-and-error-recovery` — reproduzir antes de corrigir.
