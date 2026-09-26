@@ -308,31 +308,35 @@ window.lexPrazos=async function(){navMark('prazos');let serverError=null;try{con
 window.lexSetPrazoTab=tab=>{prazoTab=['revisar','vencidos','hoje','7dias','todos'].includes(tab)?tab:'todos';prazoPage=1;window.lexPrazos()};
 window.lexSetPrazoPage=page=>{prazoPage=Math.max(1,Number(page)||1);window.lexPrazos();window.scrollTo?.({top:0,behavior:'smooth'})};
 let taskWatch=null;
-function stopTaskWatch(){if(taskWatch){clearInterval(taskWatch);taskWatch=null}}
+function stopTaskWatch(expected){if(taskWatch&&(!expected||taskWatch===expected)){clearInterval(taskWatch);taskWatch=null}}
 // Uma tarefa aberta é re-lida a cada 15 s enquanto ainda estiver em execução/fila
 // (não há evento SSE de tarefa no servidor); ao sair da tela, o relógio para.
 async function loadTasks(selectedId){
-  const detail=$('#lex-task-detail');if(!detail||!detail.isConnected){stopTaskWatch();return}
+  const detail=$('#lex-task-detail');if(!detail||!detail.isConnected)return false;
   try{
-    const d=await lexApi('/api/trabalho');if(!detail.isConnected){stopTaskWatch();return}
+    const d=await lexApi('/api/trabalho');if(!detail.isConnected)return false;
     if(!Array.isArray(d.tarefas))throw new Error('Resposta de tarefas inválida.');
     const tasks=selectedId?d.tarefas.filter(t=>String(t.id)===String(selectedId)):d.tarefas;
     if(selectedId){
       const t=tasks[0];
       detail.innerHTML='<button class="btn-outline" onclick="lexTarefas()">Ver todas as tarefas</button>'+(t?(typeof lexTaskDetailHtml==='function'?lexTaskDetailHtml(t):lexTaskCard(t)):'<div class="lex-empty">Esta tarefa não está mais disponível.</div>');
-      if(!t||!['na_fila','executando'].includes(t.status))stopTaskWatch();
-    }else{
-      stopTaskWatch();
-      const order=['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou','executando','na_fila','concluida'];
-      const sorted=tasks.slice().sort((a,b)=>order.indexOf(a.status)-order.indexOf(b.status));
-      detail.innerHTML=sorted.length?sorted.map(t=>'<div class="lex-task-row" onclick="lexTarefas(\''+esc(String(t.id))+'\')">'+lexTaskCard(t)+'</div>').join(''):'<div class="lex-empty">Nenhuma tarefa registrada.</div>';
+      return !!t&&['na_fila','executando'].includes(t.status);
     }
-  }catch(err){if(detail.isConnected)detail.textContent='Não consegui carregar as tarefas: '+(err.message||'falha no servidor')}
+    const order=['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou','executando','na_fila','concluida'];
+    const sorted=tasks.slice().sort((a,b)=>order.indexOf(a.status)-order.indexOf(b.status));
+    detail.innerHTML=sorted.length?sorted.map(t=>'<div class="lex-task-row" onclick="lexTarefas(\''+esc(String(t.id))+'\')">'+lexTaskCard(t)+'</div>').join(''):'<div class="lex-empty">Nenhuma tarefa registrada.</div>';
+    return false;
+  }catch(err){
+    if(!detail.isConnected)return false;
+    detail.textContent='Não consegui carregar as tarefas: '+(err.message||'falha no servidor');
+    return !!selectedId;
+  }
 }
 window.lexTarefas=async function(selectedId){navMark('tarefas');stopTaskWatch();
   shell(selectedId?'Tarefa':'Tarefas','<div class="lex-page-head"><div><small>'+(selectedId?'Em andamento':'Entregas do escritório')+'</small><h1>'+(selectedId?'Tarefa #'+esc(String(selectedId).slice(0,8)):'Tarefas')+'</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-task-detail" class="lex-panel" role="status">Consultando tarefas…</div>','home');
-  await loadTasks(selectedId);
-  if(selectedId&&!taskWatch)taskWatch=setInterval(()=>loadTasks(selectedId),15000);
+  if(!selectedId||!(await loadTasks(selectedId)))return;
+  const handle=setInterval(async()=>{if(!(await loadTasks(selectedId))&&taskWatch===handle)stopTaskWatch(handle)},15000);
+  taskWatch=handle;
 };
 // Recibos do dia: tudo que o LEX fez hoje, com hora, alvo, quem autorizou e origem.
 const RECEIPT_LABEL={mensagem_enviada:'MENSAGEM ENVIADA',ordem_confirmada:'ORDEM CONFIRMADA',atendimento_recepcao:'CLIENTE ATENDIDO',andamento_registrado:'ANDAMENTO REGISTRADO',prazo_confirmado:'PRAZO CONFIRMADO',prazo_cumprido:'PRAZO CUMPRIDO',tarefa_concluida:'TAREFA CONCLUÍDA',minuta_pronta:'MINUTA PRONTA',rotina_noturna:'ROTINA NOTURNA'};
@@ -345,7 +349,7 @@ function receiptHtml(r){
     +(r.para?'<dt>Para quem</dt><dd>'+esc(r.para)+'</dd>':'')
     +(r.autorizado_por?'<dt>Autorizado</dt><dd>por '+esc(r.autorizado_por)+'</dd>':'')
     +(r.origem?'<dt>Origem</dt><dd>'+esc(RECEIPT_SOURCE[r.origem]||r.origem)+'</dd>':'')
-    +'</dl><div class="lex-receipt-actions">'+open+'<button class="ghost" onclick="lexChat();setTimeout(()=>lexPrefill('+JSON.stringify(fix).replace(/</g,'\\u003c')+'),120)">Enviar correção</button></div></article>';
+    +'</dl><div class="lex-receipt-actions">'+open+'<button class="ghost" onclick="lexChat();setTimeout(()=>lexPrefill('+esc(JSON.stringify(fix))+'),120)">Enviar correção</button></div></article>';
 }
 window.lexRecibos=async function(){navMark('recibos');
   shell('Recibos','<div class="lex-page-head"><div><small>Recibos · hoje</small><h1>O que o LEX fez hoje</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-receipts" class="lex-panel" role="status">Lendo os registros de hoje…</div>','mais');
