@@ -305,15 +305,32 @@ window.lexFilterProc=q=>{procQuery=String(q||'').toLowerCase();procPage=1;render
 window.lexPrazos=async function(){navMark('prazos');let serverError=null;try{const d=await lexApi('/api/trabalho');setDeadlineServerState(d)}catch(err){deadlineServerState=[];serverError=err?.message||'Falha ao consultar o servidor'}const all=deadlineItems(),b=deadlineBuckets(all),visible=deadlineVisible(all),page=pageSlice(visible,prazoPage,DEADLINE_PAGE_SIZE);prazoPage=page.page;const recommendation=b.revisar.length?'Há '+b.revisar.length+' prazo(s) anotado(s) no LEX ainda não conferido(s) no tribunal. Confira antes de contar com a data.':b.vencidos.length?'Há '+b.vencidos.length+' prazo(s) confirmado(s) vencido(s). Confira primeiro a situação jurídica e a ação pendente.':b.hoje.length?'Há '+b.hoje.length+' prazo(s) confirmado(s) vencendo hoje. Priorize a conferência agora.':b.dias7.length?'Há '+b.dias7.length+' prazo(s) confirmado(s) nos próximos 7 dias. Organize a ordem de trabalho.':'Nenhum prazo confirmado crítico nos próximos 7 dias.';const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')" aria-label="Abrir calendário">▣</button></div>'+(serverError?'<div class="lex-warning">Não consegui confirmar os prazos auditáveis no servidor: '+esc(serverError)+'. Dados locais aparecem apenas para conferência.</div>':'')+'<div class="lex-tabs"><button class="'+(prazoTab==='revisar'?'on':'')+'" onclick="lexSetPrazoTab(\'revisar\')">Revisar <b>'+b.revisar.length+'</b></button><button class="'+(prazoTab==='vencidos'?'on':'')+'" onclick="lexSetPrazoTab(\'vencidos\')">Vencidos <b>'+b.vencidos.length+'</b></button><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+b.hoje.length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+b.dias7.length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos <b>'+b.todos.length+'</b></button></div><div class="lex-timeline">'+deadlineRows(page.items)+'</div>'+pagerHtml(page,'lexSetPrazoPage')+'<div class="lex-recommend"><b>💡 LEX recomenda</b><p>'+esc(recommendation)+'</p><button onclick="lexOrganizeDeadlines()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
 window.lexSetPrazoTab=tab=>{prazoTab=['revisar','vencidos','hoje','7dias','todos'].includes(tab)?tab:'todos';prazoPage=1;window.lexPrazos()};
 window.lexSetPrazoPage=page=>{prazoPage=Math.max(1,Number(page)||1);window.lexPrazos();window.scrollTo?.({top:0,behavior:'smooth'})};
-window.lexTarefas=async function(selectedId){navMark('tarefas');
-  shell('Tarefas','<div class="lex-page-head"><div><small>Entregas do escritório</small><h1>Tarefas</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-task-detail" class="lex-panel" role="status">Consultando tarefas…</div>','home');
-  const detail=$('#lex-task-detail');
+let taskWatch=null;
+function stopTaskWatch(){if(taskWatch){clearInterval(taskWatch);taskWatch=null}}
+// Uma tarefa aberta é re-lida a cada 15 s enquanto ainda estiver em execução/fila
+// (não há evento SSE de tarefa no servidor); ao sair da tela, o relógio para.
+async function loadTasks(selectedId){
+  const detail=$('#lex-task-detail');if(!detail||!detail.isConnected){stopTaskWatch();return}
   try{
-    const d=await lexApi('/api/trabalho');if(!detail.isConnected)return;
+    const d=await lexApi('/api/trabalho');if(!detail.isConnected){stopTaskWatch();return}
     if(!Array.isArray(d.tarefas))throw new Error('Resposta de tarefas inválida.');
     const tasks=selectedId?d.tarefas.filter(t=>String(t.id)===String(selectedId)):d.tarefas;
-    detail.innerHTML=(selectedId?'<button class="btn-outline" onclick="lexTarefas()">Ver todas as tarefas</button>':'')+(tasks.length?tasks.map(t=>lexTaskCard(t)).join(''):'<div class="lex-empty">'+(selectedId?'Esta tarefa não está mais disponível.':'Nenhuma tarefa registrada.')+'</div>');
+    if(selectedId){
+      const t=tasks[0];
+      detail.innerHTML='<button class="btn-outline" onclick="lexTarefas()">Ver todas as tarefas</button>'+(t?(typeof lexTaskDetailHtml==='function'?lexTaskDetailHtml(t):lexTaskCard(t)):'<div class="lex-empty">Esta tarefa não está mais disponível.</div>');
+      if(!t||!['na_fila','executando'].includes(t.status))stopTaskWatch();
+    }else{
+      stopTaskWatch();
+      const order=['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou','executando','na_fila','concluida'];
+      const sorted=tasks.slice().sort((a,b)=>order.indexOf(a.status)-order.indexOf(b.status));
+      detail.innerHTML=sorted.length?sorted.map(t=>'<div class="lex-task-row" onclick="lexTarefas(\''+esc(String(t.id))+'\')">'+lexTaskCard(t)+'</div>').join(''):'<div class="lex-empty">Nenhuma tarefa registrada.</div>';
+    }
   }catch(err){if(detail.isConnected)detail.textContent='Não consegui carregar as tarefas: '+(err.message||'falha no servidor')}
+}
+window.lexTarefas=async function(selectedId){navMark('tarefas');stopTaskWatch();
+  shell(selectedId?'Tarefa':'Tarefas','<div class="lex-page-head"><div><small>'+(selectedId?'Em andamento':'Entregas do escritório')+'</small><h1>'+(selectedId?'Tarefa #'+esc(String(selectedId).slice(0,8)):'Tarefas')+'</h1></div><button onclick="lexHome()" aria-label="Voltar ao início">⌂</button></div><div id="lex-task-detail" class="lex-panel" role="status">Consultando tarefas…</div>','home');
+  await loadTasks(selectedId);
+  if(selectedId&&!taskWatch)taskWatch=setInterval(()=>loadTasks(selectedId),15000);
 };
 window.lexEscritorio=async function(){navMark('escritorio');
   let tasks=[],quadro=null;

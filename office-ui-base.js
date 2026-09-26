@@ -31,6 +31,50 @@ function lexTaskCard(t) {
     ${['falhou','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao'].includes(t.status)?`<button class="btn-outline" onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`:''}
     </div></article>`;
 }
+// Linha do tempo da tarefa a partir dos carimbos REAIS gravados pelo Task Engine
+// (criada_em, iniciada_em, triagem, resultado, correcao_solicitada, revisado_em, pendencia).
+// Nada é estimado: sem carimbo, sem evento. Ordem cronológica.
+function lexTaskTimeline(t){
+  const ev=[];
+  const when=v=>{const d=v?new Date(v):null;return d&&!Number.isNaN(d.getTime())?d:null};
+  const hm=d=>d?d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
+  const push=(d,titulo,detalhe,estado)=>ev.push({d,hora:hm(d),titulo,detalhe:detalhe||'',estado:estado||'feito'});
+  push(when(t.criada_em),'Recebi a ordem',(t.tipo||'')+(t.instrucao?' · '+String(t.instrucao).slice(0,120):''));
+  if(t.processo_nome||t.processo_id)push(when(t.iniciada_em||t.criada_em),'Identifiquei o processo',t.processo_nome||('id '+String(t.processo_id).slice(0,12)));
+  if(t.iniciada_em)push(when(t.iniciada_em),'Comecei a executar',(t.agente||'')+(Number(t.tentativas)>1?' · tentativa '+t.tentativas:''));
+  if(t.triagem)push(when(t.iniciada_em),'Conferi cabimento e fontes',t.triagem.cabivel===true?'Cabível com as fontes do processo':'Triagem registrada');
+  if(t.recuperada_em)push(when(t.recuperada_em),'Recuperei a tarefa após interrupção','Voltou para a fila sem duplicar');
+  if(t.correcao_solicitada)push(when(t.atualizada_em),'Devolvida para correção',t.correcao_solicitada);
+  if(t.status==='aguardando_revisao')push(when(t.atualizada_em||t.iniciada_em),'Minuta pronta — aguarda sua revisão',t.tem_documento||t.resultado?'Documento disponível para baixar':'','espera');
+  if(t.status==='concluida')push(when(t.revisado_em||t.atualizada_em),'Aprovada por você',t.revisado_por?'por '+t.revisado_por:'');
+  if(['aguardando_dados','aguardando_documento_nitido','aguardando_configuracao'].includes(t.status))push(when(t.atualizada_em||t.iniciada_em),lexTaskStatus[t.status]||t.status,t.pendencia||'','espera');
+  if(t.status==='falhou')push(when(t.atualizada_em),'Falhou',t.pendencia||'','erro');
+  if(t.status==='executando')push(null,'Executando agora',t.agente||'','agora');
+  if(t.status==='na_fila')push(null,'Na fila','Começo assim que houver vaga','agora');
+  return ev;
+}
+function lexTaskTimelineHtml(t){
+  const ev=lexTaskTimeline(t);
+  if(!ev.length)return '';
+  return '<ol class="lex-task-timeline">'+ev.map(e=>`<li class="${e.estado}"><i></i><div><div class="tt-head"><strong>${lexEscape(e.titulo)}</strong>${e.hora?`<span>${lexEscape(e.hora)}</span>`:''}</div>${e.detalhe?`<small>${lexEscape(e.detalhe)}</small>`:''}</div></li>`).join('')+'</ol>';
+}
+// "Precisa de você": QUEM + O QUÊ + POR QUÊ + AÇÃO, só quando o Task Engine realmente espera o humano.
+function lexTaskNeedsYouHtml(t){
+  const need={aguardando_revisao:['Revisar a minuta','O LEX não protocola nem envia nada sem a sua conferência.'],aguardando_dados:['Completar a informação',t.pendencia||'Falta um dado para continuar.'],aguardando_documento_nitido:['Enviar documento legível',t.pendencia||'O documento anexado não está legível.'],aguardando_configuracao:['Configurar o servidor',t.pendencia||'A IA do servidor não está configurada.'],falhou:['Decidir se tento de novo',t.pendencia||'A execução falhou.']}[t.status];
+  if(!need)return '';
+  const actions=(t.status==='aguardando_revisao'?`<button onclick="lexReviewTask('${t.id}')">Conferi a minuta</button>${t.tem_documento||t.resultado?`<button class="btn-outline" onclick="lexDownloadTask('${t.id}')">Baixar Word</button>`:''}<button class="btn-outline" onclick="lexReturnTask('${t.id}')">Devolver para correção</button>`:`<button onclick="lexRetryTask('${t.id}')">Tentar após corrigir</button>`);
+  return `<section class="lex-task-need"><div class="lex-task-need-head"><span>PRECISA DE VOCÊ</span><small>para continuar</small></div><dl><dt>Quem</dt><dd>${lexEscape(t.processo_nome||t.processo_id||'Escritório')}</dd><dt>O quê</dt><dd>${lexEscape(need[0])}</dd><dt>Por quê</dt><dd>${lexEscape(need[1])}</dd></dl><div class="work-actions">${actions}</div></section>`;
+}
+async function lexReturnTask(id){const motivo=prompt('O que precisa ser corrigido na minuta? (vai para o LEX Redator)');if(!motivo||!motivo.trim())return;try{await lexApi('/api/tarefas/devolver',{method:'POST',body:JSON.stringify({id,motivo:motivo.trim()})});if(typeof window.lexTarefas==='function')window.lexTarefas(id);else renderTrabalho();}catch(e){toast(e.message,'erro');}}
+function lexTaskDetailHtml(t){
+  const steps=['na_fila','executando','aguardando_revisao','concluida'];const idx=Math.max(0,steps.indexOf(t.status));const stage=t.status==='concluida'?4:t.status==='aguardando_revisao'?3:t.status==='executando'?2:1;
+  return `<article class="work-task lex-task-detail"><div class="work-task-head"><strong>${lexEscape(t.processo_nome||t.instrucao||t.tipo)}</strong><span class="work-state ${['concluida','aguardando_revisao'].includes(t.status)?'ready':''}">${lexEscape(lexTaskStatus[t.status]||t.status)}</span></div>
+    <p>${lexEscape(t.agente||'')} · ${lexEscape(t.tipo||'')} · #${lexEscape(String(t.id||'').slice(0,8))}</p>
+    <div class="lex-task-grid"><div><small>ETAPA</small><strong>${stage} de 4</strong></div><div><small>TENTATIVAS</small><strong>${Number(t.tentativas||0)}</strong></div><div><small>CRIADA</small><strong>${lexEscape(t.criada_em?new Date(t.criada_em).toLocaleDateString('pt-BR'):'—')}</strong></div></div>
+    <h2 class="lex-task-h2">O que o LEX fez</h2>${lexTaskTimelineHtml(t)}${lexTaskNeedsYouHtml(t)}
+    ${t.status==='concluida'&&(t.tem_documento||t.resultado)?`<div class="work-actions"><button class="btn-outline" onclick="lexDownloadTask('${t.id}')">Baixar Word</button></div>`:''}
+    <p class="lex-task-note">O LEX nunca protocola sozinho. Aviso aqui e no WhatsApp quando a minuta ficar pronta.</p></article>`;
+}
 function lexApplyServerCounts(data){
   const counts=data?.contagens||{};
   for(const key of ['autuacao','judicial','administrativo','urgentes']){
