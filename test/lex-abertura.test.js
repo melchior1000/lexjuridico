@@ -28,6 +28,7 @@ test('abertura nunca prende o LEX, pula com toque/tecla, respeita movimento redu
   assert.match(src,/addEventListener\('click', sair\)/);
   assert.match(src,/keydown/);
   assert.match(src,/prefers-reduced-motion/);
+  assert.match(src,/prefers-reduced-motion:reduce\)\{#lex-abertura,#lex-abertura \*\{animation:none!important;transition:none!important\}/,'sem esmaecimento também no próprio painel');
   assert.match(src,/sessionStorage\.getItem\(KEY\)/);
   assert.match(src,/root\.classList\.remove\('lex-abrindo'\)/,'devolve a página ao sair');
 });

@@ -48,7 +48,7 @@
     + '@keyframes lexGira{to{transform:rotate(360deg)}}'
     + '@keyframes lexVarre{to{top:100%}}'
     + '@keyframes lexSurge{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}'
-    + '@media (prefers-reduced-motion:reduce){#lex-abertura *{animation:none!important;transition:none!important}#lex-abertura li{opacity:1;transform:none}}';
+    + '@media (prefers-reduced-motion:reduce){#lex-abertura,#lex-abertura *{animation:none!important;transition:none!important}#lex-abertura li{opacity:1;transform:none}}';
   var st = document.createElement('style');
   st.id = 'lex-abertura-css';
   st.textContent = css;
