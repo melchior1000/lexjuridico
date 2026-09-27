@@ -1,26 +1,21 @@
-/* LEX — abertura de painel digital ao acessar a página.
+/* LEX — abertura de painel digital ao ENTRAR no LEX (depois que a senha é aceita).
  *
- * Aparece uma vez por sessão do navegador, por ~2,5 s: grade de painel, anel de radar,
- * marca LEX com o AVISO LEGAL embaixo (AGENTS.md §1A: toda tela com a marca mostra o aviso)
- * e a sequência de inicialização. Toque/tecla pula. Com "reduzir movimento" do sistema,
- * vira uma versão curta e parada. Nunca prende o app: sai sozinha em no máximo 6 s.
+ * index.html → ativarApp() chama window.lexAbertura(). Dura ~5 s: grade de painel, anel
+ * de radar, marca LEX com o AVISO LEGAL embaixo (AGENTS.md §1A: toda tela com a marca
+ * mostra o aviso) e a sequência de inicialização, enquanto o LEX monta a central por trás.
+ * Toque/tecla pula. Com "reduzir movimento" do sistema, vira uma versão curta e parada.
+ * Nunca prende o app: sai sozinha em no máximo 10 s.
  */
 (function () {
   'use strict';
-  var KEY = 'lex_abertura_vista_v1';
   var AVISO = 'Assistente jurídico · não substitui as funções do advogado';
-  try { if (sessionStorage.getItem(KEY)) return; } catch (e) { /* sem storage: mostra */ }
-  var reduz = false;
-  try { reduz = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  var PASSO = 850, SEGURA = 1100, TRAVA = 10000;
   var root = document.documentElement;
-  root.classList.add('lex-abrindo');
-
   var css = ''
-    + 'html.lex-abrindo body{background:#040a14!important;overflow:hidden!important}'
-    + 'html.lex-abrindo body>:not(#lex-abertura){visibility:hidden!important}'
+    + 'html.lex-abrindo body{overflow:hidden!important}'
     + '#lex-abertura{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;flex-direction:column;'
     + 'background:radial-gradient(ellipse at 50% 42%,rgba(23,120,255,.20),rgba(4,10,20,0) 58%),#040a14;color:#e8f2ff;'
-    + 'font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;overflow:hidden;opacity:1;transition:opacity .45s ease}'
+    + 'font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;overflow:hidden;opacity:1;transition:opacity .6s ease}'
     + '#lex-abertura.sai{opacity:0}'
     + '#lex-abertura .grade{position:absolute;inset:-2px;background-image:linear-gradient(rgba(62,150,255,.07) 1px,transparent 1px),'
     + 'linear-gradient(90deg,rgba(62,150,255,.07) 1px,transparent 1px);background-size:34px 34px;'
@@ -49,31 +44,42 @@
     + '@keyframes lexVarre{to{top:100%}}'
     + '@keyframes lexSurge{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}'
     + '@media (prefers-reduced-motion:reduce){#lex-abertura,#lex-abertura *{animation:none!important;transition:none!important}#lex-abertura li{opacity:1;transform:none}}';
-  var st = document.createElement('style');
-  st.id = 'lex-abertura-css';
-  st.textContent = css;
-  (document.head || root).appendChild(st);
+  function css_() {
+    if (document.getElementById('lex-abertura-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lex-abertura-css';
+    st.textContent = css;
+    (document.head || root).appendChild(st);
+  }
 
-  var fim = null;
+  var fim = true, trava = null;
+  function tecla() { sair(); }
   function sair() {
     if (fim) return;
     fim = true;
-    try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+    clearTimeout(trava);
+    document.removeEventListener('keydown', tecla);
     var el = document.getElementById('lex-abertura');
     root.classList.remove('lex-abrindo');
     if (!el) return;
     el.classList.add('sai');
-    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 480);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 650);
   }
-  // Trava de segurança: a abertura nunca prende o LEX.
-  setTimeout(sair, 6000);
 
   function quantosProcessos() {
     try { var p = JSON.parse(localStorage.getItem('lex_proc_v1') || '[]'); return Array.isArray(p) ? p.length : 0; } catch (e) { return 0; }
   }
 
-  function montar() {
-    if (fim || document.getElementById('lex-abertura')) return;
+  // Chamada por ativarApp() no index.html, logo que a senha é aceita.
+  function abrir() {
+    if (!document.body || document.getElementById('lex-abertura')) return;
+    var reduz = false;
+    try { reduz = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    css_();
+    fim = false;
+    root.classList.add('lex-abrindo');
+    // Trava de segurança: a abertura nunca prende o LEX.
+    trava = setTimeout(sair, TRAVA);
     var n = quantosProcessos();
     var etapas = [
       'Iniciando o assessor jurídico',
@@ -100,12 +106,12 @@
       + '<div class="barra"><span></span></div>'
       + '<div class="pular">toque para pular</div>';
     el.addEventListener('click', sair);
-    document.addEventListener('keydown', function k() { document.removeEventListener('keydown', k); sair(); });
+    document.addEventListener('keydown', tecla);
     document.body.appendChild(el);
 
     var itens = el.querySelectorAll('li');
     var barra = el.querySelector('.barra span');
-    var passo = reduz ? 0 : 420;
+    var passo = reduz ? 0 : PASSO;
     Array.prototype.forEach.call(itens, function (li, i) {
       setTimeout(function () {
         if (fim) return;
@@ -113,11 +119,9 @@
         if (i > 0) { itens[i - 1].classList.add('ok'); itens[i - 1].querySelector('i').textContent = '✓'; }
         if (i === itens.length - 1) { li.classList.add('ok'); li.querySelector('i').textContent = '✓'; }
         barra.style.width = Math.round((i + 1) / itens.length * 100) + '%';
-      }, 250 + i * passo);
+      }, 300 + i * passo);
     });
-    setTimeout(sair, reduz ? 700 : 250 + itens.length * passo + 450);
+    setTimeout(sair, reduz ? 1200 : 300 + (itens.length - 1) * passo + SEGURA);
   }
-
-  if (document.body) montar();
-  else document.addEventListener('DOMContentLoaded', montar, { once: true });
+  window.lexAbertura = abrir;
 })();

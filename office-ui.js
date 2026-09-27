@@ -1,6 +1,6 @@
 document.write('<script src="lex-text.js"><\/script>');
 document.write('<script src="office-ui-base.js"><\/script>');
-document.write('<script src="lex-abertura.js?v=20260927c"><\/script>');
+document.write('<script src="lex-abertura.js?v=20260927d"><\/script>');
 (function(){
   function setPageTitle(text){const el=document.querySelector('.page-title');if(el)el.textContent=text;}
   function activate(btn){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');const sidebar=document.getElementById('sidebar'),overlay=document.getElementById('overlay');if(window.innerWidth<=900){sidebar?.classList.remove('open');overlay?.classList.remove('show')}}
@@ -10,15 +10,15 @@ document.write('<script src="lex-abertura.js?v=20260927c"><\/script>');
   function patchChannels(){document.body.classList.add('lex-commercial');window.renderWhatsappCanal=renderWhatsappCanal;window.lexOpenWhatsapp=()=>openWhatsapp(document.getElementById('lex-nav-whatsapp'));window.renderTelegram=renderTelegramCommercial;const nav=document.querySelector('#sidebar nav');if(nav){const tg=[...nav.querySelectorAll('.nav-btn')].find(b=>/Telegram/i.test(b.textContent||''));if(tg){tg.innerHTML='<span class="nav-icon">✈️</span> Telegram';tg.onclick=()=>{activate(tg);setPageTitle('Telegram');renderTelegramCommercial()};if(!document.getElementById('lex-nav-whatsapp')){const section=document.createElement('div');section.className='nav-section lex-canais-label';section.textContent='Canais';const btn=document.createElement('button');btn.id='lex-nav-whatsapp';btn.className='nav-btn';btn.innerHTML='<span class="nav-icon">📱</span> WhatsApp';btn.onclick=()=>openWhatsapp(btn);tg.before(section);section.after(btn)}}}}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',patchChannels);else patchChannels();
 })();
-document.write('<link rel="stylesheet" href="office-ui-v2.css?v=20260927c">');
+document.write('<link rel="stylesheet" href="office-ui-v2.css?v=20260927d">');
 document.write('<link rel="stylesheet" href="lex-bank-ui.css">');
 document.write('<link rel="stylesheet" href="office-ui-device.css">');
 document.write('<link rel="stylesheet" href="login-theme.css">');
 document.write('<link rel="stylesheet" href="office-flow-ui.css">');
 document.write('<link rel="stylesheet" href="office-dossier-ui.css">');
-document.write('<link rel="stylesheet" href="lex-polish.css?v=20260927c">');
+document.write('<link rel="stylesheet" href="lex-polish.css?v=20260927d">');
 document.write('<script src="office-ui-device.js"><\/script>');
-document.write('<script src="office-ui-v2.js?v=20260927c"><\/script>');
+document.write('<script src="office-ui-v2.js?v=20260927d"><\/script>');
 document.write('<script src="login-theme.js"><\/script>');
 document.write('<script src="office-flow-ui.js"><\/script>');
 document.write('<script src="lib/office-command.js"><\/script>');
@@ -26,8 +26,8 @@ document.write('<script src="office-command-ui.js"><\/script>');
 document.write('<script src="reception-handoff-ui.js"><\/script>');
 document.write('<script src="office-attachment-ui.js"><\/script>');
 document.write('<script src="office-dossier-ui.js"><\/script>');
-document.write('<script src="lex2-interface-core.js?v=20260927c"><\/script>');
-document.write('<script src="lex2-coordinator-ui.js?v=20260927c"><\/script>');
+document.write('<script src="lex2-interface-core.js?v=20260927d"><\/script>');
+document.write('<script src="lex2-coordinator-ui.js?v=20260927d"><\/script>');
 // Roteador único: carregado por último para prevalecer sobre as camadas antigas.
 document.write('<script src="lex-legacy-frame.js"><\/script>');
 document.write('<script src="lex-nav.js"><\/script>');

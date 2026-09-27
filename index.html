@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <script src="lib/workflow.js"></script>
-<script src="office-ui.js?v=20260927c"></script>
+<script src="office-ui.js?v=20260927d"></script>
 <link rel="stylesheet" href="office-ui.css">
   <!-- LEX v2 - Build 2026-04-22 21:20 -->
 <meta charset="UTF-8">
@@ -2985,6 +2985,8 @@ async function renderCardTempoUso(container) {
 
 function ativarApp(perfil){
   usuarioAtivo=perfil;
+  // Abertura de painel ao entrar (senha aceita); a central monta por trás dela.
+  try{ if(typeof window.lexAbertura==='function') window.lexAbertura(); }catch(e){}
   document.getElementById('login-screen').style.display='none';
   document.getElementById('login-erro').style.display='none';
   try{document.getElementById('perfil-label').textContent=PERFIS[perfil]?.label||_perms.label||perfil;}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
