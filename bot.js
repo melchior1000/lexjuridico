@@ -862,7 +862,7 @@ async function _analisarPrazoDjen(input){
 }
 const deadlineScheduler=createDeadlineScheduler({
   records:recordStore,
-  run:now=>runDailyOfficeJobs({
+  run:async now=>{const result=await runDailyOfficeJobs({
     processStore,sbReq,now,
     datajudOptions:{apiKey:process.env.DATAJUD_API_KEY,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,fetchImpl:globalThis.fetch},
     djenOptions:{
@@ -871,7 +871,10 @@ const deadlineScheduler=createDeadlineScheduler({
       calendarioVerificado:false,
       clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY}
     }
-  }),
+  });
+  // Intimação nova no Diário: aviso na hora (WhatsApp + Telegram), sem esperar o resumo.
+  if(result?.djen?.enabled)await djenAlerts.tick().catch(e=>console.warn('[DJEN avisos] '+e.message));
+  return result;},
   notify:text=>notificationDigest.enqueue(text,CHAT_ID||'central'),
   log:msg=>console.warn(msg)
 });
@@ -884,6 +887,7 @@ async function avisarTitular(text){
   if(process.env.LEX_OPERATOR_WHATSAPP) ok=(await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false))||ok;
   return ok;
 }
+const djenAlerts=require('./lib/djen-alerts').createDjenAlerts({sbReq,records:recordStore,processStore,deliver:text=>avisarTitular(text),log:msg=>console.warn(msg)});
 const billingRoutes=require('./lib/billing-routes').createBillingRoutes({records:recordStore,authenticate:r=>validarToken(getToken(r)),headers:{},body:lerBody,log:m=>console.warn('[Cobrança]',m)});
 const pjeMonitor = createPjeMonitor({
   records:recordStore,processStore,
