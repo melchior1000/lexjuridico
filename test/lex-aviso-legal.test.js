@@ -21,7 +21,7 @@ test('toda tela com a marca LEX mostra o aviso embaixo dela; login também; nunc
     // logo depois da marca, no mesmo bloco de cabeçalho — por isso a janela curta, não "até </div>".
     const src=read(f);const marcas=[...src.matchAll(/<strong>(?:LEX|'\+title\+')<\/strong>[^]{0,160}/g)];
     assert.ok(marcas.length>0,f+': marca não encontrada');
-    for(const m of marcas)assert.match(m[0],/lexAvisoHtml/,f+': marca sem aviso');
+    for(const m of marcas)assert.match(m[0],/lexAvisoHtml\(\)/,f+': marca sem aviso');
   }
   assert.ok(read('index.html').includes(AVISO_CURTO),'tela de login');
   assert.match(read('office-ui-v2.css'),/\.lex-aviso\{display:block/);
