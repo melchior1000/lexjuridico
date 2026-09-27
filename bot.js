@@ -887,7 +887,12 @@ async function avisarTitular(text){
   if(process.env.LEX_OPERATOR_WHATSAPP) ok=(await envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP).catch(()=>false))||ok;
   return ok;
 }
-const djenAlerts=require('./lib/djen-alerts').createDjenAlerts({sbReq,records:recordStore,processStore,deliver:text=>avisarTitular(text),log:msg=>console.warn(msg)});
+// Cada canal configurado tem o seu controle de entrega: falha num não se perde no outro.
+const djenAlerts=require('./lib/djen-alerts').createDjenAlerts({sbReq,records:recordStore,processStore,log:msg=>console.warn(msg),
+  canais:()=>({
+    ...(CHAT_ID?{telegram:text=>envTelegram(text,null,CHAT_ID)}:{}),
+    ...(process.env.LEX_OPERATOR_WHATSAPP?{whatsapp:text=>envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP)}:{})
+  })});
 const billingRoutes=require('./lib/billing-routes').createBillingRoutes({records:recordStore,authenticate:r=>validarToken(getToken(r)),headers:{},body:lerBody,log:m=>console.warn('[Cobrança]',m)});
 const pjeMonitor = createPjeMonitor({
   records:recordStore,processStore,

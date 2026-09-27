@@ -10,7 +10,7 @@ function memoryRecords(){
 // Banco falso: devolve as publicações gravadas, no formato {status,body} do Supabase.
 function fakeDb(rows){
   const calls=[];
-  const sbReq=async(method,table,body,query)=>{calls.push({method,table,query});return{ok:true,status:200,body:rows.slice()}};
+  const sbReq=async(method,table,body,query)=>{calls.push({method,table,query});const off=Number(query.offset||0),lim=Number(query.limit||rows.length);return{ok:true,status:200,body:rows.slice(off,off+lim)}};
   return{sbReq,calls};
 }
 const processStore={async read(){return{processes:[{id:'p1',nome:'Cliente Exemplo A — Cobrança'}]}}};
@@ -20,20 +20,20 @@ const now=()=>new Date('2026-09-27T14:00:00Z');
 test('primeira vez liga os avisos sem despejar o acervo antigo',async()=>{
   const records=memoryRecords(),sent=[];
   const db=fakeDb([pub('a'),pub('b')]);
-  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,deliver:async t=>{sent.push(t);return true},now});
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async t=>{sent.push(t);return true}},now});
   const out=await alerts.tick();
-  assert.equal(out.ok,true);assert.equal(out.primeira,true);
+  assert.equal(out.ok,true);assert.equal(out.por_canal.whatsapp.primeira,true);
   assert.equal(sent.length,1);
   assert.match(sent[0],/Avisos do Diário \(DJEN\) ligados/);
   assert.match(sent[0],/2 publicaç/);
-  assert.deepEqual(records.rows.get(KEY).ids.sort(),['a','b']);
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids.sort(),['a','b']);
 });
 
 test('publicação nova depois disso vira aviso imediato com processo, tribunal e OAB',async()=>{
   const records=memoryRecords(),sent=[];
-  records.rows.set(KEY,{ids:['a']});
+  records.rows.set(KEY,{canais:{whatsapp:{ids:['a']}}});
   const db=fakeDb([pub('a'),pub('b'),pub('c',{status:'orfa',processo_id:null,cnj:'07000033320268070001',tribunal:'TJDFT'})]);
-  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,deliver:async t=>{sent.push(t);return true},now});
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async t=>{sent.push(t);return true}},now});
   const out=await alerts.tick();
   assert.equal(out.novas,2);
   assert.equal(sent.length,1);
@@ -47,14 +47,15 @@ test('publicação nova depois disso vira aviso imediato com processo, tribunal 
   // A consulta pede só publicações já classificadas (casada/órfã) de uma janela recente.
   assert.equal(db.calls[0].table,'djen_comunicacoes');
   assert.equal(db.calls[0].query.status,'in.(casada,orfa)');
+  assert.equal(db.calls[0].query.order,'data_disponibilizacao.asc,djen_id.asc');
   assert.match(db.calls[0].query.data_disponibilizacao,/^gte\.2026-09-1\d$/);
 });
 
 test('não repete aviso: a mesma publicação só é avisada uma vez',async()=>{
   const records=memoryRecords(),sent=[];
-  records.rows.set(KEY,{ids:[]});
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]}}});
   const db=fakeDb([pub('x')]);
-  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,deliver:async t=>{sent.push(t);return true},now});
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async t=>{sent.push(t);return true}},now});
   assert.equal((await alerts.tick()).novas,1);
   assert.equal((await alerts.tick()).novas,0);
   assert.equal(sent.length,1);
@@ -62,38 +63,91 @@ test('não repete aviso: a mesma publicação só é avisada uma vez',async()=>{
 
 test('canal não confirmou: nada é marcado e a próxima rodada tenta de novo',async()=>{
   const records=memoryRecords();let tentativas=0;
-  records.rows.set(KEY,{ids:[]});
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]}}});
   const db=fakeDb([pub('x')]);
-  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,deliver:async()=>{tentativas++;return tentativas>1},now});
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async()=>{tentativas++;return tentativas>1}},now});
   const first=await alerts.tick();
   assert.equal(first.ok,false);assert.equal(first.reason,'entrega_nao_confirmada');
-  assert.deepEqual(records.rows.get(KEY).ids,[]);
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,[]);
   assert.equal((await alerts.tick()).novas,1);
-  assert.deepEqual(records.rows.get(KEY).ids,['x']);
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,['x']);
 });
 
 test('muitas publicações: mostra as primeiras e diz quantas faltam',async()=>{
   const records=memoryRecords(),sent=[];
-  records.rows.set(KEY,{ids:[]});
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]}}});
   const db=fakeDb(Array.from({length:12},(_,i)=>pub('n'+i)));
-  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,deliver:async t=>{sent.push(t);return true},now});
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async t=>{sent.push(t);return true}},now});
   assert.equal((await alerts.tick()).novas,12);
   assert.match(sent[0],/e mais 4/);
-  assert.equal(records.rows.get(KEY).ids.length,12);
+  assert.equal(records.rows.get(KEY).canais.whatsapp.ids.length,12);
 });
 
 test('banco fora do ar: falha fechada, não envia nada e não marca nada',async()=>{
   const records=memoryRecords();let delivered=0;
-  records.rows.set(KEY,{ids:[]});
-  const alerts=createDjenAlerts({sbReq:async()=>({ok:false,status:503,body:{message:'fora'}}),records,processStore,deliver:async()=>{delivered++;return true},now});
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]}}});
+  const alerts=createDjenAlerts({sbReq:async()=>({ok:false,status:503,body:{message:'fora'}}),records,processStore,canais:{whatsapp:async()=>{delivered++;return true}},now});
   const out=await alerts.tick();
   assert.equal(out.ok,false);
   assert.equal(delivered,0);
-  assert.deepEqual(records.rows.get(KEY).ids,[]);
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,[]);
 });
 
-test('bot.js chama o aviso do DJEN depois da leitura diária e entrega pelo avisarTitular',()=>{
+// CodeRabbit #144: se um canal entrega e o outro falha, o que falhou não pode ser dado como avisado.
+test('cada canal tem o seu controle: WhatsApp que falhou tenta de novo sem repetir no Telegram',async()=>{
+  const records=memoryRecords(),tg=[],wa=[];let waOk=false;
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]},telegram:{ids:[]}}});
+  const db=fakeDb([pub('x')]);
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,now,canais:{
+    telegram:async t=>{tg.push(t);return true},
+    whatsapp:async t=>{wa.push(t);return waOk}
+  }});
+  const first=await alerts.tick();
+  assert.equal(first.ok,false);
+  assert.deepEqual(records.rows.get(KEY).canais.telegram.ids,['x']);
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,[]);
+  waOk=true;
+  assert.equal((await alerts.tick()).ok,true);
+  assert.equal(tg.length,1,'Telegram não recebe de novo');
+  assert.equal(wa.length,2,'WhatsApp tenta de novo e entrega');
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,['x']);
+});
+
+test('canal que lança erro conta como não entregue, sem derrubar os outros',async()=>{
+  const records=memoryRecords(),tg=[];
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]},telegram:{ids:[]}}});
+  const alerts=createDjenAlerts({sbReq:fakeDb([pub('x')]).sbReq,records,processStore,now,canais:{
+    whatsapp:async()=>{throw new Error('Evolution fora')},telegram:async t=>{tg.push(t);return true}
+  }});
+  assert.equal((await alerts.tick()).ok,false);
+  assert.equal(tg.length,1);
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,[]);
+});
+
+test('sem canal configurado não lê nem marca nada',async()=>{
+  const records=memoryRecords(),db=fakeDb([pub('x')]);
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,now,canais:()=>({})});
+  assert.equal((await alerts.tick()).skipped,'sem_canal');
+  assert.equal(db.calls.length,0);
+  assert.equal(records.rows.size,0);
+});
+
+// CodeRabbit #144: não parar nas primeiras 500; a 501ª publicação também é avisada.
+test('lê a janela inteira em páginas: publicação além das primeiras 500 também é avisada',async()=>{
+  const records=memoryRecords(),sent=[];
+  const antigas=Array.from({length:500},(_,i)=>'v'+String(i).padStart(3,'0'));
+  records.rows.set(KEY,{canais:{whatsapp:{ids:antigas}}});
+  const db=fakeDb([...antigas.map(id=>pub(id)),pub('w-nova')]);
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,now,canais:{whatsapp:async t=>{sent.push(t);return true}}});
+  const out=await alerts.tick();
+  assert.equal(out.novas,1);
+  assert.equal(db.calls.length,2);
+  assert.equal(db.calls[1].query.offset,'500');
+  assert.equal(sent.length,1);
+});
+
+test('bot.js chama o aviso do DJEN depois da leitura diária, com controle por canal',()=>{
   const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
-  assert.match(src,/createDjenAlerts\(\{[^]{0,300}deliver:\s*text\s*=>\s*avisarTitular\(text\)/);
+  assert.match(src,/createDjenAlerts\(\{[^]{0,300}canais:\(\)=>\(\{[^]{0,120}telegram:text=>envTelegram\(text,null,CHAT_ID\)[^]{0,200}whatsapp:text=>envWhatsApp\(text,process\.env\.LEX_OPERATOR_WHATSAPP\)/);
   assert.match(src,/runDailyOfficeJobs\([^]{0,900}djenAlerts\.tick\(\)/);
 });
