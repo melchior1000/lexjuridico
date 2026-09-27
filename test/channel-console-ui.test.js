@@ -33,11 +33,11 @@ test('secretaria e responsável jurídico podem operar a Recepção sem liberar 
 });
 
 
-test('chips do coordenador mantêm grade móvel e flex apenas acima de 620px',()=>{
-  assert.match(css,/@media\(max-width:620px\)[\s\S]*\.lex2-context-chips\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(css,/@media\(min-width:621px\)\{[\s\S]*\.lex2-context-chips\{display:flex/);
-  const mobile=css.match(/@media\(max-width:620px\)\{([\s\S]*?)\n\}/)?.[1]||'';
-  assert.doesNotMatch(mobile,/\.lex2-context-chips\{display:flex/);
+test('chips do coordenador são uma linha rolável em qualquer largura (nunca grade que corta botão no celular)',()=>{
+  const chips=css.match(/\n\.lex2-context-chips\{[^}]*\}/)?.[0]||'';
+  assert.match(chips,/display:flex/);
+  assert.match(chips,/overflow-x:auto/);
+  assert.doesNotMatch(css,/\.lex2-context-chips\{[^}]*grid-template-columns/);
 });
 
 test('retorno atrasado do mesmo contato não substitui histórico mais novo',async()=>{

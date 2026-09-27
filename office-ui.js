@@ -9,7 +9,7 @@ document.write('<script src="office-ui-base.js"><\/script>');
   function patchChannels(){document.body.classList.add('lex-commercial');window.renderWhatsappCanal=renderWhatsappCanal;window.lexOpenWhatsapp=()=>openWhatsapp(document.getElementById('lex-nav-whatsapp'));window.renderTelegram=renderTelegramCommercial;const nav=document.querySelector('#sidebar nav');if(nav){const tg=[...nav.querySelectorAll('.nav-btn')].find(b=>/Telegram/i.test(b.textContent||''));if(tg){tg.innerHTML='<span class="nav-icon">✈️</span> Telegram';tg.onclick=()=>{activate(tg);setPageTitle('Telegram');renderTelegramCommercial()};if(!document.getElementById('lex-nav-whatsapp')){const section=document.createElement('div');section.className='nav-section lex-canais-label';section.textContent='Canais';const btn=document.createElement('button');btn.id='lex-nav-whatsapp';btn.className='nav-btn';btn.innerHTML='<span class="nav-icon">📱</span> WhatsApp';btn.onclick=()=>openWhatsapp(btn);tg.before(section);section.after(btn)}}}}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',patchChannels);else patchChannels();
 })();
-document.write('<link rel="stylesheet" href="office-ui-v2.css?v=20260924n">');
+document.write('<link rel="stylesheet" href="office-ui-v2.css?v=20260927a">');
 document.write('<link rel="stylesheet" href="lex-bank-ui.css">');
 document.write('<link rel="stylesheet" href="office-ui-device.css">');
 document.write('<link rel="stylesheet" href="login-theme.css">');
