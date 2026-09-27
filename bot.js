@@ -14027,9 +14027,12 @@ async function bootInicio() {
   } catch(e) { console.error('Banco indisponível; sincronização bloqueada até recuperação.'); }
 
   await telegramPoller.start();
-  // Quem mantém o serviço acordado no plano gratuito do Render é a rotina externa do GitHub
-  // (.github/workflows/manter-servidor-acordado.yml, a cada 5 min). O timer interno foi removido:
-  // um serviço dormindo não consegue se acordar sozinho, e os dois mecanismos só duplicavam log.
+  // Plano gratuito do Render: o serviço dorme após ~15 min sem visita. A rotina do GitHub
+  // atrasa (rodou a cada 2–5 h), então o próprio LEX visita o endereço público a cada 10 min
+  // enquanto está acordado e não chega a dormir. Desligar: LEX_MANTER_ACORDADO=0.
+  const keepAwake=require('./lib/keep-awake').createKeepAwake({url:process.env.LEX_SERVIDOR_URL||process.env.RENDER_EXTERNAL_URL,desligado:process.env.LEX_MANTER_ACORDADO==='0',log:msg=>console.warn(msg)});
+  keepAwake.start();
+  if(keepAwake.ativo)console.log('[LEX] Manter acordado: visita ao próprio /health a cada 10 min.');
 
   const urg = getPrazos(3).filter(a=>a.dias<=3);
   if(urg.length) {
