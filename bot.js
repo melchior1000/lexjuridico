@@ -98,7 +98,7 @@ const {createPjeMonitor} = require('./lib/pje-monitor');
 const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
-const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance} = require('./lib/legal-quality');
+const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance,regraRecencia} = require('./lib/legal-quality');
 const {applyPjeMovement} = require('./lib/pje-sync');
 const {runDailyOfficeJobs} = require('./lib/office-daily-jobs');
 const {createDeadlineScheduler} = require('./lib/deadline-scheduler');
@@ -12537,14 +12537,14 @@ if(url==='/api/memoria' && req.method==='GET') {
       if(!pf) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const b = await lerBody(req);
       if(!b.tema && !b.area) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'tema ou area obrigatorio'})); return; }
-      const sysJuris = 'Você é o pesquisador jurídico sênior do LEX. Use a busca web e trabalhe SOMENTE com fontes oficiais do Judiciário e legislação oficial. Nunca invente decisão, número, relator, data, tese ou ementa. Para cada resultado, informe Tribunal, classe/número, órgão julgador, relator quando constar, data, tese resumida sem copiar longos trechos, aplicação ao caso e URL oficial. Se um dado não puder ser confirmado, descarte o julgado. Diferencie precedente vinculante, repetitivo, súmula e decisão meramente persuasiva. Não estime chance de vitória.';
+      const sysJuris = 'Você é o pesquisador jurídico sênior do LEX. Use a busca web e trabalhe SOMENTE com fontes oficiais do Judiciário e legislação oficial. Nunca invente decisão, número, relator, data, tese ou ementa. Para cada resultado, informe Tribunal, classe/número, órgão julgador, relator quando constar, data, tese resumida sem copiar longos trechos, aplicação ao caso e URL oficial. Se um dado não puder ser confirmado, descarte o julgado. Diferencie precedente vinculante, repetitivo, súmula e decisão meramente persuasiva. Não estime chance de vitória.'+'\n\n'+regraRecencia();
       const msgs = [{role:'user', content:`Busque jurisprudência sobre: ${b.tema||''} | Área: ${b.area||'geral'} | Tribunal preferencial: ${b.tribunal||'todos'} | Contexto adicional: ${b.contexto||'nenhum'}`}];
       const resultado = await iaComWebSearch(msgs, sysJuris, 4096, {
         maxUses: 5,
         allowedDomains: OFFICIAL_LEGAL_DOMAINS,
         modelo: MODELO_LEGAL
       });
-      const sysRevisor = 'Você é o revisor independente de jurisprudência do LEX. Confira novamente cada julgado da pesquisa fornecida usando apenas fontes oficiais. Elimine qualquer item cujo número, tribunal, relator, data, tese ou URL não possa ser confirmado. Corrija divergências. Entregue a versão final com URL oficial em cada item, explique a força do precedente e registre limitações da pesquisa. Nunca transforme silêncio da fonte em confirmação.';
+      const sysRevisor = 'Você é o revisor independente de jurisprudência do LEX. Confira novamente cada julgado da pesquisa fornecida usando apenas fontes oficiais. Elimine qualquer item cujo número, tribunal, relator, data, tese ou URL não possa ser confirmado. Corrija divergências. Entregue a versão final com URL oficial em cada item, explique a força do precedente e registre limitações da pesquisa. Nunca transforme silêncio da fonte em confirmação.'+'\n\n'+regraRecencia();
       const revisao = await iaComWebSearch([{
         role:'user',
         content:'Tema original: '+String(b.tema||b.area||'')+'\nContexto: '+String(b.contexto||'nenhum')+'\n\nPESQUISA A SER CONFERIDA:\n'+String(resultado.texto||'')

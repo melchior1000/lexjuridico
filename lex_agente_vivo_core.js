@@ -23,6 +23,7 @@
 const { rowsFromResult } = require('./lib/supabase');
 const { withProcessLock } = require('./lib/process-lock');
 const { hojeBrasil } = require('./lib/data-brasil');
+const { OFFICIAL_LEGAL_DOMAINS, regraRecencia } = require('./lib/legal-quality');
 const { modelsFor, positiveInteger, admission: aiAdmission } = require('./lib/ai-runtime');
 
 // ── Identidade white-label do operador/escritório nos prompts dos agentes ──
@@ -248,7 +249,7 @@ Seu trabalho é encontrar precedentes reais e aplicáveis na web pra fundamentar
 Fluxo esperado:
 1) ${OPERADOR_CAP} te diz o tema, o processo (se houver) e o que quer provar.
 2) Se faltar informação, pergunte o mínimo. Senão, pesquise.
-3) Use web_search pra buscar jurisprudência. Priorize STJ, STF, TST e tribunais superiores. Depois tribunais locais. Use JusBrasil, Migalhas, ConJur, sites oficiais.
+3) Use web_search pra buscar jurisprudência, somente em fontes oficiais (STF, STJ, TST, TRFs, os 27 TJs, CNJ, Planalto, LexML). Priorize STJ, STF, TST e tribunais superiores; depois o TJ ou TRF do caso. Os agregadores (JusBrasil, ConJur, Migalhas) não servem como fonte: julgado só entra com a página oficial.
 4) Analise cada precedente: aplicabilidade alta/média/baixa ao caso de ${OPERADOR}, o porquê.
 5) ATIVAMENTE BUSQUE SACADAS JURÍDICAS — veja instruções abaixo.
 6) Quando tiver material suficiente, chame a ferramenta "consolidar_jurisprudencia".
@@ -732,9 +733,21 @@ function erroSeguro(msg) {
 // Envia tool_result de volta quando stop_reason='tool_use'.
 // Sem isso a conversa fica truncada — bug crítico do original.
 // =====================================================================
+// Orçamento de buscas da operação inteira (não por rodada). As ferramentas da continuação
+// ficam IGUAIS às originais (a API espera o mesmo array); quando as buscas somadas chegam ao
+// limite, a próxima rodada vai com tool_choice 'none': a IA não chama mais ferramenta e
+// conclui com o que já encontrou.
+function ajustarOrcamentoBusca(toolsOriginais, usadas) {
+  if (!Array.isArray(toolsOriginais)) return { esgotado: false };
+  const limites = toolsOriginais.filter(t => t && t.type === 'web_search_20250305' && Number.isFinite(t.max_uses)).map(t => t.max_uses);
+  if (!limites.length) return { esgotado: false };
+  return { esgotado: usadas >= Math.min(...limites) };
+}
+
 async function resolverToolUse(deps, payload) {
   const maxLoops = (typeof MAX_TOOL_LOOPS !== 'undefined') ? MAX_TOOL_LOOPS : 3;
   payload = {...payload, system: (payload.system || '') + '\nREGRA DE EXECUCAO: uma proposta preparada ainda nao foi aplicada. So afirme que houve gravacao quando a ferramenta comprovar persistencia. Ferramentas desconhecidas ou com erro nao foram executadas.'};
+  const toolsOriginais = payload.tools;
   let resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, payload);
   let resultado = extrairRespostaModelo(resposta);
   let textoAcumulado = resultado.texto;
@@ -778,8 +791,9 @@ async function resolverToolUse(deps, payload) {
       };
     }));
     msgs.push({ role: 'assistant', content: resposta.content });
+    const orcamento = ajustarOrcamentoBusca(toolsOriginais, todasBuscas.length);
     msgs.push({ role: 'user',      content: toolResults });
-    const novoPayload = Object.assign({}, payload, { messages: msgs });
+    const novoPayload = Object.assign({}, payload, { messages: msgs }, orcamento.esgotado ? { tool_choice: { type: 'none' } } : {});
     resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, novoPayload);
     resultado = extrairRespostaModelo(resposta);
     if (resultado.texto) textoAcumulado = textoAcumulado ? textoAcumulado + '\n\n' + resultado.texto : resultado.texto;
@@ -1284,7 +1298,7 @@ async function handlerJurisConversar(req, res, body, deps) {
       ? '\n\nTEMA INICIAL: ' + tema + (tribunal_alvo ? ' (foco em ' + tribunal_alvo + ')' : '')
       : '';
 
-    const systemPrompt = PROMPT_PESQUISADOR_JURIS + ctxProcesso + instrucaoPje + ctxInicial;
+    const systemPrompt = PROMPT_PESQUISADOR_JURIS + ctxProcesso + instrucaoPje + ctxInicial + '\n\n' + regraRecencia();
 
     const messages = sanitizarHistorico(historico);
     messages.push({ role: 'user', content: mensagem });
@@ -1296,7 +1310,7 @@ async function handlerJurisConversar(req, res, body, deps) {
       max_tokens: 4096,
       system: systemPrompt,
       tools: [
-        { type: 'web_search_20250305' },   // CORRIGIDO: 'name' removido
+        { type: 'web_search_20250305', name: 'web_search', max_uses: 8, allowed_domains: OFFICIAL_LEGAL_DOMAINS },   // só fonte oficial
         TOOL_CONSOLIDAR_JURIS,
         TOOL_BUSCAR_DOCUMENTOS
       ],
@@ -1601,4 +1615,4 @@ async function _capturarResultadoEspecialista(handler, body, deps) {
 async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
 async function executarPesquisaJulgador(body,deps){return _capturarResultadoEspecialista(handlerJuizConversar,body,deps)}
 
-module.exports = { tratarRota, conversarLex, montarContextoEscritorio, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };
+module.exports = { ajustarOrcamentoBusca, tratarRota, conversarLex, montarContextoEscritorio, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };
