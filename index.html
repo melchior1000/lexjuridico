@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <script src="lib/workflow.js"></script>
-<script src="office-ui.js?v=20260927b"></script>
+<script src="office-ui.js?v=20260927c"></script>
 <link rel="stylesheet" href="office-ui.css">
   <!-- LEX v2 - Build 2026-04-22 21:20 -->
 <meta charset="UTF-8">
@@ -2124,6 +2124,9 @@ function _concluirTour() {
 const _WELCOME_KEY = 'lex_boas_vindas_v1';
 
 function mostrarBoasVindas() {
+  // Substituído pela abertura de painel (lex-abertura.js): o cartão antigo cobria o LEX
+  // inteiro a cada instalação com textos desatualizados. O tour continua em iniciarTour().
+  return;
   if (localStorage.getItem(_WELCOME_KEY)) { return; }
   var div = document.createElement('div');
   div.id = 'lex-welcome';
