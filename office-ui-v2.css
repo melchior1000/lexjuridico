@@ -76,7 +76,7 @@ body.lex-commercial #content{background:var(--bg)!important;padding:0!important}
 }
 
 /* Conversa ocupa a área útil; compositor permanece visível, inclusive com teclado. */
-body.lex-commercial #content .lex-screen.lex2-lex{display:grid;grid-template-rows:auto auto auto minmax(140px,1fr) auto;box-sizing:border-box;height:var(--lex-vh,100dvh);min-height:0;padding-bottom:calc(88px + env(safe-area-inset-bottom))!important;max-width:1120px;overflow:hidden}
+body.lex-commercial #content .lex-screen.lex2-lex{display:grid;grid-template-rows:auto auto auto minmax(96px,1fr) auto;box-sizing:border-box;height:var(--lex-vh,100dvh);min-height:0;padding-bottom:calc(88px + env(safe-area-inset-bottom))!important;max-width:1120px;overflow:hidden}
 .lex2-lex .lex-top{position:static;padding-bottom:9px}
 body.lex-commercial .lex2-lex .lex-conversation{min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain}
 .lex2-lex .lex-msg{font-size:14px;overflow-wrap:anywhere}
@@ -84,6 +84,8 @@ body.lex-commercial .lex2-lex .lex-conversation{min-height:0;max-height:none;ove
 @media(min-width:621px){.lex2-command-row textarea{min-height:64px;height:auto}}
 /* Celular: a dica de exemplo sai; o placeholder já orienta e a conversa precisa do espaço. */
 @media(max-width:620px){.lex2-lex .lex2-command-note{display:none}}
+/* Tela baixa (iPhone com barra do navegador ~730px): o parágrafo do cabeçalho sai; título e estado ficam. Só o mapa de setores pode rolar; a conversa é a única linha que cede. */
+@media(max-width:620px) and (max-height:760px){.lex2-lex .lex2-lex-head p{display:none}.lex2-lex .lex2-lex-head{padding:10px 13px}.lex2-lex .lex2-lex-head h1{font-size:18px}.lex2-lex .lex2-lex-head small{margin-bottom:4px}.lex2-lex .lex2-operational-status{padding:8px 10px}}
 .lex2-command button:disabled{opacity:.55;cursor:wait}
 .lex-today-head{padding:24px 0 20px;max-width:750px}
 .lex-today-head>small{font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:700}
@@ -180,7 +182,7 @@ body.lex-commercial .lex-home-command b{display:grid;place-items:center;width:34
 }
 
 /* Caixa de ferramentas não é rolável: os atalhos ficam sempre inteiros. Só o mapa de setores rola, e só quando aberto. */
-.lex2-office-tools{display:grid;gap:7px;min-height:0;overflow:visible}
+.lex2-office-tools{display:grid;gap:7px;overflow:visible}
 .lex2-tools-details[open]{max-height:34vh;overflow:auto;overscroll-behavior:contain;padding-right:1px}
 .lex2-tools-details[open]>summary{position:sticky;top:0;z-index:1}
 @media(max-width:620px){.lex2-tools-details[open]{max-height:30vh}}

@@ -30,10 +30,14 @@ test('LEX coordenador tem layout responsivo proprio para celular',()=>{
 test('tela do LEX cabe na altura do celular: grade em border-box, atalhos em linha e ferramentas sem caixa rolável',()=>{
   const screen=css.match(/body\.lex-commercial #content \.lex-screen\.lex2-lex\{[^}]*\}/)[0];
   assert.match(screen,/box-sizing:border-box/);
-  assert.match(screen,/grid-template-rows:auto auto auto minmax\(140px,1fr\) auto/);
+  assert.match(screen,/grid-template-rows:auto auto auto minmax\(96px,1fr\) auto/);
   const tools=css.match(/\n\.lex2-office-tools\{[^}]*\}/)[0];
   assert.match(tools,/overflow:visible/);
   assert.doesNotMatch(tools,/max-height/);
+  // Sem min-height:0 a linha nunca encolhe abaixo do conteúdo (WebKit espremia a caixa e cortava os botões).
+  assert.doesNotMatch(tools,/min-height:0/);
+  // iPhone com barra do navegador (~730px): o parágrafo do cabeçalho sai para a conversa caber.
+  assert.match(css,/@media\(max-width:620px\) and \(max-height:760px\)\{\.lex2-lex \.lex2-lex-head p\{display:none\}/);
   const chips=css.match(/\n\.lex2-context-chips\{[^}]*\}/)[0];
   assert.match(chips,/display:flex/);
   assert.match(chips,/overflow-x:auto/);
