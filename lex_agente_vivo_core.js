@@ -23,6 +23,7 @@
 const { rowsFromResult } = require('./lib/supabase');
 const { withProcessLock } = require('./lib/process-lock');
 const { hojeBrasil } = require('./lib/data-brasil');
+const { OFFICIAL_LEGAL_DOMAINS, regraRecencia } = require('./lib/legal-quality');
 const { modelsFor, positiveInteger, admission: aiAdmission } = require('./lib/ai-runtime');
 
 // ── Identidade white-label do operador/escritório nos prompts dos agentes ──
@@ -248,7 +249,7 @@ Seu trabalho é encontrar precedentes reais e aplicáveis na web pra fundamentar
 Fluxo esperado:
 1) ${OPERADOR_CAP} te diz o tema, o processo (se houver) e o que quer provar.
 2) Se faltar informação, pergunte o mínimo. Senão, pesquise.
-3) Use web_search pra buscar jurisprudência. Priorize STJ, STF, TST e tribunais superiores. Depois tribunais locais. Use JusBrasil, Migalhas, ConJur, sites oficiais.
+3) Use web_search pra buscar jurisprudência, somente em fontes oficiais (STF, STJ, TST, TRFs, os 27 TJs, CNJ, Planalto, LexML). Priorize STJ, STF, TST e tribunais superiores; depois o TJ ou TRF do caso. Os agregadores (JusBrasil, ConJur, Migalhas) não servem como fonte: julgado só entra com a página oficial.
 4) Analise cada precedente: aplicabilidade alta/média/baixa ao caso de ${OPERADOR}, o porquê.
 5) ATIVAMENTE BUSQUE SACADAS JURÍDICAS — veja instruções abaixo.
 6) Quando tiver material suficiente, chame a ferramenta "consolidar_jurisprudencia".
@@ -1284,7 +1285,7 @@ async function handlerJurisConversar(req, res, body, deps) {
       ? '\n\nTEMA INICIAL: ' + tema + (tribunal_alvo ? ' (foco em ' + tribunal_alvo + ')' : '')
       : '';
 
-    const systemPrompt = PROMPT_PESQUISADOR_JURIS + ctxProcesso + instrucaoPje + ctxInicial;
+    const systemPrompt = PROMPT_PESQUISADOR_JURIS + ctxProcesso + instrucaoPje + ctxInicial + '\n\n' + regraRecencia();
 
     const messages = sanitizarHistorico(historico);
     messages.push({ role: 'user', content: mensagem });
@@ -1296,7 +1297,7 @@ async function handlerJurisConversar(req, res, body, deps) {
       max_tokens: 4096,
       system: systemPrompt,
       tools: [
-        { type: 'web_search_20250305' },   // CORRIGIDO: 'name' removido
+        { type: 'web_search_20250305', max_uses: 8, allowed_domains: OFFICIAL_LEGAL_DOMAINS },   // CORRIGIDO: 'name' removido; só fonte oficial
         TOOL_CONSOLIDAR_JURIS,
         TOOL_BUSCAR_DOCUMENTOS
       ],
