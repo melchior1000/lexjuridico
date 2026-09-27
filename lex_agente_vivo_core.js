@@ -866,6 +866,7 @@ async function handlerConversar(req, res, body, deps) {
     const out = await conversarLex(deps, { processo_id, mensagem, historico, movimentos_pje, canal: 'web' });
     return jsonResponse(res, 200, { ok: true, texto: out.texto, proposta: out.proposta, propostas: out.propostas || (out.proposta ? [out.proposta] : []), processo_id: processo_id || null, modelo: out.modelo, stop_reason: out.stop_reason, ferramentas: out.toolsUsadas.map(t => t.name), aviso: LEX_AVISO }, deps.CORS);
   } catch (e) {
+    try { if (typeof deps.onIaErro === 'function') deps.onIaErro(e); } catch (_) { /* guarda do crédito é opcional */ }
     console.error('[VIVO] conversar erro:', erroSeguro(String(e && e.message || e)));
     return jsonResponse(res, 500, { error: 'Erro no LEX: ' + erroSeguro(String(e && e.message || e)) }, deps.CORS);
   }

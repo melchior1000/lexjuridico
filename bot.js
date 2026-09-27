@@ -809,6 +809,18 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
 const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
+// Guarda do crédito da IA: recusa por falta de crédito liga sozinho o modo sem IA
+// (LEX_AI_NO_CREDIT), avisa o titular uma vez e, a cada 30 min, testa se o crédito voltou.
+const {createCreditGuard,mensagemSemIA}=require('./lib/ai-credit');
+const creditGuard=createCreditGuard({
+  notify:text=>avisarTitular(text),log:msg=>console.warn(msg),
+  probe:async()=>{
+    if(IA_PROVIDER!=='anthropic')return ia([{role:'user',content:'ok'}],null,1,MODELO_ECO);
+    const r=await httpsPost('api.anthropic.com','/v1/messages',{model:MODELO_ECO,max_tokens:1,messages:[{role:'user',content:'ok'}]},{'x-api-key':AK,'anthropic-version':'2023-06-01'});
+    if(r?.error)throw new Error(r.error.message||JSON.stringify(r.error));
+    return true;
+  }
+});
 // Contas individuais da equipe (e-mail + senha por pessoa).
 const LexUsers = require('./lib/lex-users');
 const equipeLex = LexUsers.createUserStore({
@@ -1472,6 +1484,7 @@ async function _iaAnthropic(messages, system, maxTok, modelo) {
     if(!r.content || !r.content[0]) throw new Error('Resposta vazia da IA');
     return r.content.filter(block => block.type === 'text').map(block => block.text || '').join('\n');
   } catch(e) {
+    creditGuard.registrarErro(e);
     const msg = String(e.message||'').toLowerCase();
     if(msg.includes('overloaded') || msg.includes('529')) {
       console.warn('[IA] Anthropic sobrecarregada, aguardando 8s...');
@@ -6096,7 +6109,7 @@ async function processarMensagem(ctx, dados) {
         _registrarMsgCentral(ctx.canal,'entrada',chatId,ctx.nomeUsuario||chatId,txt);
         await env(answer,ctx);
         return;
-      }catch(e){console.warn('[LEX vivo] '+ctx.canal+': '+String(e?.message||e).slice(0,200)+' — usando o executor de ordens.');}
+      }catch(e){creditGuard.registrarErro(e);console.warn('[LEX vivo] '+ctx.canal+': '+String(e?.message||e).slice(0,200)+' — usando o executor de ordens.');}
     }
     try {
       const execution=await executeNaturalOfficeCommand(coreDeps,{
@@ -6122,6 +6135,8 @@ async function processarMensagem(ctx, dados) {
       }
     }catch(e){await env('Não concluí a ordem: '+e.message,ctx);return;}
 
+    // Sem IA (sem crédito): o executor não entendeu a ordem; diz a verdade e o que funciona.
+    if(process.env.LEX_AI_NO_CREDIT==='1'){await env(mensagemSemIA(),ctx);return;}
     const specialist=lex_agente_vivo?.specializedIntent?.(txt);
     if(specialist){
       try{
@@ -11171,10 +11186,23 @@ const server = http.createServer(async (req, res) => {
       if(!pfAgv) { res.writeHead(401,corsHeaders(req)); res.end(JSON.stringify({error:'Nao autenticado'})); return; }
       const bodyAgv = req.method === 'POST' ? await lerBody(req) : {};
       const vivoUrl = url === '/api/agente-vivo' ? '/api/vivo/conversar' : url;
+      // Sem IA (sem crédito): o chat do app responde pelo executor de ordens, como o WhatsApp.
+      if(vivoUrl==='/api/vivo/conversar' && req.method==='POST' && process.env.LEX_AI_NO_CREDIT==='1'){
+        const mensagem=String(bodyAgv?.mensagem||'').trim();
+        let texto=mensagemSemIA();
+        if(mensagem){
+          const exec=await executeNaturalOfficeCommand({records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,oab:lexOab,onTaskResult:notice=>avisarTitular(notice),log:msg=>console.warn('[LEX Core]',msg)},
+            {text:mensagem,processo_id:bodyAgv?.processo_id||null,profile:pfAgv,request_id:CRYPTO.randomUUID()}).catch(e=>({handled:true,message:'Não concluí a ordem: '+e.message}));
+          if(exec?.handled&&exec.message)texto=exec.message;
+        }
+        res.writeHead(200,corsHeaders(req));
+        res.end(JSON.stringify({ok:true,texto,proposta:null,propostas:[],processo_id:bodyAgv?.processo_id||null,modelo:null,ferramentas:[],sem_ia:true,aviso:require('./lib/lex-aviso').AVISO}));
+        return;
+      }
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
         req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
         ANTHROPIC_KEY: AK, https, lerBody,records:recordStore,engine:taskEngine,processStore,onTaskResult:notice=>avisarTitular(notice),
-        log:msg=>console.warn('[LEX Core]',msg),
+        log:msg=>console.warn('[LEX Core]',msg),onIaErro:e=>creditGuard.registrarErro(e),
         sbGet: (t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))),
         sbReq,
         sbUpsert: async (tabela, dados, conflito) => {
@@ -14041,6 +14069,7 @@ async function bootInicio() {
   // enquanto está acordado e não chega a dormir. Desligar: LEX_MANTER_ACORDADO=0.
   const keepAwake=require('./lib/keep-awake').createKeepAwake({url:process.env.LEX_SERVIDOR_URL||process.env.RENDER_EXTERNAL_URL,desligado:process.env.LEX_MANTER_ACORDADO==='0',log:msg=>console.warn(msg)});
   keepAwake.start();
+  creditGuard.start();
   if(keepAwake.ativo)console.log('[LEX] Manter acordado: visita ao próprio /health a cada 10 min.');
 
   const urg = getPrazos(3).filter(a=>a.dias<=3);
