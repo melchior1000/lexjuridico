@@ -55,3 +55,43 @@ test('mesa do dono responde pelo mesmo LID recebido',async()=>{
   assert.equal(sent[0].number,'887766554433@lid');
   assert.match(sent[0].text,/Recepção:/);
 });
+
+// 27/09/2026: as mensagens do próprio titular ("Oi testando Lex") caíram na fila de clientes.
+// A porta do webhook reconhecia o titular pelo remoteJidAlt, mas adapterEvolution e
+// processarMensagem conferiam de novo só pelo LID e o rebaixavam a "público".
+test('titular em LID: reconhecido pelo telefone alternativo e, depois, pelo mesmo LID confirmado',()=>{
+  const {isWhatsappOperator}=require('../lib/integration-status');
+  const op='5561999171717';
+  assert.equal(isWhatsappOperator('445566778899@lid',op,'556199171717@s.whatsapp.net'),true);
+  assert.equal(isWhatsappOperator('445566778899@lid',op),true,'mesmo LID, já confirmado pelo telefone, sem o campo alternativo');
+  assert.equal(isWhatsappOperator('445566778899@lid',''),false,'sem titular configurado ninguém é titular');
+});
+
+test('LID desconhecido ou de cliente nunca vira titular',()=>{
+  const {isWhatsappOperator}=require('../lib/integration-status');
+  const op='5561999171717';
+  assert.equal(isWhatsappOperator('111222333444@lid',op),false,'LID nunca confirmado');
+  assert.equal(isWhatsappOperator('111222333444@lid',op,'5561988888888@s.whatsapp.net'),false,'LID de cliente');
+  assert.equal(isWhatsappOperator('111222333444@lid',op),false,'cliente continua cliente');
+  assert.equal(isWhatsappOperator('5561988888888@s.whatsapp.net',op),false);
+  assert.equal(isWhatsappOperator('556199171717@s.whatsapp.net',op),true,'número direto continua valendo');
+});
+
+test('bot.js confere o titular com o telefone alternativo em todas as portas do WhatsApp',()=>{
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
+  const a=src.indexOf('async function adapterEvolution(body)');
+  const corpo=src.slice(a,a+1500);
+  assert.match(corpo,/numeroAlt:\s*data\.key\?\.remoteJidAlt\s*\|\|\s*''/,'contexto guarda o telefone alternativo');
+  assert.match(corpo,/isWhatsappOperator\(chatIdWpp,process\.env\.LEX_OPERATOR_WHATSAPP,data\.key\?\.remoteJidAlt\)/);
+  const p=src.indexOf('async function processarMensagem(ctx, dados)');
+  assert.match(src.slice(p,p+300),/isWhatsappOperator\(ctx\.numero\|\|ctx\.chatId,process\.env\.LEX_OPERATOR_WHATSAPP,ctx\.numeroAlt\)/);
+  const c=src.indexOf('async function _cadastradorRecebeu(');
+  assert.match(src.slice(c,c+300),/isWhatsappOperator\(ctx\.numero\|\|ctx\.chatId,process\.env\.LEX_OPERATOR_WHATSAPP,ctx\.numeroAlt\)/);
+  const g=src.indexOf('function getModoAgente(chatId)');
+  assert.match(src.slice(g,g+200),/isWhatsappOperator\(String\(chatId\),process\.env\.LEX_OPERATOR_WHATSAPP\)/);
+  const o=src.indexOf('function _isOperadorWhatsApp(numeroPlano, jid, alt)');
+  assert.ok(o>=0,'perfil do titular também olha o identificador original');
+  assert.match(src.slice(o,o+300),/isWhatsappOperator\(jid\|\|/);
+  assert.match(src,/_isOperadorWhatsApp\(_numeroPlanoWhats\(ctx\.numero\|\|chatId\),ctx\.numero\|\|chatId,ctx\.numeroAlt\)/);
+  assert.doesNotMatch(src,/whatsappAccessMode\(/,'nenhuma porta do bot confere o titular sem o LID confirmado');
+});
