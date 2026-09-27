@@ -733,9 +733,25 @@ function erroSeguro(msg) {
 // Envia tool_result de volta quando stop_reason='tool_use'.
 // Sem isso a conversa fica truncada — bug crítico do original.
 // =====================================================================
+// Orçamento de buscas da operação inteira (não por rodada): a cada nova rodada o max_uses da
+// busca cai para o que sobrou do limite ORIGINAL. Esgotado, fica em 1 (tirar a ferramenta com
+// buscas já no histórico pode fazer a API recusar) e a IA é avisada. Teto real: limite + rodadas extras.
+function ajustarOrcamentoBusca(toolsOriginais, usadas) {
+  if (!Array.isArray(toolsOriginais)) return { tools: toolsOriginais, esgotado: false };
+  let esgotado = false;
+  const tools = toolsOriginais.map(t => {
+    if (!t || t.type !== 'web_search_20250305' || !Number.isFinite(t.max_uses)) return t;
+    const resta = t.max_uses - usadas;
+    if (resta <= 0) esgotado = true;
+    return { ...t, max_uses: Math.max(1, resta) };
+  });
+  return { tools, esgotado };
+}
+
 async function resolverToolUse(deps, payload) {
   const maxLoops = (typeof MAX_TOOL_LOOPS !== 'undefined') ? MAX_TOOL_LOOPS : 3;
   payload = {...payload, system: (payload.system || '') + '\nREGRA DE EXECUCAO: uma proposta preparada ainda nao foi aplicada. So afirme que houve gravacao quando a ferramenta comprovar persistencia. Ferramentas desconhecidas ou com erro nao foram executadas.'};
+  const toolsOriginais = payload.tools;
   let resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, payload);
   let resultado = extrairRespostaModelo(resposta);
   let textoAcumulado = resultado.texto;
@@ -779,8 +795,10 @@ async function resolverToolUse(deps, payload) {
       };
     }));
     msgs.push({ role: 'assistant', content: resposta.content });
+    const orcamento = ajustarOrcamentoBusca(toolsOriginais, todasBuscas.length);
+    if (orcamento.esgotado) toolResults.push({ type: 'text', text: 'ORÇAMENTO DE BUSCAS ESGOTADO: não faça novas buscas; conclua com o que já foi encontrado e diga o que ficou sem conferir.' });
     msgs.push({ role: 'user',      content: toolResults });
-    const novoPayload = Object.assign({}, payload, { messages: msgs });
+    const novoPayload = Object.assign({}, payload, { messages: msgs }, orcamento.tools ? { tools: orcamento.tools } : {});
     resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, novoPayload);
     resultado = extrairRespostaModelo(resposta);
     if (resultado.texto) textoAcumulado = textoAcumulado ? textoAcumulado + '\n\n' + resultado.texto : resultado.texto;
@@ -1297,7 +1315,7 @@ async function handlerJurisConversar(req, res, body, deps) {
       max_tokens: 4096,
       system: systemPrompt,
       tools: [
-        { type: 'web_search_20250305', max_uses: 8, allowed_domains: OFFICIAL_LEGAL_DOMAINS },   // CORRIGIDO: 'name' removido; só fonte oficial
+        { type: 'web_search_20250305', name: 'web_search', max_uses: 8, allowed_domains: OFFICIAL_LEGAL_DOMAINS },   // só fonte oficial
         TOOL_CONSOLIDAR_JURIS,
         TOOL_BUSCAR_DOCUMENTOS
       ],
@@ -1602,4 +1620,4 @@ async function _capturarResultadoEspecialista(handler, body, deps) {
 async function executarPesquisaJuris(body,deps){return _capturarResultadoEspecialista(handlerJurisConversar,body,deps)}
 async function executarPesquisaJulgador(body,deps){return _capturarResultadoEspecialista(handlerJuizConversar,body,deps)}
 
-module.exports = { tratarRota, conversarLex, montarContextoEscritorio, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };
+module.exports = { ajustarOrcamentoBusca, tratarRota, conversarLex, montarContextoEscritorio, montarContextoProcesso, exportarDadosAgente, prepararParaPJe, executarPesquisaJuris, executarPesquisaJulgador };

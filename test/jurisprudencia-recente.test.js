@@ -36,9 +36,35 @@ test('pesquisa da tela: pesquisador e revisor recebem a regra de recência',()=>
 
 test('pesquisa pelo chat: busca só em fonte oficial, sem agregadores, com a regra de recência',()=>{
   const core=fs.readFileSync(path.join(__dirname,'..','lex_agente_vivo_core.js'),'utf8');
-  assert.match(core,/type: 'web_search_20250305'[^}]*allowed_domains: OFFICIAL_LEGAL_DOMAINS/);
+  // CodeRabbit #151: a Anthropic exige name: 'web_search' nessa ferramenta.
+  assert.match(core,/type: 'web_search_20250305', name: 'web_search', max_uses: 8, allowed_domains: OFFICIAL_LEGAL_DOMAINS/);
   const p=core.slice(core.indexOf('const PROMPT_PESQUISADOR_JURIS'),core.indexOf('const PROMPT_PESQUISADOR_JURIS')+3000);
   assert.doesNotMatch(p,/Use JusBrasil, Migalhas, ConJur/);
   assert.match(p,/agregadores \(JusBrasil, ConJur, Migalhas\) não servem como fonte/);
   assert.match(core,/const systemPrompt = PROMPT_PESQUISADOR_JURIS \+ ctxProcesso \+ instrucaoPje \+ ctxInicial \+ '\\n\\n' \+ regraRecencia\(\);/);
+});
+
+// CodeRabbit #151: o limite de buscas vale para a pesquisa inteira, não por rodada.
+test('orçamento de buscas é da operação inteira: cai a cada rodada e avisa quando esgota',()=>{
+  const {ajustarOrcamentoBusca}=require('../lex_agente_vivo_core');
+  const tools=[{type:'web_search_20250305',name:'web_search',max_uses:8,allowed_domains:['stj.jus.br']},{name:'consolidar_jurisprudencia'}];
+  let r=ajustarOrcamentoBusca(tools,3);
+  assert.equal(r.tools[0].max_uses,5);assert.equal(r.esgotado,false);
+  assert.equal(r.tools[0].name,'web_search');assert.deepEqual(r.tools[0].allowed_domains,['stj.jus.br']);
+  assert.deepEqual(r.tools[1],{name:'consolidar_jurisprudencia'});
+  assert.equal(tools[0].max_uses,8,'as ferramentas originais não são alteradas');
+  r=ajustarOrcamentoBusca(tools,8);
+  assert.equal(r.tools[0].max_uses,1);assert.equal(r.esgotado,true);
+  r=ajustarOrcamentoBusca(tools,6);
+  assert.equal(r.tools[0].max_uses,2,'sempre a partir do limite original (8)');
+  assert.equal(ajustarOrcamentoBusca(undefined,5).tools,undefined);
+});
+
+test('resolverToolUse aplica o orçamento e avisa a IA quando as buscas acabam',()=>{
+  const core=fs.readFileSync(path.join(__dirname,'..','lex_agente_vivo_core.js'),'utf8');
+  const i=core.indexOf('async function resolverToolUse(');
+  const corpo=core.slice(i,i+4000);
+  assert.match(corpo,/const toolsOriginais = payload\.tools;/);
+  assert.match(corpo,/ajustarOrcamentoBusca\(toolsOriginais, todasBuscas\.length\)/);
+  assert.match(corpo,/ORÇAMENTO DE BUSCAS ESGOTADO/);
 });
