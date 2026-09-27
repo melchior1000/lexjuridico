@@ -44,27 +44,26 @@ test('pesquisa pelo chat: busca só em fonte oficial, sem agregadores, com a reg
   assert.match(core,/const systemPrompt = PROMPT_PESQUISADOR_JURIS \+ ctxProcesso \+ instrucaoPje \+ ctxInicial \+ '\\n\\n' \+ regraRecencia\(\);/);
 });
 
-// CodeRabbit #151: o limite de buscas vale para a pesquisa inteira, não por rodada.
-test('orçamento de buscas é da operação inteira: cai a cada rodada e avisa quando esgota',()=>{
+// CodeRabbit #151: o limite de buscas vale para a pesquisa inteira, sem mexer nas ferramentas
+// da continuação; esgotado, tool_choice 'none' (documentado pela Anthropic).
+test('orçamento de buscas é da operação inteira e esgota sem alterar as ferramentas',()=>{
   const {ajustarOrcamentoBusca}=require('../lex_agente_vivo_core');
   const tools=[{type:'web_search_20250305',name:'web_search',max_uses:8,allowed_domains:['stj.jus.br']},{name:'consolidar_jurisprudencia'}];
-  let r=ajustarOrcamentoBusca(tools,3);
-  assert.equal(r.tools[0].max_uses,5);assert.equal(r.esgotado,false);
-  assert.equal(r.tools[0].name,'web_search');assert.deepEqual(r.tools[0].allowed_domains,['stj.jus.br']);
-  assert.deepEqual(r.tools[1],{name:'consolidar_jurisprudencia'});
-  assert.equal(tools[0].max_uses,8,'as ferramentas originais não são alteradas');
-  r=ajustarOrcamentoBusca(tools,8);
-  assert.equal(r.tools[0].max_uses,1);assert.equal(r.esgotado,true);
-  r=ajustarOrcamentoBusca(tools,6);
-  assert.equal(r.tools[0].max_uses,2,'sempre a partir do limite original (8)');
-  assert.equal(ajustarOrcamentoBusca(undefined,5).tools,undefined);
+  assert.equal(ajustarOrcamentoBusca(tools,3).esgotado,false);
+  assert.equal(ajustarOrcamentoBusca(tools,8).esgotado,true);
+  assert.equal(ajustarOrcamentoBusca(tools,11).esgotado,true);
+  assert.equal(ajustarOrcamentoBusca([{name:'x'}],50).esgotado,false,'sem busca na lista, nada muda');
+  assert.equal(ajustarOrcamentoBusca(undefined,5).esgotado,false);
+  assert.equal(tools[0].max_uses,8,'ferramentas originais intactas');
 });
 
-test('resolverToolUse aplica o orçamento e avisa a IA quando as buscas acabam',()=>{
+test('continuação reusa as ferramentas e, esgotado, vai com tool_choice none e só tool_result',()=>{
   const core=fs.readFileSync(path.join(__dirname,'..','lex_agente_vivo_core.js'),'utf8');
   const i=core.indexOf('async function resolverToolUse(');
   const corpo=core.slice(i,i+4000);
   assert.match(corpo,/const toolsOriginais = payload\.tools;/);
   assert.match(corpo,/ajustarOrcamentoBusca\(toolsOriginais, todasBuscas\.length\)/);
-  assert.match(corpo,/ORÇAMENTO DE BUSCAS ESGOTADO/);
+  assert.match(corpo,/orcamento\.esgotado \? \{ tool_choice: \{ type: 'none' \} \} : \{\}/);
+  assert.doesNotMatch(corpo,/toolResults\.push\(\{ type: 'text'/,'nada além de tool_result na continuação');
+  assert.doesNotMatch(corpo,/tools: orcamento\.tools/,'não altera o array de ferramentas');
 });

@@ -733,19 +733,15 @@ function erroSeguro(msg) {
 // Envia tool_result de volta quando stop_reason='tool_use'.
 // Sem isso a conversa fica truncada — bug crítico do original.
 // =====================================================================
-// Orçamento de buscas da operação inteira (não por rodada): a cada nova rodada o max_uses da
-// busca cai para o que sobrou do limite ORIGINAL. Esgotado, fica em 1 (tirar a ferramenta com
-// buscas já no histórico pode fazer a API recusar) e a IA é avisada. Teto real: limite + rodadas extras.
+// Orçamento de buscas da operação inteira (não por rodada). As ferramentas da continuação
+// ficam IGUAIS às originais (a API espera o mesmo array); quando as buscas somadas chegam ao
+// limite, a próxima rodada vai com tool_choice 'none': a IA não chama mais ferramenta e
+// conclui com o que já encontrou.
 function ajustarOrcamentoBusca(toolsOriginais, usadas) {
-  if (!Array.isArray(toolsOriginais)) return { tools: toolsOriginais, esgotado: false };
-  let esgotado = false;
-  const tools = toolsOriginais.map(t => {
-    if (!t || t.type !== 'web_search_20250305' || !Number.isFinite(t.max_uses)) return t;
-    const resta = t.max_uses - usadas;
-    if (resta <= 0) esgotado = true;
-    return { ...t, max_uses: Math.max(1, resta) };
-  });
-  return { tools, esgotado };
+  if (!Array.isArray(toolsOriginais)) return { esgotado: false };
+  const limites = toolsOriginais.filter(t => t && t.type === 'web_search_20250305' && Number.isFinite(t.max_uses)).map(t => t.max_uses);
+  if (!limites.length) return { esgotado: false };
+  return { esgotado: usadas >= Math.min(...limites) };
 }
 
 async function resolverToolUse(deps, payload) {
@@ -796,9 +792,8 @@ async function resolverToolUse(deps, payload) {
     }));
     msgs.push({ role: 'assistant', content: resposta.content });
     const orcamento = ajustarOrcamentoBusca(toolsOriginais, todasBuscas.length);
-    if (orcamento.esgotado) toolResults.push({ type: 'text', text: 'ORÇAMENTO DE BUSCAS ESGOTADO: não faça novas buscas; conclua com o que já foi encontrado e diga o que ficou sem conferir.' });
     msgs.push({ role: 'user',      content: toolResults });
-    const novoPayload = Object.assign({}, payload, { messages: msgs }, orcamento.tools ? { tools: orcamento.tools } : {});
+    const novoPayload = Object.assign({}, payload, { messages: msgs }, orcamento.esgotado ? { tool_choice: { type: 'none' } } : {});
     resposta = await chamarAnthropicComRetry(deps.ANTHROPIC_KEY, deps.https, novoPayload);
     resultado = extrairRespostaModelo(resposta);
     if (resultado.texto) textoAcumulado = textoAcumulado ? textoAcumulado + '\n\n' + resultado.texto : resultado.texto;
