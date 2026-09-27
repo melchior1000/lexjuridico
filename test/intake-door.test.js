@@ -4,7 +4,7 @@ Object.assign(process.env,{ESCRITORIO_NOME:'LEX Jurídico',ESCRITORIO_RESP:'Kleu
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {intakeDecision,INTRO}=require('../lib/intake-door');
-const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode,incomingWhatsappMessage}=require('../lib/integration-status');
+const {publicWhatsappReception,handleWhatsappOperatorCommand,whatsappAccessMode,isWhatsappOperator,incomingWhatsappMessage}=require('../lib/integration-status');
 const {createTelegramReception,isTelegramOwner}=require('../lib/telegram-reception');
 const vm=require('node:vm');
 const fs=require('node:fs');
@@ -179,7 +179,7 @@ test('webhook despacha conversa livre do dono para o adaptador do LEX',async()=>
 test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()=>{
   const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
   let calls=0;const sent=[];
-  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},whatsappAccessMode,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>{const id=require('../lib/office-identity').getIdentity();return id.titular?id.titularTratado:'titular';},
+  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},isWhatsappOperator,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>{const id=require('../lib/office-identity').getIdentity();return id.titular?id.titularTratado:'titular';},
     handleWhatsappOperatorCommand:async()=>false,envWhatsApp:async t=>sent.push(t),processarMensagem:async()=>{calls++;}});
   const start=source.indexOf('async function adapterEvolution(');
   const end=source.indexOf('async function ',start+30);
@@ -196,4 +196,22 @@ test('saída interna do cadastrador envia resumo e pergunta somente ao dono',asy
   await c._enviarIntakeParaRevisao({chatId:'CLIENTE'},'Área identificada: Cível','Confirme seus documentos');
   assert.equal(sent.length,1);assert.equal(sent[0].to,cfg.operator);
   assert.match(sent[0].text,/Área identificada/);assert.match(sent[0].text,/não foi enviado ao cliente/);
+});
+
+// 27/09/2026: "Oi testando Lex" do próprio titular caiu na fila de clientes porque chegou em LID.
+test('adaptador WhatsApp: titular em LID vai para o LEX, não para a fila de clientes',async()=>{
+  const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
+  let calls=0,publico=0;const sent=[];
+  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},isWhatsappOperator,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>'Dr. Kleuber',
+    publicWhatsappReception:async()=>{publico++;return true},
+    handleWhatsappOperatorCommand:async()=>false,envWhatsApp:async t=>sent.push(t),processarMensagem:async ctx=>{calls++;c.ultimoCtx=ctx;}});
+  const start=source.indexOf('async function adapterEvolution(');
+  const end=source.indexOf('async function ',start+30);
+  vm.runInContext(source.slice(start,end),c);
+  const lid=(text,alt)=>({data:{key:{id:'k'+Math.random(),fromMe:false,remoteJid:'554433221100@lid',remoteJidAlt:alt},message:{conversation:text},pushName:'Kleuber'}});
+  await c.adapterEvolution(lid('Prepare uma tarefa','556199171717@s.whatsapp.net'));
+  assert.equal(calls,1,'titular chegou ao LEX');assert.equal(publico,0,'não foi para a fila de clientes');
+  assert.equal(c.ultimoCtx.numeroAlt,'556199171717@s.whatsapp.net');
+  await c.adapterEvolution({data:{key:{id:'k2',fromMe:false,remoteJid:'990011223344@lid',remoteJidAlt:'5561988888888@s.whatsapp.net'},message:{conversation:'Oi'},pushName:'Cliente'}});
+  assert.equal(publico,1,'cliente em LID continua na recepção');assert.equal(calls,1);
 });

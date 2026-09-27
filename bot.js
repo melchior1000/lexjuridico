@@ -111,7 +111,7 @@ const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-recept
 const {createReceptionComposer} = require('./lib/reception-ai');
 const {createTelegramPoller} = require('./lib/telegram-poller');
 
-const {setReceptionComposer, brazilMobile, whatsappAccessMode, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
+const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -695,7 +695,7 @@ function isAdvogado(chatId) { return isPerfil(chatId,'admin','advogado'); }
 function isEquipe(chatId) { return isPerfil(chatId,'admin','advogado','secretaria'); }
 
 function getModoAgente(chatId) {
-  if (whatsappAccessMode(String(chatId),process.env.LEX_OPERATOR_WHATSAPP)==='operator') return 'assessor';
+  if (isWhatsappOperator(String(chatId),process.env.LEX_OPERATOR_WHATSAPP)) return 'assessor';
   const u = getUsuario(chatId);
   if(!u) return 'cliente';
   if(['admin','advogado'].includes(u.perfil)) return 'assessor';
@@ -735,8 +735,9 @@ const _estadoSecretarioWhatsApp = {
 };
 
 // ── HELPERS MULTI-OPERADOR ──
-function _isOperadorWhatsApp(numeroPlano) {
-  if (whatsappAccessMode(String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP)==='operator') return {nome:'titular',perfil:'admin',pode_autorizar:true,pode_responder:true};
+// jid/alt: identificador original da mensagem (pode ser LID) e telefone alternativo.
+function _isOperadorWhatsApp(numeroPlano, jid, alt) {
+  if (isWhatsappOperator(jid||String(numeroPlano).replace(/@.*$/, '')+'@s.whatsapp.net',process.env.LEX_OPERATOR_WHATSAPP,alt)) return {nome:'titular',perfil:'admin',pode_autorizar:true,pode_responder:true};
   const cfg = _configRuntime.secretario_whatsapp || SECRETARIO_WHATSAPP_CONFIG;
   const ops = cfg.operadores || SECRETARIO_WHATSAPP_CONFIG.operadores || {};
   for(const [nome, op] of Object.entries(ops)) {
@@ -5493,7 +5494,7 @@ async function _enviarIntakeParaRevisao(ctx, resumo, proximaPergunta) {
 }
 
 async function _cadastradorRecebeu(ctx, tipoEntrada, conteudo) {
-  if(ctx.canal==='whatsapp' && whatsappAccessMode(ctx.numero||ctx.chatId,process.env.LEX_OPERATOR_WHATSAPP)!=='operator') return false;
+  if(ctx.canal==='whatsapp' && !isWhatsappOperator(ctx.numero||ctx.chatId,process.env.LEX_OPERATOR_WHATSAPP,ctx.numeroAlt)) return false;
   if(ctx.canal==='telegram' && (String(ctx.chatId)!==String(CHAT_ID) || ctx.tipoChat!=='private')) return false;
   // Só processa se não for admin (admin já usa o Lex normalmente)
   if(String(ctx.chatId) === CHAT_ID) return false;
@@ -6042,7 +6043,7 @@ function _registrarMsgCentral(canal, direcao, chatId, nome, texto, tipo) {
 }
 
 async function processarMensagem(ctx, dados) {
-  if(ctx.canal==='whatsapp' && whatsappAccessMode(ctx.numero||ctx.chatId,process.env.LEX_OPERATOR_WHATSAPP)!=='operator') return;
+  if(ctx.canal==='whatsapp' && !isWhatsappOperator(ctx.numero||ctx.chatId,process.env.LEX_OPERATOR_WHATSAPP,ctx.numeroAlt)) return;
   if(ctx.canal==='telegram' && (String(ctx.chatId)!==String(CHAT_ID) || ctx.tipoChat!=='private')) return;
   const chatId = String(ctx.chatId);
   await inicializarMemoria(chatId, ctx.threadId);
@@ -6050,7 +6051,7 @@ async function processarMensagem(ctx, dados) {
   let txt = (dados.texto||'').trim();
   let low = txt.toLowerCase();
   const modo = getModoAgente(chatId);
-  const operatorProfile=isAdvogado(chatId)?'admin':(ctx.canal==='whatsapp'?_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId))?.perfil:null);
+  const operatorProfile=isAdvogado(chatId)?'admin':(ctx.canal==='whatsapp'?_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId),ctx.numero||chatId,ctx.numeroAlt)?.perfil:null);
   const isOperator=['admin','advogado','secretaria'].includes(operatorProfile);
   // Áudio do advogado/secretária vira ordem escrita (fora da sessão de cadastro,
   // que acumula o áudio no próprio fluxo). A transcrição é devolvida para conferência.
@@ -7223,7 +7224,7 @@ async function _comandosControle(ctx, mem, txt, low) {
 async function _conversaInteligente(ctx, mem, txt, low) {
   // ── INTERCEPTOR INTELIGENTE: detecta intenção de atualizar processo em linguagem natural ──
   // Funciona em TODOS os canais: Telegram, WhatsApp, Painel
-  const ehAdmin = isAdmin(ctx.chatId) || _isOperadorWhatsApp(_numeroPlanoWhats(ctx.chatId));
+  const ehAdmin = isAdmin(ctx.chatId) || _isOperadorWhatsApp(_numeroPlanoWhats(ctx.chatId),ctx.canal==='whatsapp'?ctx.chatId:null,ctx.numeroAlt);
   if(!mem.aguardando && ehAdmin) {
     const intentResult = await _detectarIntencaoProcesso(txt, ctx, mem);
     if(intentResult) return;
@@ -9395,12 +9396,14 @@ async function adapterEvolution(body) {
     chatId: chatIdWpp,
     threadId: null,
     numero: chatIdWpp,
+    // WhatsApp pode mandar LID no lugar do número; o telefone vem em remoteJidAlt.
+    numeroAlt: data.key?.remoteJidAlt || '',
     nomeUsuario: nomeEnv,
     tipoChat: 'private'
   };
 
-  const access=whatsappAccessMode(chatIdWpp,process.env.LEX_OPERATOR_WHATSAPP);
-  if(access!=='operator') return publicWhatsappReception(body,EVO_INST);
+  // O titular em LID é reconhecido pelo telefone alternativo (antes caía na fila de clientes).
+  if(!isWhatsappOperator(chatIdWpp,process.env.LEX_OPERATOR_WHATSAPP,data.key?.remoteJidAlt)) return publicWhatsappReception(body,EVO_INST);
   if(await handleWhatsappOperatorCommand(body,EVO_INST)) return;
   const ownerText=String(msgData.conversation||msgData.extendedTextMessage?.text||'').trim();
   if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá, '+_titularSaudacao()+'. Sou o '+_idLex().assistente+', coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
