@@ -146,6 +146,21 @@ test('lê a janela inteira em páginas: publicação além das primeiras 500 tam
   assert.equal(sent.length,1);
 });
 
+// CodeRabbit #144: janela com mais de 5 mil publicações não pode reenviar as antigas.
+test('guarda todos os avisados da janela (mesmo acima de 5 mil) e descarta só o que saiu dela',async()=>{
+  const records=memoryRecords(),sent=[];
+  const ids=Array.from({length:6000},(_,i)=>'j'+String(i).padStart(4,'0'));
+  records.rows.set(KEY,{canais:{whatsapp:{ids:['fora-da-janela']}}});
+  const db=fakeDb(ids.map(id=>pub(id)));
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,now,canais:{whatsapp:async t=>{sent.push(t);return true}}});
+  assert.equal((await alerts.tick()).novas,6000);
+  const guardados=records.rows.get(KEY).canais.whatsapp.ids;
+  assert.equal(guardados.length,6000);
+  assert.ok(!guardados.includes('fora-da-janela'),'id que saiu da janela é descartado');
+  assert.equal((await alerts.tick()).novas,0,'nada é reenviado');
+  assert.equal(sent.length,1);
+});
+
 test('bot.js chama o aviso do DJEN depois da leitura diária, com controle por canal',()=>{
   const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
   assert.match(src,/createDjenAlerts\(\{[^]{0,300}canais:\(\)=>\(\{[^]{0,120}telegram:text=>envTelegram\(text,null,CHAT_ID\)[^]{0,200}whatsapp:text=>envWhatsApp\(text,process\.env\.LEX_OPERATOR_WHATSAPP\)/);
