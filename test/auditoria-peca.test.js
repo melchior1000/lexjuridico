@@ -65,7 +65,9 @@ test('tarefa registrada no motor, nas ferramentas e na pausa sem crédito; rotei
   const p=playbookFor('auditoria_peca');
   assert.match(p,/MODULO: AUDITORIA DA PECA CONTRARIA/);
   assert.match(p,/LISTA OBRIGATORIA/);
-  assert.match(p,/NAO LOCALIZADA/,'sem prova não chama de falsa');
+  assert.match(p,/FONTE_NAO_CONSULTADA/,'sem consulta registrada, diz que não consultou');
+  assert.match(p,/nunca descrever uma busca que nao consta do material/i,'não inventa busca');
+  assert.match(p,/CLASSIFICACAO_JSON/,'bloco conferível pelo código');
   assert.match(p,/nunca afirmar que foi inventada sem prova/i);
   assert.match(p,/trecho literal/i);
   assert.match(p,/art\. 80/,'litigância de má-fé só com base concreta');
@@ -79,25 +81,89 @@ test('motor entrega a lista obrigatória à IA e guarda o controle das citaçõe
   assert.match(src,/controle_citacoes/);
 });
 
-test('tarefa de auditoria roda no motor: a IA recebe a lista obrigatória e a tarefa guarda o controle',async()=>{
+function motor(processo,respostaFinal){
   const {TaskEngine}=require('../lib/task-engine');
   const map=new Map();
   const store={async read(k){return map.has(k)?{value:map.get(k)}:null},async change(k,fn){const next=fn(map.get(k));if(next!==undefined)map.set(k,next);return map.get(k)},async list(){return[...map.values()]}};
-  const processo={id:7,nome:'Cliente X x Banco Y',numero:'0703506-31.2024.8.07.0001',documentos:[{nome:'contestacao_banco.pdf',texto:PECA}]};
   const chamadas=[];
-  const ai=async(messages)=>{chamadas.push(messages[0].content);return chamadas.length===1?JSON.stringify({cabivel:true,faltantes:[],motivos:''}):'Quadro de citações ...'};
-  const engine=new TaskEngine({store,processes:async()=>[processo],ai});
+  const ai=async(messages)=>{chamadas.push(messages[0].content);return chamadas.length%2===1?JSON.stringify({cabivel:true,faltantes:[],motivos:''}):respostaFinal(chamadas.at(-1))};
+  return{engine:new TaskEngine({store,processes:async()=>[processo],ai}),chamadas};
+}
+const blocoCompleto=conteudo=>{
+  const lista=JSON.parse(conteudo.split('LISTA OBRIGATÓRIA DE CITAÇÕES (extraída pelo LEX; classifique todas):\n')[1].split('\n')[0]);
+  const sinais=new Set(lista.sinais.map(s=>s.chave));
+  return 'Quadro...\nCLASSIFICACAO_JSON: '+JSON.stringify(lista.citacoes.map(c=>({chave:c.chave,classificacao:sinais.has(c.chave)?'ERRO_OBJETIVO':'FONTE_NAO_CONSULTADA'})));
+};
+
+test('tarefa de auditoria roda no motor: a IA recebe a lista obrigatória e só fica pronta com todas classificadas',async()=>{
+  const processo={id:7,nome:'Cliente X x Banco Y',numero:'0703506-31.2024.8.07.0001',documentos:[{nome:'contestacao_banco.pdf',texto:PECA}]};
+  const {engine,chamadas}=motor(processo,blocoCompleto);
   const t=await engine.submit({tipo:'auditoria_peca',processo_id:7,instrucao:'ache os erros na contestação da parte contrária',request_id:'r1'});
   const out=await engine.run(t.id);
-  assert.equal(out.status,'aguardando_revisao');
+  assert.equal(out.status,'aguardando_revisao',out.pendencia);
   assert.match(chamadas[1],/LISTA OBRIGATÓRIA DE CITAÇÕES/);
   assert.match(chamadas[1],/art\. 1500 CPC/);
   assert.ok(out.controle_citacoes.total>=11);
+  assert.equal(out.controle_citacoes.classificacao.ok,true);
   assert.ok(out.controle_citacoes.sinais.some(s=>/1\.072 artigos/.test(s.motivo)));
-  // Outras tarefas não recebem a lista.
-  const t2=await engine.submit({tipo:'analise',processo_id:7,instrucao:'analise',request_id:'r2'});
-  chamadas.length=0;
-  const out2=await engine.run(t2.id);
+});
+
+// CodeRabbit #150: entrega sem classificar cada citação não pode sair como pronta.
+test('auditoria sem classificar todas as citações fica incompleta, não pronta',async()=>{
+  const processo={id:7,nome:'X',documentos:[{texto:PECA}]};
+  const faltando=conteudo=>{const b=blocoCompleto(conteudo);const arr=JSON.parse(b.split('CLASSIFICACAO_JSON: ')[1]);return 'Quadro...\nCLASSIFICACAO_JSON: '+JSON.stringify(arr.slice(1));};
+  for(const resposta of [()=>'Quadro de citações ...',faltando]){
+    const {engine}=motor(processo,resposta);
+    const t=await engine.submit({tipo:'auditoria_peca',processo_id:7,instrucao:'audite a peça da parte contrária',request_id:'r'+Math.random()});
+    const out=await engine.run(t.id);
+    assert.equal(out.status,'aguardando_dados');
+    assert.match(out.pendencia,/Auditoria incompleta/);
+    assert.ok(out.resultado,'a entrega fica guardada para o advogado ver');
+  }
+});
+
+test('erro objetivo apontado pelo LEX tem de ser classificado como ERRO_OBJETIVO',async()=>{
+  const processo={id:7,nome:'X',documentos:[{texto:PECA}]};
+  const tudoNaoConsultada=conteudo=>{const b=blocoCompleto(conteudo);return b.replace(/ERRO_OBJETIVO/g,'FONTE_NAO_CONSULTADA');};
+  const {engine}=motor(processo,tudoNaoConsultada);
+  const t=await engine.submit({tipo:'auditoria_peca',processo_id:7,instrucao:'audite a peça da parte contrária',request_id:'r9'});
+  const out=await engine.run(t.id);
+  assert.equal(out.status,'aguardando_dados');
+  assert.match(out.pendencia,/art\. 1500 CPC/);
+});
+
+// CodeRabbit #150: citação depois do corte do texto enviado à IA continua na lista.
+test('peça longa: a lista cobre o texto inteiro e registra que a IA viu só parte',async()=>{
+  const longa='Preâmbulo. '.repeat(4000)+' Conforme o REsp 9.876.543/RJ, o pedido procede.';
+  const processo={id:8,nome:'Y',documentos:[{texto:longa}]};
+  const {engine,chamadas}=motor(processo,blocoCompleto);
+  const t=await engine.submit({tipo:'auditoria_peca',processo_id:8,instrucao:'audite a peça da parte contrária',request_id:'r10'});
+  const out=await engine.run(t.id);
+  assert.ok(out.controle_citacoes.citacoes.some(c=>c.chave==='REsp 9876543/RJ'),'citação após o corte está na lista');
+  assert.equal(out.controle_citacoes.cobertura.texto_ia_parcial,true);
+  assert.match(chamadas[1],/texto enviado está cortado/i);
+});
+
+test('tarefas que não são auditoria não recebem a lista',async()=>{
+  const processo={id:7,nome:'X',documentos:[{texto:PECA}]};
+  const {engine,chamadas}=motor(processo,()=>'Análise pronta');
+  const t=await engine.submit({tipo:'analise',processo_id:7,instrucao:'analise',request_id:'r2'});
+  const out=await engine.run(t.id);
   assert.doesNotMatch(chamadas[1],/LISTA OBRIGATÓRIA/);
-  assert.equal(out2.controle_citacoes,null);
+  assert.equal(out.controle_citacoes,null);
+  assert.equal(out.status,'aguardando_revisao');
+});
+
+// CodeRabbit #150: grafias que escapavam.
+test('extrai RESP em maiúsculas, artigos no plural e número CNJ sem pontuação',()=>{
+  const c=extrairCitacoes('Vide RESP 1.234.567/SP e resp 1.234.567/SP; arts. 341 e 1.500 do CPC; arts. 9º e 10 do CPC; nos autos do processo nº 50000019920268130704.').map(x=>x.tipo+':'+x.chave);
+  assert.equal(c.filter(x=>x==='julgado:REsp 1234567/SP').length,1,'uma só, normalizada');
+  for(const k of ['artigo:art. 341 CPC','artigo:art. 1500 CPC','artigo:art. 9 CPC','artigo:art. 10 CPC','cnj:5000001-99.2026.8.13.0704'])assert.ok(c.includes(k),'faltou '+k+' em '+JSON.stringify(c));
+  assert.ok(auditarCitacoes('processo nº 50000019920268130704').sinais.some(s=>/dígito verificador/.test(s.motivo)));
+  assert.deepEqual(extrairCitacoes('código de barras 12345678901234567890 do boleto').filter(x=>x.tipo==='cnj'),[],'20 dígitos sem contexto de processo não viram CNJ');
+});
+
+test('"revise a peça da parte contrária" é auditoria, não a revisão comum',()=>{
+  assert.equal(tipo('revisar a peça da parte contrária e conferir as citações'),'auditoria_peca');
+  assert.equal(parseOfficeCommand('revisar a minuta',{processo_id:'p1'})?.action,'lex_review','revisão comum continua');
 });
