@@ -92,7 +92,7 @@ function motor(processo,respostaFinal){
 const blocoCompleto=conteudo=>{
   const lista=JSON.parse(conteudo.split('LISTA OBRIGATÓRIA DE CITAÇÕES (extraída pelo LEX; classifique todas):\n')[1].split('\n')[0]);
   const sinais=new Set(lista.sinais.map(s=>s.chave));
-  return 'Quadro...\nCLASSIFICACAO_JSON: '+JSON.stringify(lista.citacoes.map(c=>({chave:c.chave,classificacao:sinais.has(c.chave)?'ERRO_OBJETIVO':'FONTE_NAO_CONSULTADA'})));
+  return 'Quadro...\nCLASSIFICACAO_JSON: '+JSON.stringify(lista.citacoes.map(c=>sinais.has(c.chave)?{chave:c.chave,classificacao:'ERRO_OBJETIVO',trecho:c.trecho,uso:'réplica'}:{chave:c.chave,classificacao:'FONTE_NAO_CONSULTADA'}));
 };
 
 test('tarefa de auditoria roda no motor: a IA recebe a lista obrigatória e só fica pronta com todas classificadas',async()=>{
@@ -166,4 +166,32 @@ test('extrai RESP em maiúsculas, artigos no plural e número CNJ sem pontuaçã
 test('"revise a peça da parte contrária" é auditoria, não a revisão comum',()=>{
   assert.equal(tipo('revisar a peça da parte contrária e conferir as citações'),'auditoria_peca');
   assert.equal(parseOfficeCommand('revisar a minuta',{processo_id:'p1'})?.action,'lex_review','revisão comum continua');
+});
+
+// CodeRabbit #150 (2ª rodada).
+test('intervalo de artigos registra as duas pontas; "nº" sozinho não vira processo',()=>{
+  const c=extrairCitacoes('Vide arts. 1.000 a 1.500 do CPC. Nota fiscal nº 12345678901234567890.').map(x=>x.tipo+':'+x.chave);
+  assert.ok(c.includes('artigo:art. 1000 CPC')&&c.includes('artigo:art. 1500 CPC'),JSON.stringify(c));
+  assert.ok(auditarCitacoes('arts. 1.000 a 1.500 do CPC').sinais.some(s=>s.chave==='art. 1500 CPC'));
+  assert.equal(c.filter(x=>x.startsWith('cnj:')).length,0,'nota fiscal não é processo');
+  assert.equal(extrairCitacoes('feito 50000019920268130704').filter(x=>x.tipo==='cnj').length,1);
+});
+
+test('dois documentos curtos enviados inteiros: cobertura completa',async()=>{
+  const processo={id:9,nome:'Z',documentos:[{texto:'Peça A com REsp 1.234.567/SP.'},{texto:'Peça B com Súmula 297 do STJ.'}]};
+  const {engine}=motor(processo,blocoCompleto);
+  const t=await engine.submit({tipo:'auditoria_peca',processo_id:9,instrucao:'audite a peça da parte contrária',request_id:'r11'});
+  const out=await engine.run(t.id);
+  assert.equal(out.controle_citacoes.cobertura.texto_ia_parcial,false);
+  assert.equal(out.status,'aguardando_revisao',out.pendencia);
+});
+
+test('erro objetivo sem trecho literal ou uso na resposta deixa a auditoria incompleta',async()=>{
+  const processo={id:7,nome:'X',documentos:[{texto:PECA}]};
+  const semTrecho=conteudo=>blocoCompleto(conteudo).replace(/"trecho":"[^"]*",/g,'');
+  const {engine}=motor(processo,semTrecho);
+  const t=await engine.submit({tipo:'auditoria_peca',processo_id:7,instrucao:'audite a peça da parte contrária',request_id:'r12'});
+  const out=await engine.run(t.id);
+  assert.equal(out.status,'aguardando_dados');
+  assert.match(out.pendencia,/sem trecho literal ou uso/);
 });
