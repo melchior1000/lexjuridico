@@ -21,6 +21,8 @@ test('reconhece a recusa por falta de crédito e não confunde com outros erros'
   assert.equal(isCreditError(new Error('billing error no cadastro do cliente')),false);
   assert.equal(isCreditError(new Error('Selecione um processo antes de buscar documentos.')),false);
   assert.equal(isCreditError(Object.assign(new Error('x'),{type:'insufficient_quota'})),true,'sinal do provedor pelo tipo');
+  assert.equal(isCreditError(Object.assign(new Error('falha de cobrança'),{type:'billing_error'})),false,'billing_error genérico não pausa a IA');
+  assert.equal(isCreditError(Object.assign(new Error('Your credit balance is too low'),{type:'billing_error'})),true);
 });
 
 test('primeira recusa liga o modo sem IA e avisa uma vez',()=>{
