@@ -17,7 +17,9 @@ test('toda tela com a marca LEX mostra o aviso embaixo dela; login também; nunc
   assert.match(read('office-ui-base.js'),/function lexAvisoHtml\(\)[\s\S]*lex-aviso/);
   assert.ok(read('office-ui-base.js').includes(AVISO_CURTO),'base usa o mesmo texto do servidor');
   for(const f of ['office-ui-v2.js','lex2-coordinator-ui.js','lex2-interface-core.js','office-dossier-ui.js','lex-legacy-frame.js']){
-    const src=read(f);const marcas=[...src.matchAll(/<strong>(?:LEX|'\+title\+')<\/strong>[^]*?<\/div>/g)];
+    // A marca pode fechar um <div> interno antes do aviso (coordenador, core); o aviso tem de vir
+    // logo depois da marca, no mesmo bloco de cabeçalho — por isso a janela curta, não "até </div>".
+    const src=read(f);const marcas=[...src.matchAll(/<strong>(?:LEX|'\+title\+')<\/strong>[^]{0,160}/g)];
     assert.ok(marcas.length>0,f+': marca não encontrada');
     for(const m of marcas)assert.match(m[0],/lexAvisoHtml/,f+': marca sem aviso');
   }
