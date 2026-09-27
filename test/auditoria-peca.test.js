@@ -193,5 +193,23 @@ test('erro objetivo sem trecho literal ou uso na resposta deixa a auditoria inco
   const t=await engine.submit({tipo:'auditoria_peca',processo_id:7,instrucao:'audite a peça da parte contrária',request_id:'r12'});
   const out=await engine.run(t.id);
   assert.equal(out.status,'aguardando_dados');
-  assert.match(out.pendencia,/sem trecho literal ou uso/);
+  assert.match(out.pendencia,/sem trecho literal da peça/);
+});
+
+// CodeRabbit #150 (3ª rodada).
+test('número de artigo é lido inteiro: "art. 12345 do CC" é acusado',()=>{
+  const a=auditarCitacoes('Nos termos do art. 12345 do CC, é devido.');
+  assert.ok(a.citacoes.some(c=>c.chave==='art. 12345 CC'),JSON.stringify(a.citacoes));
+  assert.ok(!a.citacoes.some(c=>c.chave==='art. 1234 CC'));
+  assert.ok(a.sinais.some(s=>s.chave==='art. 12345 CC'&&/2\.046 artigos/.test(s.motivo)));
+});
+
+test('trecho "literal" que não está na peça deixa a auditoria incompleta',async()=>{
+  const processo={id:7,nome:'X',documentos:[{texto:PECA}]};
+  const inventado=conteudo=>blocoCompleto(conteudo).replace(/"trecho":"[^"]*"/g,'"trecho":"texto que não aparece em lugar nenhum da peça"');
+  const {engine}=motor(processo,inventado);
+  const t=await engine.submit({tipo:'auditoria_peca',processo_id:7,instrucao:'audite a peça da parte contrária',request_id:'r13'});
+  const out=await engine.run(t.id);
+  assert.equal(out.status,'aguardando_dados');
+  assert.match(out.pendencia,/trecho literal da peça/);
 });
