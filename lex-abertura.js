@@ -52,7 +52,7 @@
     (document.head || root).appendChild(st);
   }
 
-  var fim = true, trava = null;
+  var fim = true, trava = null, geracao = 0;
   function tecla() { sair(); }
   function sair() {
     if (fim) return;
@@ -77,9 +77,11 @@
     try { reduz = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
     css_();
     fim = false;
+    var g = ++geracao; // temporizadores de uma abertura antiga não fecham a nova
+    function sairDesta() { if (g === geracao) sair(); }
     root.classList.add('lex-abrindo');
     // Trava de segurança: a abertura nunca prende o LEX.
-    trava = setTimeout(sair, TRAVA);
+    trava = setTimeout(sairDesta, TRAVA);
     var n = quantosProcessos();
     var etapas = [
       'Iniciando o assessor jurídico',
@@ -114,14 +116,14 @@
     var passo = reduz ? 0 : PASSO;
     Array.prototype.forEach.call(itens, function (li, i) {
       setTimeout(function () {
-        if (fim) return;
+        if (fim || g !== geracao) return;
         li.classList.add('on');
         if (i > 0) { itens[i - 1].classList.add('ok'); itens[i - 1].querySelector('i').textContent = '✓'; }
         if (i === itens.length - 1) { li.classList.add('ok'); li.querySelector('i').textContent = '✓'; }
         barra.style.width = Math.round((i + 1) / itens.length * 100) + '%';
       }, 300 + i * passo);
     });
-    setTimeout(sair, reduz ? 1200 : 300 + (itens.length - 1) * passo + SEGURA);
+    setTimeout(sairDesta, reduz ? 1200 : 300 + (itens.length - 1) * passo + SEGURA);
   }
   window.lexAbertura = abrir;
 })();

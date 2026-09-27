@@ -25,7 +25,9 @@ test('abertura mostra o aviso legal embaixo da marca, mesmo sem a base',()=>{
 test('abertura nunca prende o LEX, pula com toque/tecla e respeita movimento reduzido',()=>{
   const src=read('lex-abertura.js');
   assert.match(src,/TRAVA = 10000/,'trava de segurança');
-  assert.match(src,/trava = setTimeout\(sair, TRAVA\)/);
+  assert.match(src,/trava = setTimeout\(sairDesta, TRAVA\)/);
+  assert.match(src,/function sairDesta\(\) \{ if \(g === geracao\) sair\(\); \}/,'temporizador antigo não fecha abertura nova (CodeRabbit #145)');
+  assert.doesNotMatch(src,/setTimeout\(sair,/,'nenhum temporizador chama sair direto');
   assert.match(src,/addEventListener\('click', sair\)/);
   assert.match(src,/removeEventListener\('keydown', tecla\)/,'solta a tecla ao sair');
   assert.match(src,/prefers-reduced-motion/);
