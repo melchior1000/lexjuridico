@@ -29,6 +29,11 @@ test('ordens que já existiam continuam iguais',()=>{
   assert.equal(tipo('faça a contestação desse processo'),'contestacao');
   assert.equal(tipo('analise esse processo'),'analise');
   assert.equal(tipo('faça os quesitos'),'quesitos');
+  // CodeRabbit #149: instrumento pedido de forma expressa tem prioridade.
+  assert.equal(tipo('faça o recurso da sentença desfavorável'),'recurso');
+  assert.equal(tipo('faça a apelação contra a sentença que perdemos'),'recurso');
+  assert.equal(tipo('prepare o agravo contra a decisão desfavorável'),'recurso');
+  assert.equal(tipo('faça a contestação apontando os erros da decisão liminar'),'contestacao');
 });
 
 test('tarefa existe no motor com o agente jurídico e na lista de ferramentas do LEX',()=>{
