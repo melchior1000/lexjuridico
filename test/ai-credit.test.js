@@ -16,6 +16,11 @@ test('reconhece a recusa por falta de crédito e não confunde com outros erros'
   assert.equal(isCreditError(new Error('Overloaded (529)')),false);
   assert.equal(isCreditError(new Error('timeout')),false);
   assert.equal(isCreditError(new Error('crédito tributário de PIS')),false,'texto jurídico não é falta de crédito');
+  // CodeRabbit #148: texto genérico não pode pausar a IA.
+  assert.equal(isCreditError(new Error('Payment required for this document')),false);
+  assert.equal(isCreditError(new Error('billing error no cadastro do cliente')),false);
+  assert.equal(isCreditError(new Error('Selecione um processo antes de buscar documentos.')),false);
+  assert.equal(isCreditError(Object.assign(new Error('x'),{type:'insufficient_quota'})),true,'sinal do provedor pelo tipo');
 });
 
 test('primeira recusa liga o modo sem IA e avisa uma vez',()=>{
@@ -43,6 +48,20 @@ test('teste a cada rodada: continua sem crédito até a recarga, então volta so
   assert.match(avisos.at(-1),/IA do LEX voltou/);
   assert.equal((await g.sondar()).skipped,true,'com IA ativa não gasta teste');
   assert.equal(sondas,2);
+});
+
+// CodeRabbit #148: recusa nova enquanto o teste roda não pode religar a IA.
+test('recusa nova durante o teste de crédito mantém o modo sem IA',async()=>{
+  const env={};let g;
+  let liberar;const pendente=new Promise(r=>{liberar=r});
+  g=createCreditGuard({env,probe:async()=>{await pendente;return true}});
+  g.registrarErro(ERRO_ANTHROPIC);
+  const teste=g.sondar();
+  g.registrarErro(ERRO_ANTHROPIC); // outra chamada foi recusada enquanto o teste rodava
+  liberar();
+  const out=await teste;
+  assert.equal(out.ok,false);
+  assert.equal(env.LEX_AI_NO_CREDIT,'1');
 });
 
 test('modo sem IA ligado à mão no servidor não é desligado pela sonda',async()=>{
