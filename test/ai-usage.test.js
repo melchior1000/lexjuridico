@@ -201,3 +201,35 @@ test('ponto de uso herdado pelo fluxo assíncrono',async()=>{
   const visto=await runWithAiPonto('recepcao',async()=>{await new Promise(r=>setImmediate(r));return currentAiPonto();});
   assert.equal(visto,'recepcao');
 });
+
+// CodeRabbit, PR #154.
+test('três gravações ao mesmo tempo rodam uma de cada vez e não perdem lote',async()=>{
+  let ativas=0,maxAtivas=0;const rows=new Map();
+  const records={async read(k){return rows.has(k)?{value:structuredClone(rows.get(k))}:null;},
+    async change(k,fn){ativas++;maxAtivas=Math.max(maxAtivas,ativas);await new Promise(r=>setTimeout(r,5));
+      const v=await fn(rows.has(k)?structuredClone(rows.get(k)):null);if(v!==undefined)rows.set(k,v);ativas--;return v;}};
+  const meter=createAiUsageMeter({records,now:fixed('2026-10-06T15:00:00Z'),flushMs:60000,log:()=>{}});
+  meter.record({provider:'anthropic',model:'claude-opus-5',ponto:'a',usage:{entrada:1}});
+  const a=meter.flush();
+  meter.record({provider:'anthropic',model:'claude-opus-5',ponto:'a',usage:{entrada:1}});
+  const b=meter.flush();const c=meter.flush();
+  await Promise.all([a,b,c]);
+  assert.equal(maxAtivas,1);
+  assert.equal([...rows.values()][0].total.chamadas,2);
+});
+
+test('lote falho segura os lotes seguintes do mesmo mês',async()=>{
+  const rows=new Map();const ordem=[];let falhar=true;
+  const records={async read(k){return rows.has(k)?{value:structuredClone(rows.get(k))}:null;},
+    async change(k,fn){if(falhar){falhar=false;throw new Error('fora');}const v=await fn(rows.has(k)?structuredClone(rows.get(k)):null);if(v!==undefined){rows.set(k,v);ordem.push(v.total.chamadas);}return v;}};
+  let agora='2026-10-06T15:00:00Z';
+  const meter=createAiUsageMeter({records,now:()=>new Date(agora),flushMs:60000,log:()=>{}});
+  meter.record({provider:'anthropic',model:'claude-opus-5',usage:{entrada:1}});
+  await meter.flush(); // falha
+  meter.record({provider:'anthropic',model:'claude-opus-5',usage:{entrada:1}});
+  agora='2026-09-10T15:00:00Z';
+  meter.record({provider:'anthropic',model:'claude-opus-5',usage:{entrada:1}});
+  await meter.flush();
+  assert.equal(rows.get('ia_consumo_lex-atual_2026-10').total.chamadas,2);
+  assert.equal(rows.get('ia_consumo_lex-atual_2026-09').total.chamadas,1,'outro mês segue normal');
+});
