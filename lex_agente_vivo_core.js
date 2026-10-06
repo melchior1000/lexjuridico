@@ -20,6 +20,7 @@
 // =====================================================================
 
 'use strict';
+const { recordAiResponse, currentAiPonto } = require('./lib/ai-usage');
 const { rowsFromResult } = require('./lib/supabase');
 const { withProcessLock } = require('./lib/process-lock');
 const { hojeBrasil } = require('./lib/data-brasil');
@@ -572,6 +573,8 @@ function chamarAnthropicRequest(ANTHROPIC_KEY, httpsMod, payload) {
         r.on('end', () => {
           try {
             const parsed = JSON.parse(d);
+            recordAiResponse({host: 'api.anthropic.com', model: payload && payload.model, response: parsed, ponto: currentAiPonto() || 'lex_vivo',
+              error: r.statusCode >= 400 ? true : null});
             if (parsed.error) {
               const err = new Error('Anthropic: ' + (parsed.error.message || JSON.stringify(parsed.error)));
               err.status = r.statusCode;

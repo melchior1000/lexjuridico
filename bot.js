@@ -113,6 +113,7 @@ const {createTelegramPoller} = require('./lib/telegram-poller');
 
 const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound} = require('./lib/integration-status');
 const {createWhatsappInbound} = require('./lib/whatsapp-inbound');
+const {configureAiUsage, recordAiResponse, aiUsageSummary, currentAiPonto, runWithAiPonto} = require('./lib/ai-usage');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -794,6 +795,8 @@ const recordStore = new RecordStore(sbRaw, process.env.CONFIG_TABLE || 'configur
 const whatsappInbound = createWhatsappInbound({records:recordStore});
 setWhatsappInbound(whatsappInbound).catch(e=>console.warn('[WhatsApp Entrada] '+(e?.message||e)));
 require('./lib/channel-delivery').setWhatsappTargetResolver(id=>whatsappInbound.lidTargetFor(id));
+// Consumo de IA por escritório/mês gravado no banco de registros (rota /api/ia/consumo).
+configureAiUsage({records:recordStore});
 // Recepção inteligente dos canais: a IA escreve a conversa (modelo de canal, econômico)
 // dentro dos limites verificados em lib/reception-ai.js; a decisão continua do código.
 // `ia` e `aiAvailable` são definidos mais abaixo; o compositor só os chama em tempo de execução.
@@ -822,7 +825,7 @@ const creditGuard=createCreditGuard({
   notify:text=>avisarTitular(text),log:msg=>console.warn(msg),
   probe:async()=>{
     if(IA_PROVIDER!=='anthropic')return ia([{role:'user',content:'ok'}],null,1,MODELO_ECO);
-    const r=await httpsPost('api.anthropic.com','/v1/messages',{model:MODELO_ECO,max_tokens:1,messages:[{role:'user',content:'ok'}]},{'x-api-key':AK,'anthropic-version':'2023-06-01'});
+    const r=await httpsPost('api.anthropic.com','/v1/messages',{model:MODELO_ECO,max_tokens:1,messages:[{role:'user',content:'ok'}]},{'x-api-key':AK,'anthropic-version':'2023-06-01'},{ponto:'teste_credito'});
     if(r?.error)throw new Error(r.error.message||JSON.stringify(r.error));
     return true;
   }
@@ -920,7 +923,7 @@ const pjeMonitor = createPjeMonitor({
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
 let officeProfile={...ESCRITORIO};
 const taskEngine=new TaskEngine({store:recordStore,processes:async()=>(await processStore.read()).processes,
-  ai:(messages,system,tokens)=>ia(messages,system,tokens,MODELO_TOP),available:aiAvailable,office:()=>officeProfile});
+  ai:(messages,system,tokens)=>runWithAiPonto(currentAiPonto()||'tarefa',()=>ia(messages,system,tokens,MODELO_TOP)),available:aiAvailable,office:()=>officeProfile});
 
 function _historicoCanalParaPrompt(rows){
   return [...(Array.isArray(rows)?rows:[])]
@@ -1360,10 +1363,16 @@ function httpsGet(url) {
   });
 }
 
-function httpsPost(host, path, data, headers) {
+// Toda chamada de IA do servidor passa aqui: admissão (limite de simultâneas) + medição de
+// consumo por ponto de uso (lib/ai-usage.js). Medir nunca muda nem atrasa a resposta.
+const AI_HOSTS = ['api.anthropic.com', 'api.openai.com', 'generativelanguage.googleapis.com'];
+function httpsPost(host, path, data, headers, opts={}) {
   const execute = () => _httpsPostRequest(host, path, data, headers);
-  return ['api.anthropic.com', 'api.openai.com', 'generativelanguage.googleapis.com'].includes(host)
-    ? aiAdmission.run(execute) : execute();
+  if(!AI_HOSTS.includes(host)) return execute();
+  const ponto = opts.ponto || currentAiPonto() || 'ia_geral';
+  return aiAdmission.run(execute).then(
+    r => { recordAiResponse({host, path, model:data?.model, response:r, ponto}); return r; },
+    e => { if(e?.code!=='LEX_AI_BUSY') recordAiResponse({host, path, model:data?.model, error:e, ponto}); throw e; }); // fila local cheia não é chamada ao provedor
 }
 
 function _httpsPostRequest(host, path, data, headers) {
@@ -1611,13 +1620,13 @@ async function iaComWebSearch(messages, system, maxTok, opts) {
     let r;
     try {
       r = await httpsPost('api.anthropic.com','/v1/messages',pay,
-        {'x-api-key':AK,'anthropic-version':'2023-06-01'});
+        {'x-api-key':AK,'anthropic-version':'2023-06-01'},{ponto:'ia_pesquisa_web'});
     } catch(e) {
       const msg = String(e.message||'').toLowerCase();
       if(msg.includes('overloaded') || msg.includes('529')) {
         await new Promise(res => setTimeout(res, 8000));
         r = await httpsPost('api.anthropic.com','/v1/messages',pay,
-          {'x-api-key':AK,'anthropic-version':'2023-06-01'});
+          {'x-api-key':AK,'anthropic-version':'2023-06-01'},{ponto:'ia_pesquisa_web'});
       } else { throw e; }
     }
     if(r && r.error) throw new Error(r.error.message || JSON.stringify(r.error));
@@ -4789,7 +4798,7 @@ async function _chamarAnthropicSecretario(messages, system, modelo) {
   const r = await httpsPost('api.anthropic.com', '/v1/messages', pay, {
     'x-api-key': AK,
     'anthropic-version': '2023-06-01'
-  });
+  }, {ponto:'secretario_whatsapp'});
   if(r?.error) throw new Error(r.error.message || 'Erro Anthropic secretario');
   // O primeiro bloco pode ser de raciocínio (vazio); a resposta está nos blocos de texto.
   return (Array.isArray(r?.content)?r.content:[]).filter(block=>block?.type==='text').map(block=>block.text||'').join('\n').trim();
@@ -5396,6 +5405,7 @@ async function _transcreverAudioWhisper(buffer, mimeType, nomeArquivo) {
       r.on('end', () => {
         try {
           const j = d ? JSON.parse(d) : {};
+          recordAiResponse({provider:'openai', model:'whisper-1', response:j, ponto:'transcricao_audio', error:r.statusCode>=400?new Error('HTTP '+r.statusCode):null});
           if(r.statusCode >= 200 && r.statusCode < 300 && j.text) resolve({ ok:true, texto:String(j.text).trim(), erro:'' });
           else resolve({ ok:false, texto:'', erro:(j.error&&j.error.message) || ('HTTP '+r.statusCode) });
         } catch(e) { resolve({ ok:false, texto:'', erro:e.message }); }
@@ -10550,6 +10560,15 @@ const server = http.createServer(async (req, res) => {
     }catch(e){res.writeHead(503,CORS);res.end(JSON.stringify({error:'Não foi possível registrar o pareamento.'}));}
     return;
   }
+  // Consumo de IA do mês (tokens e custo estimado por ponto de uso e por modelo). Só o titular.
+  if(url==='/api/ia/consumo' && req.method==='GET') {
+    if(validarToken(getToken(req))!=='admin'){res.writeHead(403,CORS);res.end(JSON.stringify({error:'Acesso de administrador necessário'}));return;}
+    const mes=new URL(req.url,'http://lex').searchParams.get('mes')||undefined;
+    if(mes&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)){res.writeHead(400,CORS);res.end(JSON.stringify({error:'Mês inválido. Use AAAA-MM.'}));return;}
+    try{const consumo=await aiUsageSummary(mes);res.writeHead(200,CORS);res.end(JSON.stringify({ok:true,consumo,aviso:'Custo estimado pela tabela oficial de preços na data indicada; a fatura da Anthropic prevalece.'}));}
+    catch(e){res.writeHead(503,CORS);res.end(JSON.stringify({error:'Consumo de IA indisponível agora.'}));}
+    return;
+  }
   if(url==='/api/conector/download' && req.method==='GET') {
     if(validarToken(getToken(req))!=='admin'){res.writeHead(403,CORS);res.end(JSON.stringify({error:'Acesso de administrador necessário'}));return;}
     const entries=['manifest.json','popup.html','popup.css','popup.js','README.md'].map(name=>({nome:name,data:fs.readFileSync(path.join(__dirname,'conector-navegador',name))}));
@@ -14187,6 +14206,7 @@ async function _gracefulShutdown(signal) {
   const t = setTimeout(()=>{ console.error('[Lex] Timeout ao salvar dados no shutdown.'); process.exit(1); }, 10000);
   try { await _persistirProcessosCache(); console.log('[Lex] Processos salvos.'); }
   catch(e) { console.warn('[Lex] Falha ao salvar processos:', e.message); }
+  try { const r=await require('./lib/ai-usage').flushAiUsage(); if(r?.pendentes) console.warn('[Lex] Consumo de IA não gravado no desligamento: '+r.pendentes+' lote(s).'); } catch(e) { console.warn('[Lex] Falha ao gravar consumo de IA:', e.message); }
   clearTimeout(t);
   console.log('[Lex] Shutdown completo.');
   process.exit(0);
