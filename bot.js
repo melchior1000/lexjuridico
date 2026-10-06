@@ -111,7 +111,7 @@ const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-recept
 const {createReceptionComposer} = require('./lib/reception-ai');
 const {createTelegramPoller} = require('./lib/telegram-poller');
 
-const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound} = require('./lib/integration-status');
+const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound, whatsappAutomaticAllowed} = require('./lib/integration-status');
 const {createWhatsappInbound} = require('./lib/whatsapp-inbound');
 const {configureAiUsage, recordAiResponse, aiUsageSummary, currentAiPonto, runWithAiPonto} = require('./lib/ai-usage');
 const JSZip = require('jszip');
@@ -4855,8 +4855,12 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
       // Avisa o cliente com tom humano
       const msgCliente = 'Oi' + (clienteNome !== 'cliente' ? ', ' + clienteNome.split(' ')[0] : '') + '! Estou tentando falar com ' + _titularCliente() + ' sobre o seu caso, mas deve estar em atendimento agora. Assim que eu conseguir falar com o advogado ou com a secretária, te dou um retorno, tá? Não vou te deixar sem resposta!';
       try {
-        await envWhatsApp(msgCliente, clienteNum);
-        _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente);
+        // Contato pediu para não receber mensagens automáticas: só o titular fala com ele
+        // (a cobrança da equipe, abaixo, continua).
+        if(await whatsappAutomaticAllowed(clienteNum)) {
+          await envWhatsApp(msgCliente, clienteNum);
+          _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente);
+        }
       } catch(e) { console.warn('[Lex] Erro follow-up cliente:', e.message); }
       
       // Cobra a equipe no Telegram (titular + Secretária)
@@ -4890,8 +4894,10 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
       
       const msgCliente2 = (clienteNome !== 'cliente' ? clienteNome.split(' ')[0] + ', ' : '') + 'desculpa a demora! ' + _titularCliente().replace(/^o /,'O ') + ' ainda está resolvendo algumas questões, mas seu caso não foi esquecido. Vou te dar um retorno assim que possível, tá bom?';
       try {
-        await envWhatsApp(msgCliente2, clienteNum);
-        _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente2);
+        if(await whatsappAutomaticAllowed(clienteNum)) {
+          await envWhatsApp(msgCliente2, clienteNum);
+          _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente2);
+        }
       } catch(e) {}
       
       const cobranca3 = '🔴 *CLIENTE ESPERANDO HÁ 30 MINUTOS*\n\n👤 ' + clienteNome + ' (' + clienteNum + ')\n\nJá enviei segunda mensagem pro cliente dizendo que não foi esquecido. Por favor, deem retorno.';
@@ -5423,6 +5429,8 @@ async function _executarFollowupClientesPendentes() {
     const agora = Date.now();
     for(const c of rows || []) {
       if(!c || c.status === 'convertido') continue;
+      // Lembretes ao cliente são mensagens automáticas: não saem para quem pediu para parar.
+      const podeLembrar = c.canal !== 'whatsapp' || await whatsappAutomaticAllowed(c.chat_id);
       const primeiro = new Date(c.data_primeiro_contato || c.criado_em || c.ultimo_contato || _agoraIso()).getTime();
       const ultimo = new Date(c.ultimo_contato || c.atualizado_em || c.criado_em || _agoraIso()).getTime();
       const diffPrimeiroH = (agora - primeiro) / 3600000;
@@ -5437,7 +5445,7 @@ async function _executarFollowupClientesPendentes() {
       } else if(diffH >= 72 && !c.admin_notificado_sumico_72h) {
         await envTelegram('👻 Cliente sem resposta há 72h: '+(c.nome||c.chat_id)+' | chat '+c.chat_id+'.', null, CHAT_ID).catch(()=>{});
         c.admin_notificado_sumico_72h = true;
-      } else if(diffH >= 24*10 && !(c.lembrete_docs_10d_enviado)) {
+      } else if(diffH >= 24*10 && !(c.lembrete_docs_10d_enviado) && podeLembrar) {
         const nomeProc = c.nome || c.chat_id;
         const docsPend = Array.isArray(c.campos_verificar) && c.campos_verificar.length
           ? c.campos_verificar.slice(0,6).join(', ')
@@ -5447,12 +5455,12 @@ async function _executarFollowupClientesPendentes() {
           { canal: c.canal || 'telegram', chatId: c.chat_id, numero: c.canal==='whatsapp' ? c.chat_id : null }
         );
         c.lembrete_docs_10d_enviado = true;
-      } else if(diffH >= 48 && !c.lembrete_48h_enviado) {
+      } else if(diffH >= 48 && !c.lembrete_48h_enviado && podeLembrar) {
         await env('Passando para reforçar: quando puder, me envie os dados/documentos pendentes para eu concluir seu atendimento jurídico 😊', {
           canal: c.canal || 'telegram', chatId: c.chat_id, numero: c.canal==='whatsapp' ? c.chat_id : null
         });
         c.lembrete_48h_enviado = true;
-      } else if(diffH >= 24 && !c.lembrete_24h_enviado) {
+      } else if(diffH >= 24 && !c.lembrete_24h_enviado && podeLembrar) {
         await env('Oi! Só lembrando do seu atendimento jurídico. Assim que puder, me responda por aqui que eu sigo com sua triagem.', {
           canal: c.canal || 'telegram', chatId: c.chat_id, numero: c.canal==='whatsapp' ? c.chat_id : null
         });
