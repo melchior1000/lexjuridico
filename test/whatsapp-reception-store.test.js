@@ -13,6 +13,7 @@ test('persiste upsert, lista e arquiva no Supabase',async()=>{
   const calls=[];
   const request=async(method,table,data,query,headers)=>{
     calls.push({method,table,data,query,headers});
+    if(method==='POST' && table==='whatsapp_recepcao_eventos') return {ok:true,status:201,body:[data]};
     if(method==='GET' && query.numero) return {ok:true,status:200,body:row?[{numero:row.numero,contador:row.contador,urgente:row.urgente}]:[]};
     if(method==='POST') { row={...data}; return {ok:true,status:201,body:[row]}; }
     if(method==='GET') return {ok:true,status:200,body:row&&row.status===query.status?.replace('eq.','')?[row]:[]};
@@ -28,6 +29,8 @@ test('persiste upsert, lista e arquiva no Supabase',async()=>{
   assert.equal(await store.archive('5561988888888'),true);
   assert.equal(row.status,'arquivado');
   assert.ok(calls.some(c=>c.method==='POST'&&c.query.on_conflict==='numero'));
+  // Arquivar marca no histórico que o escritório encerrou a conversa (radar da recepção).
+  assert.ok(calls.some(c=>c.method==='POST'&&c.table==='whatsapp_recepcao_eventos'&&c.data.direcao==='saida_operador'&&/arquivada/.test(c.data.texto)));
 });
 
 test('fallback em memoria preserva recepcao quando banco falha',async()=>{
@@ -56,4 +59,18 @@ test('list usa cursor por numero para paginação estável',async()=>{
   assert.equal(query.order,'numero.asc');
   assert.equal(query.limit,'100');
   assert.equal(query.offset,undefined);
+});
+
+// CodeRabbit, PR #157: arquivo e marca no histórico valem juntos.
+test('arquivar sem conseguir gravar a marca no histórico desfaz o arquivamento',async()=>{
+  let row={numero:'5561988888888',status:'aguardando_advogado'};const calls=[];
+  const request=async(method,table,data,query)=>{
+    calls.push({method,table,data});
+    if(method==='POST'&&table==='whatsapp_recepcao_eventos')return {ok:false,status:503,body:null};
+    if(method==='PATCH'){row={...row,...data};return {ok:true,status:200,body:[row]};}
+    return {ok:true,status:200,body:[]};
+  };
+  const store=createReceptionStore({request});
+  await assert.rejects(store.archive('5561988888888'));
+  assert.equal(row.status,'aguardando_advogado','continua na fila');
 });
