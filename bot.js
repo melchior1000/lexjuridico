@@ -1430,10 +1430,13 @@ async function baixarTelegram(fileId) {
 }
 
 // ── EVOLUTION (WhatsApp) ──
-async function envWhatsApp(texto, numero) {
+// podeEnviar (opcional): conferência feita DEPOIS de acordar a conexão, logo antes de sair —
+// usada pelas mensagens automáticas (o contato pode ter pedido para parar nesse meio tempo).
+async function envWhatsApp(texto, numero, {podeEnviar} = {}) {
   if(!EVO_URL || !EVO_KEY || !EVO_INST || !numero) return false;
   try {
     if(LEX_WHATSAPP_NUMBER && !await _inicializarConexaoWhatsApp()) return false;
+    if(typeof podeEnviar === 'function' && !(await podeEnviar())) return false;
     const r = await requestJson(evolutionEndpoint(EVO_URL, 'message/sendText/'+encodeURIComponent(EVO_INST)), {
       method:'POST', data:{number:numero, text:String(texto).substring(0,4000)}, headers:{apikey:EVO_KEY}
     });
@@ -4858,7 +4861,7 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
         // Contato pediu para não receber mensagens automáticas: só o titular fala com ele
         // (a cobrança da equipe, abaixo, continua).
         if(await whatsappAutomaticAllowed(clienteNum)) {
-          await envWhatsApp(msgCliente, clienteNum);
+          await envWhatsApp(msgCliente, clienteNum, { podeEnviar: () => whatsappAutomaticAllowed(clienteNum) });
           _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente);
         }
       } catch(e) { console.warn('[Lex] Erro follow-up cliente:', e.message); }
@@ -4895,7 +4898,7 @@ async function _escalarParaAdvogado(processo, cliente, motivo, conversa) {
       const msgCliente2 = (clienteNome !== 'cliente' ? clienteNome.split(' ')[0] + ', ' : '') + 'desculpa a demora! ' + _titularCliente().replace(/^o /,'O ') + ' ainda está resolvendo algumas questões, mas seu caso não foi esquecido. Vou te dar um retorno assim que possível, tá bom?';
       try {
         if(await whatsappAutomaticAllowed(clienteNum)) {
-          await envWhatsApp(msgCliente2, clienteNum);
+          await envWhatsApp(msgCliente2, clienteNum, { podeEnviar: () => whatsappAutomaticAllowed(clienteNum) });
           _registrarMsgCentral('whatsapp', 'saida', clienteNum, 'Lex (auto)', msgCliente2);
         }
       } catch(e) {}

@@ -100,7 +100,7 @@ test('servidor: lembretes e avisos automáticos ao cliente passam pela checagem'
   assert.match(corpo,/const podeLembrar = c\.canal !== 'whatsapp' \|\| await whatsappAutomaticAllowed\(c\.chat_id\);/);
   for(const lembrete of ['lembrete_docs_10d_enviado)','lembrete_48h_enviado','lembrete_24h_enviado'])
     assert.ok(corpo.includes(lembrete+' && podeLembrar'),lembrete);
-  for(const envio of ['await envWhatsApp(msgCliente, clienteNum);','await envWhatsApp(msgCliente2, clienteNum);']){
+  for(const envio of ['await envWhatsApp(msgCliente, clienteNum, { podeEnviar: () => whatsappAutomaticAllowed(clienteNum) });','await envWhatsApp(msgCliente2, clienteNum, { podeEnviar: () => whatsappAutomaticAllowed(clienteNum) });']){
     const i=src.indexOf(envio);
     assert.match(src.slice(i-200,i),/if\(await whatsappAutomaticAllowed\(clienteNum\)\) \{\s*$/,envio+' (a cobrança da equipe continua)');
   }
@@ -156,4 +156,28 @@ test('/liberar que falha ao gravar mantém o contato bloqueado',async()=>{
 test('número com sufixo de aparelho cai na mesma chave',()=>{
   const {contactVariants}=require('../lib/whatsapp-inbound');
   assert.deepEqual(contactVariants('5561988887777:12@s.whatsapp.net'),['5561988887777','556188887777']);
+});
+
+// CodeRabbit, PR #155.
+test('pedido não gravado: não promete ao contato e não expira em 5 minutos',async()=>{
+  const integ=freshIntegration();
+  const inbound=createWhatsappInbound({records:{async read(){return null;},async change(){throw new Error('fora');}},log:()=>{}});
+  await integ.setWhatsappInbound(inbound,{operator:OPERATOR});
+  const sent=[];const request=async(_,o)=>{sent.push(o.data);return {key:{id:'ok'}};};
+  const store={history:async()=>[],upsert:async()=>({classe:'geral',urgente:false}),appendEvent:async()=>{}};
+  await integ.publicWhatsappReception({data:{key:{id:'NG1',fromMe:false,remoteJid:'5561922221111@s.whatsapp.net'},message:{conversation:'PARE'}}},'LEX',opts({store,request}));
+  const aoContato=sent.find(m=>m.number==='5561922221111');
+  assert.doesNotMatch(aoContato.text,/não vamos mais enviar/);assert.match(aoContato.text,/avisei o escritório/);
+  assert.ok(sent.some(m=>m.number===OPERATOR&&/NÃO GRAVADO NO BANCO/.test(m.text)));
+  const realNow=Date.now;Date.now=()=>realNow()+10*60000;
+  try{assert.ok(await inbound.optOutStatus('5561922221111'),'continua bloqueado depois de 10 min');}
+  finally{Date.now=realNow;}
+});
+
+test('envio automático confere de novo depois de acordar a conexão do WhatsApp',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'..','bot.js'),'utf8');
+  const i=src.indexOf('async function envWhatsApp(texto, numero, {podeEnviar} = {})');
+  assert.ok(i>0);
+  const corpo=src.slice(i,i+500);
+  assert.ok(corpo.indexOf('_inicializarConexaoWhatsApp()')<corpo.indexOf('await podeEnviar()'),'checagem depois da conexão');
 });
