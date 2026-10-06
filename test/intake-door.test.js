@@ -179,7 +179,7 @@ test('webhook despacha conversa livre do dono para o adaptador do LEX',async()=>
 test('adaptador WhatsApp reconhece dono no JID legado e não o cadastra',async()=>{
   const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
   let calls=0;const sent=[];
-  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},isWhatsappOperator,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>{const id=require('../lib/office-identity').getIdentity();return id.titular?id.titularTratado:'titular';},
+  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},isWhatsappOperator,claimWhatsappEvent:async()=>true,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>{const id=require('../lib/office-identity').getIdentity();return id.titular?id.titularTratado:'titular';},
     handleWhatsappOperatorCommand:async()=>false,envWhatsApp:async t=>sent.push(t),processarMensagem:async()=>{calls++;}});
   const start=source.indexOf('async function adapterEvolution(');
   const end=source.indexOf('async function ',start+30);
@@ -202,7 +202,7 @@ test('saída interna do cadastrador envia resumo e pergunta somente ao dono',asy
 test('adaptador WhatsApp: titular em LID vai para o LEX, não para a fila de clientes',async()=>{
   const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
   let calls=0,publico=0;const sent=[];
-  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},isWhatsappOperator,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>'Dr. Kleuber',
+  const c=vm.createContext({process:{env:{LEX_OPERATOR_WHATSAPP:cfg.operator}},global:{},isWhatsappOperator,claimWhatsappEvent:async()=>true,EVO_INST:'LEX',_idLex:()=>require('../lib/office-identity').getIdentity(),_titularCliente:()=>'o advogado responsável',_titularSaudacao:()=>'Dr. Kleuber',
     publicWhatsappReception:async()=>{publico++;return true},
     handleWhatsappOperatorCommand:async()=>false,envWhatsApp:async t=>sent.push(t),processarMensagem:async ctx=>{calls++;c.ultimoCtx=ctx;}});
   const start=source.indexOf('async function adapterEvolution(');

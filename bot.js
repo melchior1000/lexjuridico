@@ -111,7 +111,8 @@ const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-recept
 const {createReceptionComposer} = require('./lib/reception-ai');
 const {createTelegramPoller} = require('./lib/telegram-poller');
 
-const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage} = require('./lib/integration-status');
+const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound} = require('./lib/integration-status');
+const {createWhatsappInbound} = require('./lib/whatsapp-inbound');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -789,6 +790,10 @@ const processStore = new ProcessStore(sbRaw, {onCommit:(rows,version,device)=>{
 const sbReq = (method,table,data,query,headers) => table==='processos'
   ? processStore.gateway(method,data,query||{}) : sbRaw(method,table,data,query,headers);
 const recordStore = new RecordStore(sbRaw, process.env.CONFIG_TABLE || 'configuracoes');
+// Entrada do WhatsApp persistente: repetição descartada e LID do titular/clientes gravados.
+const whatsappInbound = createWhatsappInbound({records:recordStore});
+setWhatsappInbound(whatsappInbound).catch(e=>console.warn('[WhatsApp Entrada] '+(e?.message||e)));
+require('./lib/channel-delivery').setWhatsappTargetResolver(id=>whatsappInbound.lidTargetFor(id));
 // Recepção inteligente dos canais: a IA escreve a conversa (modelo de canal, econômico)
 // dentro dos limites verificados em lib/reception-ai.js; a decisão continua do código.
 // `ia` e `aiAvailable` são definidos mais abaixo; o compositor só os chama em tempo de execução.
@@ -9401,6 +9406,8 @@ async function adapterTelegram(msg) {
 
 // ── EVOLUTION (WhatsApp) adapter ──
 async function adapterEvolution(body) {
+  // Mesma mensagem entregue de novo pela Evolution: já foi tratada, não responder outra vez.
+  if(!(await claimWhatsappEvent(body,EVO_INST))) { console.log('[WhatsApp] mensagem repetida descartada'); return; }
   const data = body.data || body;
   const msgData = data.message || {};
   const chatIdWpp = data.key?.remoteJid || '';
