@@ -120,3 +120,19 @@ test('lembrete sem confirmação não se repete antes de 20 h',()=>{
   const g=src.indexOf('async function _executarFollowupClientesPendentes(');
   assert.match(src.slice(g,g+1800),/sbGet\('clientes_pendentes', \{ chat_id: String\(c\.chat_id\) \}/,'relê o cliente antes de agir');
 });
+
+// CodeRabbit, PR #156.
+test('mesma variação nas tentativas da mesma mensagem: não adia sem motivo',async()=>{
+  const sorteios=[0,0.99,0.99,0.99];let i=0;
+  const records=fakeRecords();let relogio=br('2026-10-06',10).getTime();
+  const s=createAutomaticSender({records,now:()=>new Date(relogio),random:()=>sorteios[i++]??0,sleep:async ms=>{relogio+=ms;},send:async()=>true,log:()=>{}});
+  assert.equal((await s.enviar('1','x')).enviado,true);
+  const r=await s.enviar('2','x');
+  assert.equal(r.enviado,true,'uma espera só, com a variação sorteada para esta mensagem');
+});
+
+test('rodada de lembretes pula cliente que sumiu ou não pôde ser relido',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'..','bot.js'),'utf8');
+  const g=src.indexOf('async function _executarFollowupClientesPendentes(');
+  assert.match(src.slice(g,g+2000),/if\(!atual\) continue;/);
+});

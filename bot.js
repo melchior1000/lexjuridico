@@ -5462,8 +5462,13 @@ async function _executarFollowupClientesPendentes() {
       if(!c || c.status === 'convertido') continue;
       // A rodada pode levar minutos (ritmo das automáticas): relê o cliente agora, para não
       // agir nem gravar por cima com dados velhos (ex.: já respondeu ou virou cliente).
+      // Leitura falhou ou o cliente sumiu (descartado nesse meio tempo): pula, sem enviar nem
+      // gravar a cópia velha (gravar recriaria o cadastro apagado).
       if(c.chat_id) {
-        try { const atual = (await sbGet('clientes_pendentes', { chat_id: String(c.chat_id) }, { limit: 1 }))[0]; if(atual) Object.assign(c, atual); } catch(e) {}
+        let atual = null;
+        try { atual = (await sbGet('clientes_pendentes', { chat_id: String(c.chat_id) }, { limit: 1 }))[0] || null; } catch(e) { atual = null; }
+        if(!atual) continue;
+        Object.assign(c, atual);
         if(c.status === 'convertido') continue;
       }
       // Lembretes ao cliente são mensagens automáticas: não saem para quem pediu para parar.
