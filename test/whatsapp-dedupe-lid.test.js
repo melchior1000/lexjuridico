@@ -243,3 +243,19 @@ test('LID do titular: nova leitura do banco antes de tratar contato só com LID'
     assert.equal(integ.isWhatsappOperator(ownerLid,OPERATOR),true,'LID carregado na segunda tentativa');
   } finally {Date.now=realDateNow;}
 });
+
+test('sem o vínculo LID gravado: /historico e /arquivar acham o contato, /responder não envia',async()=>{
+  const integ=freshIntegration();
+  await integ.setWhatsappInbound(createWhatsappInbound({records:fakeRecords()}),{operator:OPERATOR});
+  const sent=[];const request=async(_,opts)=>{sent.push(opts.data);return {key:{id:'ok'}};};
+  const asked=[];
+  const store={history:async n=>{asked.push(['historico',n]);return [];},archive:async n=>{asked.push(['arquivar',n]);return true;},appendEvent:async()=>{}};
+  const cmd=(id,text)=>({data:{key:{id,fromMe:false,remoteJid:OPERATOR+'@s.whatsapp.net'},message:{conversation:text},pushName:'Kleuber'}});
+  const opts={operator:OPERATOR,url:'https://example.invalid',key:'k',store,request};
+  await integ.handleWhatsappOperatorCommand(cmd('H1','/historico 115375790358554'),'LEX',opts);
+  await integ.handleWhatsappOperatorCommand(cmd('A1','/arquivar 115375790358554'),'LEX',opts);
+  assert.deepEqual(asked,[['historico','115375790358554'],['arquivar','115375790358554']]);
+  sent.length=0;
+  await integ.handleWhatsappOperatorCommand(cmd('R1','/responder 115375790358554 oi'),'LEX',opts);
+  assert.equal(sent.length,1);assert.equal(sent[0].number,OPERATOR);assert.match(sent[0].text,/Número inválido/);
+});
