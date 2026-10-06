@@ -115,3 +115,19 @@ test('teto só vale com o provedor que tem preço conferido; aviso não se repet
   await g2.verificar();await g2.verificar();
   assert.equal(avisos.length,1);
 });
+
+// CodeRabbit, PR #158.
+test('custo ilegível no registro não libera a IA pausada pelo teto',async()=>{
+  const env={LEX_IA_TETO_MENSAL_USD:'10',LEX_IA_TETO_MODO:'bloqueio'};let resumo={total:{custo_usd:12}};
+  const g=createAiBudgetGuard({summary:async()=>resumo,env,notify:async()=>true,log:()=>{}});
+  await g.verificar();assert.equal(env.LEX_AI_NO_CREDIT,'1');
+  resumo={total:{custo_usd:'abc'}};
+  assert.equal((await g.verificar()).acao,'consumo_indisponivel');
+  assert.equal(env.LEX_AI_NO_CREDIT,'1','continua pausada');
+});
+
+test('respostas do LEX vivo distinguem teto de falta de crédito e dizem como liberar',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'..','lex_agente_vivo.js'),'utf8');
+  assert.equal((src.match(/ia_estado:process\.env\.LEX_AI_SEM_IA_MOTIVO==='teto'\?'teto_atingido':'sem_credito'/g)||[]).length,2);
+  assert.match(src,/aguarde o próximo mês, aumente o teto/);
+});
