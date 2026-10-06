@@ -797,6 +797,9 @@ setWhatsappInbound(whatsappInbound).catch(e=>console.warn('[WhatsApp Entrada] '+
 require('./lib/channel-delivery').setWhatsappTargetResolver(id=>whatsappInbound.lidTargetFor(id));
 // Consumo de IA por escritório/mês gravado no banco de registros (rota /api/ia/consumo).
 configureAiUsage({records:recordStore});
+// Mensagens AUTOMÁTICAS no WhatsApp (lembretes ao cliente) saem com ritmo: janela de horário,
+// teto diário e intervalo entre envios (lib/whatsapp-pacing.js). Conversa não passa aqui.
+const automaticWhatsapp = require('./lib/whatsapp-pacing').createAutomaticSender({records:recordStore,send:(numero,texto,opcoes)=>envWhatsApp(texto,numero,opcoes)});
 // Recepção inteligente dos canais: a IA escreve a conversa (modelo de canal, econômico)
 // dentro dos limites verificados em lib/reception-ai.js; a decisão continua do código.
 // `ia` e `aiAvailable` são definidos mais abaixo; o compositor só os chama em tempo de execução.
@@ -5426,12 +5429,48 @@ async function _transcreverAudioWhisper(buffer, mimeType, nomeArquivo) {
   });
 }
 
+// Lembrete ao cliente: no WhatsApp passa pelo ritmo das automáticas; sem envio confirmado o
+// lembrete não é marcado como enviado e volta na próxima rodada.
+// Envio sem confirmação não é repetido antes de 20 h (a mensagem pode ter saído e a
+// confirmação se perdido): nada de lembrete em dobro de hora em hora.
+async function _lembreteAutomatico(c, texto) {
+  const ultimaTentativa = Date.parse(c.lembrete_tentado_em || '') || 0;
+  if(Date.now() - ultimaTentativa < 20 * 3600000) return false;
+  if((c.canal || 'telegram') !== 'whatsapp') {
+    const ok = await env(texto, { canal: c.canal || 'telegram', chatId: c.chat_id, numero: null });
+    if(!ok) c.lembrete_tentado_em = _agoraIso();
+    return ok;
+  }
+  const r = await automaticWhatsapp.enviar(c.chat_id, texto, { podeEnviar: () => whatsappAutomaticAllowed(c.chat_id) });
+  if(r.enviado) { try { _registrarMsgCentral('whatsapp', 'saida', c.chat_id, 'Lex', String(texto).substring(0,300)); } catch(e){} }
+  else {
+    if(r.tentado) c.lembrete_tentado_em = _agoraIso();
+    console.log('[followup] lembrete adiado ('+(c.nome||c.chat_id)+'): '+r.motivo);
+  }
+  return r.enviado === true;
+}
+
+let _followupClientesEmCurso = false;
 async function _executarFollowupClientesPendentes() {
+  // Com o ritmo das automáticas a rodada pode demorar; nunca duas ao mesmo tempo.
+  if(_followupClientesEmCurso) return;
+  _followupClientesEmCurso = true;
   try {
     const rows = await sbGet('clientes_pendentes', {}, { limit: 300, order: 'atualizado_em.desc' });
     const agora = Date.now();
     for(const c of rows || []) {
       if(!c || c.status === 'convertido') continue;
+      // A rodada pode levar minutos (ritmo das automáticas): relê o cliente agora, para não
+      // agir nem gravar por cima com dados velhos (ex.: já respondeu ou virou cliente).
+      // Leitura falhou ou o cliente sumiu (descartado nesse meio tempo): pula, sem enviar nem
+      // gravar a cópia velha (gravar recriaria o cadastro apagado).
+      if(c.chat_id) {
+        let atual = null;
+        try { atual = (await sbGet('clientes_pendentes', { chat_id: String(c.chat_id) }, { limit: 1 }))[0] || null; } catch(e) { atual = null; }
+        if(!atual) continue;
+        Object.assign(c, atual);
+        if(c.status === 'convertido') continue;
+      }
       // Lembretes ao cliente são mensagens automáticas: não saem para quem pediu para parar.
       const podeLembrar = c.canal !== 'whatsapp' || await whatsappAutomaticAllowed(c.chat_id);
       const primeiro = new Date(c.data_primeiro_contato || c.criado_em || c.ultimo_contato || _agoraIso()).getTime();
@@ -5453,25 +5492,20 @@ async function _executarFollowupClientesPendentes() {
         const docsPend = Array.isArray(c.campos_verificar) && c.campos_verificar.length
           ? c.campos_verificar.slice(0,6).join(', ')
           : (String(c.docs_faltantes || c.docsPendentes || '').trim() || 'documentos pendentes do caso');
-        await env(
-          'Lembrete de documentação: seguimos aguardando os documentos para avançar no seu caso ('+nomeProc+'). Pendências: '+docsPend+'.',
-          { canal: c.canal || 'telegram', chatId: c.chat_id, numero: c.canal==='whatsapp' ? c.chat_id : null }
-        );
-        c.lembrete_docs_10d_enviado = true;
+        if(await _lembreteAutomatico(c,
+          'Lembrete de documentação: seguimos aguardando os documentos para avançar no seu caso ('+nomeProc+'). Pendências: '+docsPend+'.'))
+          c.lembrete_docs_10d_enviado = true;
       } else if(diffH >= 48 && !c.lembrete_48h_enviado && podeLembrar) {
-        await env('Passando para reforçar: quando puder, me envie os dados/documentos pendentes para eu concluir seu atendimento jurídico 😊', {
-          canal: c.canal || 'telegram', chatId: c.chat_id, numero: c.canal==='whatsapp' ? c.chat_id : null
-        });
-        c.lembrete_48h_enviado = true;
+        if(await _lembreteAutomatico(c, 'Passando para reforçar: quando puder, me envie os dados/documentos pendentes para eu concluir seu atendimento jurídico 😊'))
+          c.lembrete_48h_enviado = true;
       } else if(diffH >= 24 && !c.lembrete_24h_enviado && podeLembrar) {
-        await env('Oi! Só lembrando do seu atendimento jurídico. Assim que puder, me responda por aqui que eu sigo com sua triagem.', {
-          canal: c.canal || 'telegram', chatId: c.chat_id, numero: c.canal==='whatsapp' ? c.chat_id : null
-        });
-        c.lembrete_24h_enviado = true;
+        if(await _lembreteAutomatico(c, 'Oi! Só lembrando do seu atendimento jurídico. Assim que puder, me responda por aqui que eu sigo com sua triagem.'))
+          c.lembrete_24h_enviado = true;
       }
       await _salvarPerfilCliente(c);
     }
   } catch(e) { console.warn('[followup] erro:', e.message); }
+  finally { _followupClientesEmCurso = false; }
 }
 
 async function _enviarEmailBackupDB(info) {
