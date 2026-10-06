@@ -98,7 +98,7 @@ test('httpsPost do servidor mede toda chamada de IA e devolve a resposta intacta
     aiAdmission:{run:fn=>fn()},
     _httpsPostRequest:async()=>{if(fail)throw new Error('rede');return resposta;},
     recordAiResponse:x=>calls.push(x),
-    currentAiPonto:()=>null
+    currentAiPonto:()=>null,aiBloqueadaPorTeto:()=>false,erroTetoAtingido:()=>new Error('teto')
   });
   vm.runInContext(src.slice(a,b)+';this.httpsPost=httpsPost;',c);
   const r=await c.httpsPost('api.anthropic.com','/v1/messages',{model:'claude-opus-5'},{},{ponto:'lex_vivo'});
@@ -189,7 +189,7 @@ test('fila local cheia (LEX_AI_BUSY) não conta como chamada ao provedor',async(
   const src=fs.readFileSync(path.join(ROOT,'bot.js'),'utf8');
   const calls=[];
   const c=vm.createContext({aiAdmission:{run:()=>Promise.reject(Object.assign(new Error('ocupado'),{code:'LEX_AI_BUSY'}))},
-    _httpsPostRequest:async()=>({}),recordAiResponse:x=>calls.push(x),currentAiPonto:()=>null});
+    _httpsPostRequest:async()=>({}),recordAiResponse:x=>calls.push(x),currentAiPonto:()=>null,aiBloqueadaPorTeto:()=>false,erroTetoAtingido:()=>new Error('teto')});
   vm.runInContext(src.slice(src.indexOf('const AI_HOSTS = '),src.indexOf('function _httpsPostRequest('))+';this.httpsPost=httpsPost;',c);
   await assert.rejects(c.httpsPost('api.anthropic.com','/v1/messages',{model:'m'},{}),/ocupado/);
   assert.equal(calls.length,0);

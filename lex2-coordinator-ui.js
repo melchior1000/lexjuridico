@@ -159,7 +159,8 @@ async function refreshOperationalStatus(){
     const total=Number(d?.contagens?.total??procs().length);
     const pending=(d?.tarefas||[]).filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;
     const ai=d?.ia_estado||((d?.ia_configurada===true)?'disponivel':'sem_chave');
-    const aiText=ai==='sem_credito'?'IA jurídica sem crédito: análise, redação, perfil do magistrado e jurisprudência estão pausados; banco e rotinas operacionais continuam funcionando.'
+    const aiText=ai==='teto_atingido'?'IA jurídica pausada: o escritório atingiu o teto de gasto de IA deste mês. Banco e rotinas operacionais continuam funcionando.'
+      :ai==='sem_credito'?'IA jurídica sem crédito: análise, redação, perfil do magistrado e jurisprudência estão pausados; banco e rotinas operacionais continuam funcionando.'
       :ai==='disponivel'?'IA jurídica disponível para os especialistas que precisam dela.'
       :'IA jurídica sem chave ativa: banco e rotinas operacionais continuam funcionando.';
     box.innerHTML='<b>LEX operacional</b><span>'+esc(total)+' processo'+(total===1?'':'s')+' no banco · '+esc(pending)+' pendência'+(pending===1?'':'s')+' de tarefa. '+esc(aiText)+'</span>';
