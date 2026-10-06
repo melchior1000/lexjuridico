@@ -68,7 +68,7 @@ async function tratarRota(req, res, url, deps) {
     const specialist=specializedIntent(body.mensagem);
     if(process.env.LEX_AI_NO_CREDIT==='1'&&specialist){
       const nome=specialist==='julgador'?'Perfil / padrão decisório do magistrado':'Pesquisa de jurisprudência';
-      jsonResponse(res,200,{ok:true,texto:nome+' está pausado porque o provedor de IA está sem crédito. O processo permanece intacto no banco. Posso continuar com atualização de fontes conectadas, prazos, cadastro, mensagens e demais rotinas operacionais.',ia_estado:'sem_credito',especialista:specialist},nextDeps.CORS);
+      jsonResponse(res,200,{ok:true,texto:nome+' está pausado porque '+(process.env.LEX_AI_SEM_IA_MOTIVO==='teto'?'o escritório atingiu o teto de gasto de IA deste mês':'o provedor de IA está sem crédito')+'. O processo permanece intacto no banco. Posso continuar com atualização de fontes conectadas, prazos, cadastro, mensagens e demais rotinas operacionais.',ia_estado:process.env.LEX_AI_SEM_IA_MOTIVO==='teto'?'teto_atingido':'sem_credito',especialista:specialist},nextDeps.CORS);
       return true;
     }
     if(specialist==='jurisprudencia'){
@@ -129,7 +129,7 @@ async function tratarRota(req, res, url, deps) {
   }
 
   if(cleanUrl==='/api/vivo/conversar'&&req&&req.method==='POST'&&process.env.LEX_AI_NO_CREDIT==='1'){
-    jsonResponse(res,200,{ok:true,texto:'A IA jurídica está sem crédito neste momento. O LEX continua operacional para banco de processos, cadastro, prazos, mensagens, fontes já conectadas e movimentação do escritório. Para análise jurídica livre, redação, jurisprudência, perícia analítica ou perfil do magistrado, recarregue o provedor e repita a ordem.',ia_estado:'sem_credito'},nextDeps.CORS);
+    jsonResponse(res,200,{ok:true,texto:(process.env.LEX_AI_SEM_IA_MOTIVO==='teto'?'A IA jurídica está pausada: o escritório atingiu o teto de gasto de IA deste mês.':'A IA jurídica está sem crédito neste momento.')+' O LEX continua operacional para banco de processos, cadastro, prazos, mensagens, fontes já conectadas e movimentação do escritório. Para análise jurídica livre, redação, jurisprudência, perícia analítica ou perfil do magistrado, '+(process.env.LEX_AI_SEM_IA_MOTIVO==='teto'?'aguarde o próximo mês, aumente o teto (LEX_IA_TETO_MENSAL_USD) ou volte o modo para aviso (LEX_IA_TETO_MODO)':'recarregue o provedor')+' e repita a ordem.',ia_estado:process.env.LEX_AI_SEM_IA_MOTIVO==='teto'?'teto_atingido':'sem_credito'},nextDeps.CORS);
     return true;
   }
 

@@ -114,6 +114,7 @@ const {createTelegramPoller} = require('./lib/telegram-poller');
 const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound, whatsappAutomaticAllowed} = require('./lib/integration-status');
 const {createWhatsappInbound} = require('./lib/whatsapp-inbound');
 const {configureAiUsage, recordAiResponse, aiUsageSummary, currentAiPonto, runWithAiPonto} = require('./lib/ai-usage');
+const {aiBloqueadaPorTeto, erroTetoAtingido} = require('./lib/ai-budget');
 const JSZip = require('jszip');
 const CRYPTO = require('crypto');
 const fs = require('fs');
@@ -797,6 +798,9 @@ setWhatsappInbound(whatsappInbound).catch(e=>console.warn('[WhatsApp Entrada] '+
 require('./lib/channel-delivery').setWhatsappTargetResolver(id=>whatsappInbound.lidTargetFor(id));
 // Consumo de IA por escritório/mês gravado no banco de registros (rota /api/ia/consumo).
 configureAiUsage({records:recordStore});
+// Teto de gasto de IA do mês (LEX_IA_TETO_MENSAL_USD / LEX_IA_TETO_MODO): avisa a 80% e 100%;
+// no modo bloqueio liga o modo sem IA já existente até o próximo mês ou até o teto subir.
+const aiBudget = require('./lib/ai-budget').createAiBudgetGuard({summary:mes=>aiUsageSummary(mes),records:recordStore,notify:text=>avisarTitular(text),provider:()=>IA_PROVIDER});
 // Mensagens AUTOMÁTICAS no WhatsApp (lembretes ao cliente) saem com ritmo: janela de horário,
 // teto diário e intervalo entre envios (lib/whatsapp-pacing.js). Conversa não passa aqui.
 const automaticWhatsapp = require('./lib/whatsapp-pacing').createAutomaticSender({records:recordStore,send:(numero,texto,opcoes)=>envWhatsApp(texto,numero,opcoes)});
@@ -827,7 +831,9 @@ const telegramReception = createTelegramReception({records:recordStore,owner:CHA
     return tg;
   }});
 const notificationDigest = new NotificationDigest(recordStore,(...args)=>envTelegram(...args));
-const aiAvailable=()=>!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
+// Com a IA pausada pelo teto do mês, nenhuma parte do LEX conta com ela (tarefas esperam,
+// recepção usa as frases fixas).
+const aiAvailable=()=>!aiBloqueadaPorTeto()&&!!(IA_PROVIDER==='openai'?OPENAI_API_KEY:IA_PROVIDER==='google'?GOOGLE_API_KEY:AK);
 // Guarda do crédito da IA: recusa por falta de crédito liga sozinho o modo sem IA
 // (LEX_AI_NO_CREDIT), avisa o titular uma vez e, a cada 30 min, testa se o crédito voltou.
 const {createCreditGuard,mensagemSemIA}=require('./lib/ai-credit');
@@ -1380,6 +1386,8 @@ function httpsPost(host, path, data, headers, opts={}) {
   const execute = () => _httpsPostRequest(host, path, data, headers);
   if(!AI_HOSTS.includes(host)) return execute();
   const ponto = opts.ponto || currentAiPonto() || 'ia_geral';
+  // IA pausada pelo teto do mês: nada sai para o provedor (só a sonda de crédito, sem custo).
+  if(aiBloqueadaPorTeto() && ponto !== 'teste_credito') return Promise.reject(erroTetoAtingido());
   return aiAdmission.run(execute).then(
     r => { recordAiResponse({host, path, model:data?.model, response:r, ponto}); return r; },
     e => { if(e?.code!=='LEX_AI_BUSY') recordAiResponse({host, path, model:data?.model, error:e, ponto}); throw e; }); // fila local cheia não é chamada ao provedor
@@ -5408,6 +5416,7 @@ async function _transcreverAudioWhisper(buffer, mimeType, nomeArquivo) {
     'Content-Type: '+(mimeType||'audio/ogg')+'\r\n\r\n';
   const tail = '\r\n--'+boundary+'--\r\n';
   const body = Buffer.concat([Buffer.from(head, 'utf8'), buffer, Buffer.from(tail, 'utf8')]);
+  if(aiBloqueadaPorTeto()) return { ok:false, texto:'', erro:'ia_pausada_teto' };
   return await new Promise((resolve) => {
     const req = https.request({
       hostname: 'api.openai.com',
@@ -10617,7 +10626,7 @@ const server = http.createServer(async (req, res) => {
     if(validarToken(getToken(req))!=='admin'){res.writeHead(403,CORS);res.end(JSON.stringify({error:'Acesso de administrador necessário'}));return;}
     const mes=new URL(req.url,'http://lex').searchParams.get('mes')||undefined;
     if(mes&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)){res.writeHead(400,CORS);res.end(JSON.stringify({error:'Mês inválido. Use AAAA-MM.'}));return;}
-    try{const consumo=await aiUsageSummary(mes);res.writeHead(200,CORS);res.end(JSON.stringify({ok:true,consumo,aviso:'Custo estimado pela tabela oficial de preços na data indicada; a fatura da Anthropic prevalece.'}));}
+    try{const consumo=await aiUsageSummary(mes);res.writeHead(200,CORS);res.end(JSON.stringify({ok:true,consumo,teto:aiBudget.estado(),aviso:'Custo estimado pela tabela oficial de preços na data indicada; a fatura da Anthropic prevalece.'}));}
     catch(e){res.writeHead(503,CORS);res.end(JSON.stringify({error:'Consumo de IA indisponível agora.'}));}
     return;
   }
@@ -13256,6 +13265,8 @@ async function _executarCicloAlertas() {
 
 setTimeout(_executarCicloAlertas, 2*60*1000);
 setInterval(_executarFollowupClientesPendentes, 60*60*1000);
+setInterval(()=>{ aiBudget.verificar().catch(e=>console.warn('[IA teto] '+(e?.message||e))); }, 5*60*1000);
+setTimeout(()=>{ aiBudget.verificar().catch(()=>{}); }, 60*1000);
 setInterval(()=>{ receptionRadar.executar().catch(e=>console.warn('[Radar recepção] '+(e?.message||e))); }, 30*60*1000);
 setTimeout(()=>{ _executarFollowupClientesPendentes().catch(()=>{}); }, 3*60*1000);
 setInterval(_monitorarCapacidadeDB, 6*60*60*1000);

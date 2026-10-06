@@ -21,6 +21,7 @@
 
 'use strict';
 const { recordAiResponse, currentAiPonto } = require('./lib/ai-usage');
+const { aiBloqueadaPorTeto, erroTetoAtingido } = require('./lib/ai-budget');
 const { rowsFromResult } = require('./lib/supabase');
 const { withProcessLock } = require('./lib/process-lock');
 const { hojeBrasil } = require('./lib/data-brasil');
@@ -555,6 +556,8 @@ function chamarAnthropicRequest(ANTHROPIC_KEY, httpsMod, payload) {
   return new Promise((resolve, reject) => {
     try {
       if (!ANTHROPIC_KEY) return reject(new Error('ANTHROPIC_KEY ausente'));
+      // IA pausada pelo teto de gasto do mês (lib/ai-budget.js): nada sai para o provedor.
+      if (aiBloqueadaPorTeto()) return reject(erroTetoAtingido());
       const body = JSON.stringify(payload);
       const opts = {
         hostname: 'api.anthropic.com',
