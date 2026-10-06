@@ -144,6 +144,9 @@ test('migração nova é idempotente',async()=>{
   const db=await ready();
   const sql=fs.readFileSync(path.join(MIGRATIONS,'20260924120000_tenantize_remaining_tables.sql'),'utf8');
   await db.exec(sql);
+  // Reaplicar a migração de 24/09 sozinha não devolve à auditoria o direito de alterar/apagar.
+  const {rows}=await db.query(`select grantee, privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='auditoria' and grantee in ('lex_backend','lex_runtime','service_role') and privilege_type in ('UPDATE','DELETE','TRUNCATE')`);
+  assert.deepEqual(rows,[]);
 });
 
 // 06/10/2026 — Varredura de completude (ideia do DeskcommCRM, tests/invariants/
@@ -162,13 +165,25 @@ test('varredura: toda tabela tem RLS forçada e regra exata; tabela nova sem mur
   const db=await ready();
   const {rows:tabelas}=await db.query(`select c.relname, c.relrowsecurity rls, c.relforcerowsecurity forcada,
     exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.relname and k.column_name='escritorio_id') tem_escritorio
-    from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'`);
+    from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p')`);
+  // View roda como o dono (passa por cima da RLS) a não ser com security_invoker.
+  const {rows:views}=await db.query(`select c.relname, coalesce(c.reloptions,'{}') opcoes from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relkind in ('v','m')`);
+  for(const v of views) assert.ok(v.opcoes.includes('security_invoker=true'),'view '+v.relname+' sem security_invoker fura a muralha');
+  // Função SECURITY DEFINER executável pelo servidor também roda como o dono.
+  const {rows:definers}=await db.query(`select n.nspname||'.'||p.proname nome from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where p.prosecdef and n.nspname in ('public','lex_security') and has_function_privilege('lex_backend',p.oid,'EXECUTE')`);
+  assert.deepEqual(definers,[],'função SECURITY DEFINER executável pelo servidor: revise antes de liberar');
   const {rows:politicas}=await db.query(`select tablename, policyname, qual, with_check from pg_policies where schemaname='public'`);
   for(const t of tabelas){
     assert.ok(t.rls&&t.forcada,t.relname+': RLS precisa estar ligada e forçada');
     const minhas=politicas.filter(p=>p.tablename===t.relname);
     if(EXCECOES[t.relname]){
-      if(t.relname==='escritorios') assert.deepEqual(minhas.map(p=>p.qual),[POLITICA_ESCRITORIOS]);
+      if(t.relname==='escritorios'){
+        assert.equal(minhas.length,1,'escritorios: uma política só');
+        assert.equal(minhas[0].qual,POLITICA_ESCRITORIOS);
+        assert.ok(minhas[0].with_check===null||minhas[0].with_check===POLITICA_ESCRITORIOS,'escritorios: gravação só na própria linha');
+      }
       else assert.equal(minhas.length,0,t.relname+': exceção sem política não pode ganhar regra sem revisão');
       continue;
     }

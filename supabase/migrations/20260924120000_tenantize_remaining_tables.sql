@@ -40,7 +40,13 @@ begin
     end if;
     execute format('create index if not exists %I on public.%I(escritorio_id)', t||'_escritorio_id_idx', t);
 
-    execute format('grant select, insert, update, delete on public.%I to lex_backend', t);
+    -- auditoria só aceita inclusão (20261006120000): reaplicar esta migração não pode
+    -- devolver o direito de alterar ou apagar registro.
+    if t = 'auditoria' then
+      execute format('grant select, insert on public.%I to lex_backend', t);
+    else
+      execute format('grant select, insert, update, delete on public.%I to lex_backend', t);
+    end if;
     execute format('alter table public.%I enable row level security', t);
     execute format('alter table public.%I force row level security', t);
     execute format('drop policy if exists lex_backend_tenant on public.%I', t);

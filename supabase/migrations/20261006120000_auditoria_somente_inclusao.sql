@@ -10,4 +10,5 @@ begin
       execute format('revoke update, delete, truncate on table public.auditoria from %I', r);
     end if;
   end loop;
+  revoke update, delete, truncate on table public.auditoria from public;
 end $$;
