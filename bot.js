@@ -803,7 +803,9 @@ const automaticWhatsapp = require('./lib/whatsapp-pacing').createAutomaticSender
 // Radar da recepção: quem espera resposta do escritório há mais de 4 h vira aviso ao titular,
 // calculado do histórico gravado (sobrevive a reinício). Só no horário de trabalho.
 const receptionRadar = require('./lib/reception-radar').createReceptionRadarAlerts({records:recordStore,
-  store:require('./lib/whatsapp-reception-store').createReceptionStore(),notify:text=>avisarTitular(text),
+  store:require('./lib/whatsapp-reception-store').createReceptionStore(),
+  // Um controle por canal do titular: falha num não se perde no outro.
+  canais:()=>({...(CHAT_ID?{telegram:text=>envTelegram(text,null,CHAT_ID)}:{}),...(process.env.LEX_OPERATOR_WHATSAPP?{whatsapp:text=>envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP)}:{})}),
   dentroDoHorario:agora=>require('./lib/whatsapp-pacing').dentroDaJanela(agora,require('./lib/whatsapp-pacing').configFromEnv())});
 // Recepção inteligente dos canais: a IA escreve a conversa (modelo de canal, econômico)
 // dentro dos limites verificados em lib/reception-ai.js; a decisão continua do código.

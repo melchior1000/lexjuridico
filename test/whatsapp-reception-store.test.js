@@ -60,3 +60,17 @@ test('list usa cursor por numero para paginação estável',async()=>{
   assert.equal(query.limit,'100');
   assert.equal(query.offset,undefined);
 });
+
+// CodeRabbit, PR #157: arquivo e marca no histórico valem juntos.
+test('arquivar sem conseguir gravar a marca no histórico desfaz o arquivamento',async()=>{
+  let row={numero:'5561988888888',status:'aguardando_advogado'};const calls=[];
+  const request=async(method,table,data,query)=>{
+    calls.push({method,table,data});
+    if(method==='POST'&&table==='whatsapp_recepcao_eventos')return {ok:false,status:503,body:null};
+    if(method==='PATCH'){row={...row,...data};return {ok:true,status:200,body:[row]};}
+    return {ok:true,status:200,body:[]};
+  };
+  const store=createReceptionStore({request});
+  await assert.rejects(store.archive('5561988888888'));
+  assert.equal(row.status,'aguardando_advogado','continua na fila');
+});
