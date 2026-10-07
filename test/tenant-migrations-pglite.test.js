@@ -172,7 +172,8 @@ test('varredura: toda tabela tem RLS forçada e regra exata; tabela nova sem mur
   for(const v of views) assert.ok(v.opcoes.includes('security_invoker=true'),'view '+v.relname+' sem security_invoker fura a muralha');
   // Função SECURITY DEFINER executável pelo servidor também roda como o dono.
   const {rows:definers}=await db.query(`select n.nspname||'.'||p.proname nome from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where p.prosecdef and n.nspname in ('public','lex_security') and has_function_privilege('lex_backend',p.oid,'EXECUTE')`);
+    where p.prosecdef and n.nspname in ('public','lex_security')
+      and (has_function_privilege('lex_backend',p.oid,'EXECUTE') or has_function_privilege('lex_runtime',p.oid,'EXECUTE'))`);
   assert.deepEqual(definers,[],'função SECURITY DEFINER executável pelo servidor: revise antes de liberar');
   const {rows:politicas}=await db.query(`select tablename, policyname, qual, with_check from pg_policies where schemaname='public'`);
   for(const t of tabelas){
@@ -223,4 +224,10 @@ test('auditoria só aceita inclusão: o servidor não altera nem apaga registro'
   await db.exec('reset role;');
   const {rows}=await db.query(`select privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='auditoria' and grantee in ('service_role','lex_backend','lex_runtime') and privilege_type in ('UPDATE','DELETE','TRUNCATE')`);
   assert.deepEqual(rows,[],'nem a chave service_role altera auditoria');
+});
+
+test('migração da auditoria não falha em banco sem a tabela',async()=>{
+  const db=new PGlite({extensions:{pgcrypto}});
+  await db.exec(`create role lex_backend; create role service_role;`);
+  await db.exec(fs.readFileSync(path.join(MIGRATIONS,'20261006120000_auditoria_somente_inclusao.sql'),'utf8'));
 });

@@ -5,6 +5,8 @@
 do $$
 declare r text;
 begin
+  -- Sem a tabela (instalação que nunca a teve), não há o que revogar.
+  if to_regclass('public.auditoria') is null then return; end if;
   foreach r in array array['lex_backend','lex_runtime','service_role','authenticated','anon'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('revoke update, delete, truncate on table public.auditoria from %I', r);

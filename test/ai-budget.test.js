@@ -131,3 +131,26 @@ test('respostas do LEX vivo distinguem teto de falta de crédito e dizem como li
   assert.equal((src.match(/ia_estado:process\.env\.LEX_AI_SEM_IA_MOTIVO==='teto'\?'teto_atingido':'sem_credito'/g)||[]).length,2);
   assert.match(src,/aguarde o próximo mês, aumente o teto/);
 });
+
+// CodeRabbit, PR #159.
+test('teto atingido durante pausa por falta de crédito: a volta do crédito não libera a IA',async()=>{
+  const env={LEX_AI_NO_CREDIT:'1',LEX_IA_TETO_MENSAL_USD:'10',LEX_IA_TETO_MODO:'bloqueio'};
+  const {aiBloqueadaPorTeto}=require('../lib/ai-budget');
+  const g=createAiBudgetGuard({summary:consumo(12),env,notify:async()=>true,log:()=>{}});
+  await g.verificar();
+  assert.equal(env.LEX_AI_SEM_IA_MOTIVO,'teto','motivo do teto marcado');
+  delete env.LEX_AI_NO_CREDIT; // a sonda de crédito desliga a pausa dela
+  assert.equal(aiBloqueadaPorTeto(env),true,'a trava do teto continua');
+  await g.verificar();
+  assert.equal(env.LEX_AI_NO_CREDIT,'1','modo sem IA religado pelo teto');
+});
+
+test('pausa por crédito anterior ao teto não é desligada quando o teto libera',async()=>{
+  const env={LEX_AI_NO_CREDIT:'1',LEX_IA_TETO_MENSAL_USD:'10',LEX_IA_TETO_MODO:'bloqueio'};let gasto=12;
+  const g=createAiBudgetGuard({summary:async()=>({total:{custo_usd:gasto}}),env,notify:async()=>true,log:()=>{}});
+  await g.verificar();
+  env.LEX_IA_TETO_MENSAL_USD='20';
+  await g.verificar();
+  assert.equal(env.LEX_AI_SEM_IA_MOTIVO,undefined);
+  assert.equal(env.LEX_AI_NO_CREDIT,'1','a pausa por crédito continua');
+});
