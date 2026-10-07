@@ -22,6 +22,8 @@
 const crypto=require('node:crypto');
 const fs=require('node:fs');
 const {TENANT_TABLES}=require('../lib/supabase');
+// Tabelas em que o servidor só pode incluir (migração 20261006120000).
+const SOMENTE_INCLUSAO=new Set(['auditoria']);
 
 function args(argv){const o={manter:false,json:null};for(let i=0;i<argv.length;i++){if(argv[i]==='--manter')o.manter=true;else if(argv[i]==='--json')o.json=argv[++i]}return o}
 
@@ -60,15 +62,22 @@ async function homologar({admin,run,manter=false,log=console.log,error=console.e
         const bSeesA=(await as(B,`select count(*)::int as n from public.${table} where escritorio_id=$1`,[A])).rows[0].n;
         const aSeesB=(await as(A,`select count(*)::int as n from public.${table} where escritorio_id=$1`,[B])).rows[0].n;
         rec.leitura_cruzada=Number(bSeesA)===0&&Number(aSeesB)===0;if(!rec.leitura_cruzada)fail(table,`leitura cruzada: B viu ${bSeesA} de A, A viu ${aSeesB} de B`);
-        const upd=await as(B,`update public.${table} set escritorio_id=escritorio_id where escritorio_id=$1`,[A]);
+        // Tabela só de inclusão (auditoria): alterar/apagar TEM de ser recusado; em qualquer outra
+        // tabela, recusa de permissão é configuração quebrada (o app não conseguiria editar).
+        const somenteInclusao=SOMENTE_INCLUSAO.has(table);
+        const tentar=async sql=>{
+          try{const r=await as(B,sql,[A]);if(somenteInclusao)fail(table,'tabela só de inclusão aceitou alterar/apagar');return r}
+          catch(e){if(somenteInclusao&&/permission denied/i.test(e.message))return {rowCount:0,affectedRows:0};throw e}
+        };
+        const upd=await tentar(`update public.${table} set escritorio_id=escritorio_id where escritorio_id=$1`);
         rec.alteracao_cruzada=rc(upd)===0;if(!rec.alteracao_cruzada)fail(table,'B alterou '+rc(upd)+' linha(s) de A');
-        const del=await as(B,`delete from public.${table} where escritorio_id=$1`,[A]);
+        const del=await tentar(`delete from public.${table} where escritorio_id=$1`);
         rec.exclusao_cruzada=rc(del)===0;if(!rec.exclusao_cruzada)fail(table,'B apagou '+rc(del)+' linha(s) de A');
         // Ataque: a sessão de B tenta inserir uma linha com escritorio_id de A.
         try{await ins(B,mk(A,'intruso'));rec.gravacao_em_nome_do_outro=false;fail(table,'B inseriu linha com escritorio_id de A')}
         catch(e){rec.gravacao_em_nome_do_outro=/row-level security|imutavel|violates/i.test(e.message);if(!rec.gravacao_em_nome_do_outro)fail(table,'erro inesperado ao tentar gravar em nome de A: '+e.message)}
         try{const r=await as(B,`update public.${table} set escritorio_id=$1 where escritorio_id=$2`,[A,B]);rec.troca_de_escritorio=rc(r)===0;if(!rec.troca_de_escritorio)fail(table,'B moveu linha própria para A')}
-        catch(e){rec.troca_de_escritorio=/row-level security|imutavel|violates/i.test(e.message);if(!rec.troca_de_escritorio)fail(table,'erro inesperado ao tentar trocar de escritório: '+e.message)}
+        catch(e){rec.troca_de_escritorio=/row-level security|imutavel|violates/i.test(e.message)||(SOMENTE_INCLUSAO.has(table)&&/permission denied/i.test(e.message));if(!rec.troca_de_escritorio)fail(table,'erro inesperado ao tentar trocar de escritório: '+e.message)}
         const aStill=(await as(A,`select count(*)::int as n from public.${table} where escritorio_id=$1`,[A])).rows[0].n;
         if(Number(aStill)<1)fail(table,'A perdeu o próprio dado durante os ataques');
         if(rec.rls&&rec.leitura_cruzada&&rec.alteracao_cruzada&&rec.exclusao_cruzada&&rec.gravacao_em_nome_do_outro&&rec.troca_de_escritorio)ok(table,'isolado');

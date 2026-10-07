@@ -48,6 +48,7 @@ alfabética (os já aplicados não fazem nada — são idempotentes):
 5. `20260921034118_add_lex_runtime_role.sql` — role `lex_runtime` (sem BYPASSRLS).
 6. `20260921034444_tenantize_legacy_config.sql`
 7. `20260924120000_tenantize_remaining_tables.sql`
+8. `20261006120000_auditoria_somente_inclusao.sql` — auditoria só aceita inclusão (nem o servidor nem a chave `service_role` alteram ou apagam registro). Reaplicar migrações é sempre na ordem, até esta última. Depois de restaurar um backup (a tabela recriada recebe de novo os privilégios padrão do Supabase), rode esta migração outra vez.
 
 Depois, confira que nada se perdeu (mesmas contagens do passo 1, agora com `escritorio_id`):
 

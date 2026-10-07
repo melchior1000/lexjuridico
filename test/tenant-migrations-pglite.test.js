@@ -92,10 +92,16 @@ test('escritório B não lê, não altera e não apaga dado do A — em todas as
     await as(db,A,`insert into public.${table}(${keys.join(',')}) values (${keys.map((_,i)=>'$'+(i+1)).join(',')})`,Object.values(values));
     const seenByB=await as(db,B,`select count(*)::int as n from public.${table} where escritorio_id=$1`,[A]);
     assert.equal(seenByB.rows[0].n,0,table+': B leu dado de A');
-    const upd=await as(db,B,`update public.${table} set escritorio_id=escritorio_id where escritorio_id=$1`,[A]);
-    assert.equal(upd.affectedRows??0,0,table+': B alterou dado de A');
-    const del=await as(db,B,`delete from public.${table} where escritorio_id=$1`,[A]);
-    assert.equal(del.affectedRows??0,0,table+': B apagou dado de A');
+    if(table==='auditoria'){
+      // Auditoria só aceita inclusão: alterar ou apagar é recusado para qualquer escritório.
+      await assert.rejects(as(db,B,`update public.${table} set escritorio_id=escritorio_id where escritorio_id=$1`,[A]),/permission denied/);
+      await assert.rejects(as(db,B,`delete from public.${table} where escritorio_id=$1`,[A]),/permission denied/);
+    } else {
+      const upd=await as(db,B,`update public.${table} set escritorio_id=escritorio_id where escritorio_id=$1`,[A]);
+      assert.equal(upd.affectedRows??0,0,table+': B alterou dado de A');
+      const del=await as(db,B,`delete from public.${table} where escritorio_id=$1`,[A]);
+      assert.equal(del.affectedRows??0,0,table+': B apagou dado de A');
+    }
     const seenByA=await as(db,A,`select count(*)::int as n from public.${table}`);
     assert.ok(seenByA.rows[0].n>=1,table+': A perdeu o próprio dado');
   }
@@ -138,4 +144,90 @@ test('migração nova é idempotente',async()=>{
   const db=await ready();
   const sql=fs.readFileSync(path.join(MIGRATIONS,'20260924120000_tenantize_remaining_tables.sql'),'utf8');
   await db.exec(sql);
+  // Reaplicar a migração de 24/09 sozinha não devolve à auditoria o direito de alterar/apagar.
+  const {rows}=await db.query(`select grantee, privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='auditoria' and grantee in ('lex_backend','lex_runtime','service_role') and privilege_type in ('UPDATE','DELETE','TRUNCATE')`);
+  assert.deepEqual(rows,[]);
+});
+
+// 06/10/2026 — Varredura de completude (ideia do DeskcommCRM, tests/invariants/
+// rls-completude-varredura.test.ts — MIT): nenhuma tabela nova pode nascer sem muralha, e
+// nenhuma regra pode ser afrouxada (ex.: "... or true") sem o teste reprovar.
+const POLITICA_TENANT='(escritorio_id = lex_security.current_escritorio_id())';
+const POLITICA_ESCRITORIOS='(id = lex_security.current_escritorio_id())';
+// Tabelas sem escritorio_id ou sem política, cada uma com o motivo.
+const EXCECOES={
+  escritorios:'cadastro dos escritórios: cada um enxerga só a própria linha (id)',
+  usuarios:'sem política = ninguém do servidor lê (contas vivem em configuracoes, isoladas)',
+  escritorio_membros:'sem política = ninguém do servidor lê'
+};
+
+test('varredura: toda tabela tem RLS forçada e regra exata; tabela nova sem muralha reprova',async()=>{
+  const db=await ready();
+  const {rows:tabelas}=await db.query(`select c.relname, c.relrowsecurity rls, c.relforcerowsecurity forcada,
+    exists(select 1 from information_schema.columns k where k.table_schema='public' and k.table_name=c.relname and k.column_name='escritorio_id') tem_escritorio
+    from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p')`);
+  // View roda como o dono (passa por cima da RLS) a não ser com security_invoker.
+  const {rows:views}=await db.query(`select c.relname, coalesce(c.reloptions,'{}') opcoes from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relkind in ('v','m')`);
+  for(const v of views) assert.ok(v.opcoes.includes('security_invoker=true'),'view '+v.relname+' sem security_invoker fura a muralha');
+  // Função SECURITY DEFINER executável pelo servidor também roda como o dono.
+  const {rows:definers}=await db.query(`select n.nspname||'.'||p.proname nome from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where p.prosecdef and n.nspname in ('public','lex_security')
+      and (has_function_privilege('lex_backend',p.oid,'EXECUTE') or has_function_privilege('lex_runtime',p.oid,'EXECUTE'))`);
+  assert.deepEqual(definers,[],'função SECURITY DEFINER executável pelo servidor: revise antes de liberar');
+  const {rows:politicas}=await db.query(`select tablename, policyname, qual, with_check from pg_policies where schemaname='public'`);
+  for(const t of tabelas){
+    assert.ok(t.rls&&t.forcada,t.relname+': RLS precisa estar ligada e forçada');
+    const minhas=politicas.filter(p=>p.tablename===t.relname);
+    if(EXCECOES[t.relname]){
+      if(t.relname==='escritorios'){
+        assert.equal(minhas.length,1,'escritorios: uma política só');
+        assert.equal(minhas[0].qual,POLITICA_ESCRITORIOS);
+        assert.ok(minhas[0].with_check===null||minhas[0].with_check===POLITICA_ESCRITORIOS,'escritorios: gravação só na própria linha');
+      }
+      else assert.equal(minhas.length,0,t.relname+': exceção sem política não pode ganhar regra sem revisão');
+      continue;
+    }
+    assert.ok(t.tem_escritorio,t.relname+': tabela sem escritorio_id — isole ou declare em EXCECOES com o motivo');
+    assert.ok(TENANT_TABLES.has(t.relname),t.relname+': falta em TENANT_TABLES (lib/supabase.js)');
+    assert.ok(minhas.length>=1,t.relname+': sem política');
+    for(const p of minhas){
+      assert.equal(p.qual,POLITICA_TENANT,t.relname+'.'+p.policyname+': regra de leitura diferente da muralha');
+      assert.equal(p.with_check,POLITICA_TENANT,t.relname+'.'+p.policyname+': regra de gravação diferente da muralha');
+    }
+  }
+  for(const table of TENANT_TABLES) assert.ok(tabelas.some(t=>t.relname===table),table+' existe no esquema');
+});
+
+test('varredura pega regra afrouxada com "or true"',async()=>{
+  const db=new PGlite({extensions:{pgcrypto}});
+  await db.exec(LEGACY);
+  for(const file of fs.readdirSync(MIGRATIONS).filter(f=>f.endsWith('.sql')).sort())
+    await db.exec(fs.readFileSync(path.join(MIGRATIONS,file),'utf8'));
+  await db.exec(`drop policy lex_backend_tenant on public.contatos;
+    create policy lex_backend_tenant on public.contatos for all to lex_backend
+    using (escritorio_id = lex_security.current_escritorio_id() or true)
+    with check (escritorio_id = lex_security.current_escritorio_id());`);
+  const {rows}=await db.query(`select qual from pg_policies where schemaname='public' and tablename='contatos'`);
+  assert.notEqual(rows[0].qual,POLITICA_TENANT,'a sabotagem aparece no catálogo e reprovaria a varredura');
+});
+
+test('auditoria só aceita inclusão: o servidor não altera nem apaga registro',async()=>{
+  // Banco novo: o teste de idempotência acima reaplica uma migração antiga isoladamente.
+  // Reaplicar as migrações deve ser sempre na ordem, até a última (docs/HOMOLOGACAO_MULTI_ESCRITORIO.md).
+  const db=await database();
+  await as(db,A,`insert into public.auditoria(escritorio_id,evento) values ($1,'teste-somente-inclusao')`,[A]);
+  const lidos=await as(db,A,`select count(*)::int n from public.auditoria where evento='teste-somente-inclusao'`);
+  assert.equal(lidos.rows[0].n,1);
+  await assert.rejects(as(db,A,`update public.auditoria set evento='adulterado' where evento='teste-somente-inclusao'`),/permission denied/);
+  await assert.rejects(as(db,A,`delete from public.auditoria where evento='teste-somente-inclusao'`),/permission denied/);
+  await db.exec('reset role;');
+  const {rows}=await db.query(`select privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='auditoria' and grantee in ('service_role','lex_backend','lex_runtime') and privilege_type in ('UPDATE','DELETE','TRUNCATE')`);
+  assert.deepEqual(rows,[],'nem a chave service_role altera auditoria');
+});
+
+test('migração da auditoria não falha em banco sem a tabela',async()=>{
+  const db=new PGlite({extensions:{pgcrypto}});
+  await db.exec(`create role lex_backend; create role service_role;`);
+  await db.exec(fs.readFileSync(path.join(MIGRATIONS,'20261006120000_auditoria_somente_inclusao.sql'),'utf8'));
 });
