@@ -22,8 +22,7 @@ async function lexApi(path,options={}) {
 }
 function lexRefreshCurrent() {
   atualizarUrgentes();
-  // Com a tela nova de Tarefas disponível, atualiza por ela (o roteador), não pela antiga.
-  if(typeof pag!=='undefined' && pag==='trabalho'&&typeof window.lexTarefas!=='function') renderTrabalho();
+  if(typeof pag!=='undefined' && pag==='trabalho') renderTrabalho();
   else if(typeof ir==='function' && typeof pag!=='undefined') ir(pag,null);
 }
 function lexTaskCard(t) {

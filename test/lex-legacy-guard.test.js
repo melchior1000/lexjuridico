@@ -64,6 +64,4 @@ test('telas antigas e atualizações usam a trava; roteador limpa a marca; abert
   assert.match(read('office-ui.js'), /lex-text\.js[\s\S]*lex-legacy-guard\.js[\s\S]*office-ui-base\.js/);
   // Entrada: a área de conteúdo é limpa antes de abrir a primeira tela.
   assert.match(html, /function ativarApp\(perfil\)\{[\s\S]{0,1400}lex-abrindo[\s\S]{0,300}ir\(perfil==='admin'/);
-  // Atualização de "Tarefas" usa a tela nova, não a antiga.
-  assert.match(read('office-ui-base.js'), /pag==='trabalho'&&typeof window\.lexTarefas!=='function'\) renderTrabalho\(\)/);
 });

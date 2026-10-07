@@ -1393,7 +1393,7 @@ function getEscritorio(){
   }catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   return {nome:'',responsavel:'',registro:'',endereco:'',telefone:'',segmento:'juridico',configurado:false};
 }
-function setEscritorio(d){localStorage.setItem(EK,JSON.stringify({...d,configurado:true}));}
+function setEscritorio(d){localStorage.setItem(EK,JSON.stringify({...d,configurado:true}));try{if(globalThis.lexFixText&&lexFixText.aprenderDepois)lexFixText.aprenderDepois(d,'escritorio');}catch(e){}}
 function getNomeEscritorio(){return getEscritorio().nome||'Sistema de Gestão';}
 function getResponsavel(){return getEscritorio().responsavel||'';}
 function getRegistro(){return getEscritorio().registro||'';}
@@ -1505,6 +1505,7 @@ async function sincronizarComBot() {
       if(data.processos) {
         // Salva sem disparar nova sync (evita loop)
         try { localStorage.setItem(SK, JSON.stringify(data.processos)); } catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
+        try { if(globalThis.lexFixText&&lexFixText.aprenderDepois) lexFixText.aprenderDepois(data.processos,'processos'); } catch(e){}
         setVersaoLocal(data.servidorVersao);
         if(typeof atualizarUrgentes==='function') atualizarUrgentes();
         if(typeof renderPainel==='function') renderPainel();
@@ -1541,6 +1542,7 @@ async function verificarESincronizar() {
       const d2 = await r2.json();
       if(d2.processos) {
         try { localStorage.setItem(SK, JSON.stringify(d2.processos)); } catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
+        try { if(globalThis.lexFixText&&lexFixText.aprenderDepois) lexFixText.aprenderDepois(d2.processos,'processos'); } catch(e){}
         setVersaoLocal(d2.versao);
         if(typeof atualizarUrgentes==='function') atualizarUrgentes();
         if(typeof renderPainel==='function') renderPainel();
@@ -2992,7 +2994,7 @@ function ativarApp(perfil){
   try{document.getElementById('perfil-label').textContent=PERFIS[perfil]?.label||_perms.label||perfil;}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   iniciarPollingComandos();
   try{atualizarUrgentes();}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
-  try{ if(globalThis.lexFixText&&lexFixText.aprender) lexFixText.aprender([getProcs(),typeof getEscritorio==='function'?getEscritorio():null]); }catch(e){}
+  try{ if(globalThis.lexFixText&&lexFixText.aprender){ lexFixText.aprender(getProcs(),'processos'); if(typeof getEscritorio==='function') lexFixText.aprender(getEscritorio(),'escritorio'); } }catch(e){}
   // Limpa a área antes da primeira tela: nada de tela antiga piscando enquanto a nova carrega.
   try{const _c=document.getElementById('content');if(_c){_c.innerHTML='<main class="lex-screen lex-abrindo" aria-busy="true"><p style="padding:48px 16px;text-align:center;color:var(--text3)">Abrindo o escritório…</p></main>';if(typeof lexLimparLegado==='function')lexLimparLegado();}}catch(e){}
   try{ir(perfil==='admin'?'trabalho':'painel',null);}catch(e){document.getElementById('content').textContent='Não foi possível abrir a central. Recarregue a página.';}
@@ -3700,7 +3702,7 @@ function saveProcs(d){
   try{localStorage.setItem(SK,JSON.stringify(d));}
   catch(e){try{localStorage.removeItem(CK);localStorage.setItem(SK,JSON.stringify(d));}catch(e2){console.error('Lex erro crítico',e2);}}
   // Nomes acentuados escritos certo nos dados ajudam a recuperar os gravados quebrados (lex-text.js).
-  try{ if(globalThis.lexFixText&&lexFixText.aprender) setTimeout(()=>{try{lexFixText.aprender(d)}catch(e){}},0); }catch(e){}
+  try{ if(globalThis.lexFixText&&lexFixText.aprenderDepois) lexFixText.aprenderDepois(d,'processos'); }catch(e){}
   // Limpa mensagem do ciclo inteligente quando usuário salva
   if(typeof limparMsgCiclo==='function') setTimeout(limparMsgCiclo,200);
   clearTimeout(window._syncTimer);
@@ -8348,7 +8350,7 @@ async function _pDistrConfirm(id){
     const docs=await _pGtDocs(id);
     const caso={...c,setor:'autuacao',descricao:c.obs||c.descricao||'',preparacao:{...c},arquivos:docs};
     const data=await lexApi('/api/processo/distribuir',{method:'POST',body:JSON.stringify({caso,setor,numero})});
-    localStorage.setItem(SK,JSON.stringify(data.processos));setVersaoLocal(data.versao);
+    localStorage.setItem(SK,JSON.stringify(data.processos));setVersaoLocal(data.versao);try{if(globalThis.lexFixText&&lexFixText.aprenderDepois)lexFixText.aprenderDepois(data.processos,'processos');}catch(e){}
     savePrep(getPrep().filter(x=>String(x.id)!==String(id)));
     modal?.remove();atualizarUrgentes();ir('trabalho',null);toast('Distribuição confirmada. Contagens atualizadas.','ok');
   }catch(e){toast(e.message,'erro');}

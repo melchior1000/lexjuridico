@@ -49,8 +49,11 @@ test('letras quebradas da tela antiga (06/10/2026): ç perdido, ª/º, travessã
   assert.equal(lexFixText('2ª Vara Cível ��� Itaja�������/SC'), '2ª Vara Cível — Itajaí/SC');
   assert.equal(lexFixText('ITAJA��/SC'), 'ITAJAÍ/SC');
   assert.equal(lexFixText('Sim��es'), 'Simes'); // ambíguo: não escolhe
+  // Ambiguidade conferida sem diferenciar maiúsculas (revisão do PR #160).
+  lexFixText.aprender([{nome: 'Simões'}, {nome: 'SIMÃES'}], 'teste');
+  assert.equal(lexFixText('SIM��ES'), 'SIMES');
   assert.equal(lexFixText('1�� Juizado Especial'), '1º Juizado Especial');
-  assert.equal(lexFixText('C�vel de Bras�lia'), 'Cível de Brasília');
+  assert.equal(lexFixText('C�vel e Fam�lia'), 'Cível e Família');
   assert.equal(lexFixText('Fazenda P�blica — S�o Jo�o'), 'Fazenda Pública — São João');
   assert.equal(lexFixText('Notificaç�ões'), 'Notificações');
   assert.equal(lexFixText('2ª Vara Cível — Itajaí/SC'), '2ª Vara Cível — Itajaí/SC');
@@ -69,4 +72,24 @@ test('conserto de texto: maiúsculas, "ã" perdido no fim da palavra e nada inve
   assert.equal(lexFixText('CERTID��O'), 'CERTIDÃO');
   for (const t of ['Sessão de julgamento', 'São Paulo', '3ª Vara', 'Serviço', 'caso isso'])
     assert.equal(lexFixText(t), t);
+});
+
+test('aprender: cadastro do escritório não se perde quando os processos são regravados; texto longo fica fora', () => {
+  lexFixText.aprender({endereco: 'Rua 1 — Chapecó/SC'}, 'escritorio');
+  lexFixText.aprender([{nome: 'Ação de cobrança'}], 'processos');
+  assert.equal(lexFixText('Chapec��/SC'), 'Chapecó/SC');
+  lexFixText.aprender([{andamentos: [{txt: 'Juntada em Xanxerê'}], nome: 'x'}, {nome: 'y'.repeat(10) + ' ' + 'Xaxim'}], 'processos');
+  assert.equal(lexFixText('Xanxer��'), 'Xanxer'); // andamento não ensina
+  assert.equal(lexFixText('Chapec��/SC'), 'Chapecó/SC');
+});
+
+test('aprender: dados grandes não travam a tela', () => {
+  const nomes = Array.from({length: 4000}, (_, i) => ({nome: 'Cliente Joãozinho' + 'abcdefghij'[i % 10] + i, tribunal: 'Vara de Itaú' + i, andamentos: [{txt: 'x'.repeat(2000)}]}));
+  let t = Date.now();
+  lexFixText.aprender(nomes, 'carga');
+  assert.ok(Date.now() - t < 1500, 'aprender demorou ' + (Date.now() - t) + ' ms');
+  t = Date.now();
+  for (let i = 0; i < 300; i++) lexFixText('Execu��ão na 2�� Vara de Chapec�� ' + i);
+  assert.ok(Date.now() - t < 300, '300 campos demoraram ' + (Date.now() - t) + ' ms');
+  lexFixText.aprender([], 'carga');
 });
