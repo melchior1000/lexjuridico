@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <script src="lib/workflow.js"></script>
-<script src="office-ui.js?v=20260927d"></script>
+<script src="office-ui.js?v=20261006a"></script>
 <link rel="stylesheet" href="office-ui.css">
   <!-- LEX v2 - Build 2026-04-22 21:20 -->
 <meta charset="UTF-8">
@@ -1393,7 +1393,7 @@ function getEscritorio(){
   }catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   return {nome:'',responsavel:'',registro:'',endereco:'',telefone:'',segmento:'juridico',configurado:false};
 }
-function setEscritorio(d){localStorage.setItem(EK,JSON.stringify({...d,configurado:true}));}
+function setEscritorio(d){localStorage.setItem(EK,JSON.stringify({...d,configurado:true}));try{if(globalThis.lexFixText&&lexFixText.aprenderDepois)lexFixText.aprenderDepois(d,'escritorio');}catch(e){}}
 function getNomeEscritorio(){return getEscritorio().nome||'Sistema de Gestão';}
 function getResponsavel(){return getEscritorio().responsavel||'';}
 function getRegistro(){return getEscritorio().registro||'';}
@@ -1505,6 +1505,7 @@ async function sincronizarComBot() {
       if(data.processos) {
         // Salva sem disparar nova sync (evita loop)
         try { localStorage.setItem(SK, JSON.stringify(data.processos)); } catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
+        try { if(globalThis.lexFixText&&lexFixText.aprenderDepois) lexFixText.aprenderDepois(data.processos,'processos'); } catch(e){}
         setVersaoLocal(data.servidorVersao);
         if(typeof atualizarUrgentes==='function') atualizarUrgentes();
         if(typeof renderPainel==='function') renderPainel();
@@ -1541,6 +1542,7 @@ async function verificarESincronizar() {
       const d2 = await r2.json();
       if(d2.processos) {
         try { localStorage.setItem(SK, JSON.stringify(d2.processos)); } catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
+        try { if(globalThis.lexFixText&&lexFixText.aprenderDepois) lexFixText.aprenderDepois(d2.processos,'processos'); } catch(e){}
         setVersaoLocal(d2.versao);
         if(typeof atualizarUrgentes==='function') atualizarUrgentes();
         if(typeof renderPainel==='function') renderPainel();
@@ -2992,6 +2994,9 @@ function ativarApp(perfil){
   try{document.getElementById('perfil-label').textContent=PERFIS[perfil]?.label||_perms.label||perfil;}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   iniciarPollingComandos();
   try{atualizarUrgentes();}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
+  try{ if(globalThis.lexFixText&&lexFixText.aprender){ lexFixText.aprender(getProcs(),'processos'); if(typeof getEscritorio==='function') lexFixText.aprender(getEscritorio(),'escritorio'); } }catch(e){}
+  // Limpa a área antes da primeira tela: nada de tela antiga piscando enquanto a nova carrega.
+  try{const _c=document.getElementById('content');if(_c){_c.innerHTML='<main class="lex-screen lex-abrindo" aria-busy="true"><p style="padding:48px 16px;text-align:center;color:var(--text3)">Abrindo o escritório…</p></main>';if(typeof lexLimparLegado==='function')lexLimparLegado();}}catch(e){}
   try{ir(perfil==='admin'?'trabalho':'painel',null);}catch(e){document.getElementById('content').textContent='Não foi possível abrir a central. Recarregue a página.';}
   try{setTimeout(verificarNotificacoes,800);}catch(e){ console.warn('[Lex] Erro silenciado:', (e && e.message) ? e.message : e); }
   setTimeout(iniciarTgPolling,1500);
@@ -3696,6 +3701,8 @@ function getProcs(){try{const s=localStorage.getItem(SK);return s?JSON.parse(s):
 function saveProcs(d){
   try{localStorage.setItem(SK,JSON.stringify(d));}
   catch(e){try{localStorage.removeItem(CK);localStorage.setItem(SK,JSON.stringify(d));}catch(e2){console.error('Lex erro crítico',e2);}}
+  // Nomes acentuados escritos certo nos dados ajudam a recuperar os gravados quebrados (lex-text.js).
+  try{ if(globalThis.lexFixText&&lexFixText.aprenderDepois) lexFixText.aprenderDepois(d,'processos'); }catch(e){}
   // Limpa mensagem do ciclo inteligente quando usuário salva
   if(typeof limparMsgCiclo==='function') setTimeout(limparMsgCiclo,200);
   clearTimeout(window._syncTimer);
@@ -4083,6 +4090,8 @@ function renderPainel(){
 }
 function _renderPainelReal(){
   if(typeof pag!=='undefined' && pag!=='painel')return;
+  // Tela nova aberta: a antiga não pinta por cima (ver lex-legacy-guard.js).
+  if(typeof lexLegadoPodePintar==='function' && !lexLegadoPodePintar('painel'))return;
   _renderPainelUltimo = Date.now();
   const ps=getProcs(), alertas=alertasPrazo();
   const urgentes=ps.filter(p=>p.status==='URGENTE').length;
@@ -4186,6 +4195,7 @@ function _renderPainelReal(){
       <div id="card-tempo-uso"><div style="font-size:12px;color:var(--text3)">Carregando...</div></div>
     </div>` : ''}
   `;
+  if(typeof lexMarcarLegado==='function') lexMarcarLegado('painel');
   if(podeConfig()) renderCardTempoUso(document.getElementById('card-tempo-uso'));
 }
 
@@ -4231,7 +4241,7 @@ function cardProc(p){
   return `<div class="proc-card" style="border-left-color:${cor}${ehAutuacao?';box-shadow:inset 0 0 0 1px var(--setor-autuacao)33':(ehAdmin?';box-shadow:inset 0 0 0 1px var(--setor-admin)33':'')}" onclick="abrirProc('${p.id}')">
     <div class="pc-top"><div><div class="pc-nome">${lexEscape(p.nome)}</div><div class="pc-partes">${lexEscape(p.partes)}</div></div>
     <div class="pc-right"><div class="pc-tribunal">${lexEscape(p.tribunal)}</div><div class="pc-prazo" style="color:${pf.cor}">${pf.txt}</div></div></div>
-    <div class="pc-bottom"><span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span>${chipTipo}<span class="tag">${p.area}</span>${chip}${chipParado}${(p.frentes||[]).slice(0,2).map(f=>`<span class="tag">${f}</span>`).join('')}</div>
+    <div class="pc-bottom"><span class="badge" style="background:${sc}22;color:${sc}">${p.status}</span>${chipTipo}<span class="tag">${lexEscape(p.area)}</span>${chip}${chipParado}${(p.frentes||[]).slice(0,2).map(f=>`<span class="tag">${lexEscape(f)}</span>`).join('')}</div>
   </div>`;
 }
 
@@ -4400,6 +4410,7 @@ function renderAutuacao(){
 }
 
 function renderProcessosFiltrado(filtro){
+  if(typeof lexLegadoPodePintar==='function' && !lexLegadoPodePintar('processos'))return;
   filtroAtivo=filtro;
   const ps=getProcs();
   // Suporta filtro por status OU por setor
@@ -4426,6 +4437,7 @@ function renderProcessosFiltrado(filtro){
   const semGrupo=psFiltrados.filter(p=>!p.grupo||!GRUPOS_LIST.includes(p.grupo));
   if(semGrupo.length) cardsHtml+=secao('Outros','var(--text2)',semGrupo);
   document.getElementById('content').innerHTML=filtrosHtml+(cardsHtml||'<div style="font-size:13px;color:var(--text3);padding:20px">Nenhum processo encontrado.</div>');
+  if(typeof lexMarcarLegado==='function') lexMarcarLegado('processos');
 }
 
 function _normalizarTipoProcLocal(p){
@@ -5494,6 +5506,7 @@ function excluirProcDoBanner(id, nome){
 
 // ═══════════════ PRAZOS ═══════════════
 function renderPrazos(){
+  if(typeof lexLegadoPodePintar==='function' && !lexLegadoPodePintar('prazos'))return;
   const ps=getProcs();
   const com=ps.filter(p=>p.prazo).map(p=>({...p,d:diasRestantes(p.prazo)})).sort((a,b)=>(a.d??999)-(b.d??999));
   const sem=ps.filter(p=>!p.prazo);
@@ -5506,6 +5519,7 @@ function renderPrazos(){
     ${com.map(p=>{const cor=p.d==null?'var(--text3)':p.d<=0?'var(--red)':p.d<=3?'var(--red)':p.d<=7?'var(--orange)':'var(--green)';return`<div class="prazo-card" style="border-left:3px solid ${cor}"><div onclick="abrirProc('${p.id}')" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)} · ${lexEscape(p.tribunal)}</div>${p.prazoReal?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Prazo real: ${p.prazoReal}</div>`:''}</div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="prazo-num" style="color:${cor}">${p.d==null?'—':p.d===0?'HOJE':p.d<0?'VENCIDO':p.d+'d'}</div><div class="prazo-label">${p.d>=0?p.prazo:''}</div><button onclick="editarPrazoProc('${p.id}')" style="background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:3px 8px;color:var(--text3);font-size:10px;cursor:pointer;margin-top:2px">✎ Prazo</button></div></div>`;}).join('')}`:''}
     ${sem.length?`<div class="secao-titulo" style="color:var(--text3);margin-top:24px"><div style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></div>SEM PRAZO DEFINIDO<div class="secao-linha"></div><div class="secao-count">${sem.length}</div></div>
     ${sem.map(p=>`<div class="prazo-card" style="border-left:3px solid var(--text3)"><div onclick="abrirProc('${p.id}')" style="flex:1;cursor:pointer"><div class="prazo-nome">${lexEscape(p.nome)}</div><div class="prazo-acao">${lexEscape(p.partes)}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="badge" style="background:${(SC[p.status]||'#888')}22;color:${SC[p.status]||'#888'}">${p.status}</span><button onclick="editarPrazoProc('${p.id}')" style="background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 20%, transparent);border-radius:6px;padding:4px 10px;color:var(--accent);font-size:11px;cursor:pointer;font-weight:700">+ Prazo</button></div></div>`).join('')}`:''}`;
+  if(typeof lexMarcarLegado==='function') lexMarcarLegado('prazos');
 }
 
 function editarPrazoProc(procId){
@@ -8336,7 +8350,7 @@ async function _pDistrConfirm(id){
     const docs=await _pGtDocs(id);
     const caso={...c,setor:'autuacao',descricao:c.obs||c.descricao||'',preparacao:{...c},arquivos:docs};
     const data=await lexApi('/api/processo/distribuir',{method:'POST',body:JSON.stringify({caso,setor,numero})});
-    localStorage.setItem(SK,JSON.stringify(data.processos));setVersaoLocal(data.versao);
+    localStorage.setItem(SK,JSON.stringify(data.processos));setVersaoLocal(data.versao);try{if(globalThis.lexFixText&&lexFixText.aprenderDepois)lexFixText.aprenderDepois(data.processos,'processos');}catch(e){}
     savePrep(getPrep().filter(x=>String(x.id)!==String(id)));
     modal?.remove();atualizarUrgentes();ir('trabalho',null);toast('Distribuição confirmada. Contagens atualizadas.','ok');
   }catch(e){toast(e.message,'erro');}
@@ -8737,7 +8751,7 @@ function _periciaReset(){
 }
 
 function lexEscape(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String((globalThis.lexFixText||String)(value ?? '')).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 const LEX_SETORES = [
   {nome:'Autuação e clientes', agente:'Cadastrador/Autuação', pagina:'autuacao', entrega:'Cadastro do cliente, abertura do caso e documentos pendentes.'},
