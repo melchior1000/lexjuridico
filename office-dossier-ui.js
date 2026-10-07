@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=v=>(globalThis.lexFixText||String)(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const list=()=>{try{return typeof getProcs==='function'?(getProcs()||[]):[]}catch{return[]}};
 const byId=id=>list().find(p=>String(p.id)===String(id));
 const when=x=>x?.occurred_at||x?.created_at||x?.data||x?.date||x?.recebido_em||x?.criado_em||'';

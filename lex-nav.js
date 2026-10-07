@@ -98,6 +98,7 @@
     try { procAtivo = null; } catch { /* variável ausente */ }
     call('fecharSidebar');
     call('esconderBackBar');
+    call('lexLimparLegado'); // a tela antiga só se redesenha se for a aberta (lex-legacy-guard.js)
     if (!rota) { if (titulo) titulo.textContent = 'Tela não encontrada'; marcarMenu(null); telaNaoEncontrada(pedido); return false; }
     if (titulo) titulo.textContent = rota.titulo;
     marcarMenu(rota.id);
