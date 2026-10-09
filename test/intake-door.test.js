@@ -142,7 +142,7 @@ test('webhook despacha conversa livre do dono para o adaptador do LEX',async()=>
   const end=source.indexOf('// GET /api/fila',start);
   assert.ok(start>=0&&end>start,'rota webhook WhatsApp deve existir');
 
-  const payload=body('Vamos trabalhar?','556199171717');
+  const payload={...body('Vamos trabalhar?','556199171717'),instance:'LEX'}; // a Evolution sempre envia a instância; sem ela o webhook é recusado
   const responses=[];
   let adapterCalls=0;
   let adapterBody=null;
