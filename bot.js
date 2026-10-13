@@ -99,8 +99,11 @@ const {createChannelCommandOutbox} = require('./lib/channel-command-outbox');
 const {issueToken:issueConnectorToken,verifyToken:verifyConnectorToken,captureMovement} = require('./lib/connector');
 const {collectJudicialSources,evidenceProfile} = require('./lib/judicial-profile');
 const {OFFICIAL_LEGAL_DOMAINS,jurisprudenceAssurance,regraRecencia} = require('./lib/legal-quality');
-const {applyPjeMovement} = require('./lib/pje-sync');
+const {applyPjeMovement, primaryCnj} = require('./lib/pje-sync');
 const {runDailyOfficeJobs} = require('./lib/office-daily-jobs');
+// Andamentos: o mais novo pela data real (nunca a posição no array); Datajud: a mesma leitura da rotina diária.
+const Andamentos = require('./lib/andamentos');
+const Datajud = require('./lib/datajud');
 const {createDeadlineScheduler} = require('./lib/deadline-scheduler');
 const { createSupabaseRequest, requireSuccess, rowsFromResult } = require('./lib/supabase');
 const { modelsFor, channelModelsFor, legalModelFor, admission: aiAdmission } = require('./lib/ai-runtime');
@@ -899,8 +902,8 @@ async function _analisarPrazoDjen(input){
 }
 const deadlineScheduler=createDeadlineScheduler({
   records:recordStore,
-  run:async now=>{const result=await runDailyOfficeJobs({
-    processStore,sbReq,now,
+  run:async (now,opcoes={})=>{const result=await runDailyOfficeJobs({
+    processStore,sbReq,now,pularDatajud:opcoes.pularDatajud===true,
     datajudOptions:{apiKey:process.env.DATAJUD_API_KEY,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,fetchImpl:globalThis.fetch},
     djenOptions:{
       oabs:_djenOabsRuntime(),oabsEnv:process.env.DJEN_OABS,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
@@ -1140,14 +1143,10 @@ async function _resolverClientePorNumero(numeroLimpo) {
   } catch(e) { return null; }
 }
 function _extrairTribunalDoProcesso(numero) {
-  const n = String(numero||'').replace(/\D/g,'');
-  const cod = n.length >= 16 ? n.substring(13,16) : '';
-  const mapa = {
-    '826':'tjsp','813':'tjmg','819':'tjrj','805':'tjba','810':'tjma','806':'tjce','804':'tjpe','807':'tjes',
-    '401':'trf1','402':'trf2','403':'trf3','404':'trf4','406':'trf6',
-    '502':'trt2','510':'trt10'
-  };
-  return mapa[cod] || null;
+  // Endereço do tribunal no Datajud pelo número CNJ (segmento J.TR), o mesmo da rotina diária
+  // (lib/datajud.js). O mapa antigo, feito à mão, trocava tribunais (8.04 virava TJPE, 8.07 TJES)
+  // e não conhecia a maioria. Número citado em outro cadastro ("A / Embargos B") vale o principal.
+  try { return Datajud.aliasForCnj(primaryCnj(numero) || numero); } catch(e) { return null; }
 }
 function _linkPjeProcesso(tribunal, numero) {
   const t = String(tribunal||'').toUpperCase();
@@ -1160,59 +1159,42 @@ function _linkPjeProcesso(tribunal, numero) {
   };
   return mapas[t] || ('https://pje.jus.br/consultaprocessual/'+n);
 }
-async function _buscarAndamentosDatajud(processoNumero, tribunalAlias) {
-  const tribunal = String(tribunalAlias || _extrairTribunalDoProcesso(processoNumero)).toLowerCase();
-  if(!/^(tj[a-z]+|trf[1-6]|trt\d{1,2})$/.test(tribunal)) return {ok:false,erro:'Tribunal não mapeado',movimentacoes:[]};
-  const datajudKey=process.env.DATAJUD_API_KEY;
-  if(!datajudKey) return {ok:false,erro:'Consulta pública Datajud não configurada',movimentacoes:[]};
-  const host = 'api-publica.datajud.cnj.jus.br';
-  const path = '/api_publica_'+tribunal+'/_search';
-  const body = {
-    query: { bool: { must: [{ term: { numeroProcesso: String(processoNumero||'').replace(/\D/g,'') } }] } },
-    size: 1,
-    sort: [{ 'movimentos.dataHora': { order: 'desc' } }]
-  };
+// Leitura avulsa do Datajud (rota GET /api/pje/andamentos): a mesma consulta da rotina diária
+// (lib/datajud.js) — tribunal pelo número, todos os registros (1º e 2º grau), complemento pelo
+// nome, mais novo primeiro. Não grava nada. Não achar o número NÃO é "sem movimentação".
+async function _buscarAndamentosDatajud(processoNumero) {
+  let tribunal = null;
+  try { tribunal = Datajud.aliasForCnj(primaryCnj(processoNumero) || processoNumero); }
+  catch(e) { return {ok:false,erro:e.message,movimentacoes:[]}; }
+  const datajudKey = String(process.env.DATAJUD_API_KEY || '').trim();
+  if(!datajudKey) return {ok:false,tribunal,erro:'Consulta pública Datajud não configurada',movimentacoes:[]};
   try {
-    const r = await httpsPost(host, path, body, { 'Content-Type':'application/json', Authorization:'APIKey '+datajudKey });
-    if(r?.error || !Array.isArray(r?.hits?.hits)) throw new Error('Datajud não confirmou a consulta');
-    const hits = r?.hits?.hits || [];
-    const src = hits[0]?._source || {};
-    const movs = Array.isArray(src.movimentos) ? src.movimentos.slice().sort((a,b)=>String(b.dataHora||b.data||'').localeCompare(String(a.dataHora||a.data||''))).slice(0,10).map(m => ({
-      data: m.dataHora || m.data || '',
-      tipo: m.nome || m.codigo || 'Movimentacao',
-      texto: (m.nome ? String(m.nome) : 'Movimentacao processual')
-    })) : [];
-    return { ok: true, tribunal, movimentacoes: movs };
+    const r = await Datajud.queryByCnj(primaryCnj(processoNumero) || processoNumero, {apiKey:datajudKey, fetchImpl:globalThis.fetch});
+    if(!r.encontrado) return {ok:false,tribunal:r.alias,nao_encontrado:true,erro:'O Datajud não encontrou este número (segredo de justiça, número ou tribunal a conferir, ou ainda não indexado).',movimentacoes:[]};
+    const movs = r.movimentos.slice(0,10).map(m => ({data:m.data, tipo:m.texto, texto:m.texto}));
+    return { ok: true, tribunal:r.alias, movimentacoes: movs };
   } catch(e) {
     return { ok: false, tribunal, erro: e.message, movimentacoes: [] };
   }
 }
+// Varredura do botão "Verificar andamentos" e do relógio do PJe: a MESMA leitura da rotina diária
+// (lib/datajud.js, syncRegistered) — todos os movimentos de cada processo ativo, sem duplicar,
+// com recibo e integridade. A versão antiga guardava só o último movimento, e só na segunda
+// passada, com o endereço errado para vários tribunais. Duas chamadas ao mesmo tempo dividem a
+// mesma leitura.
+let _varreduraDatajudEmCurso = null;
 async function _varrerAndamentosPjeAgora() {
-  const ativos = processos.filter(p => ['ATIVO','URGENTE','EM_PREP','RECURSAL'].includes(String(p.status||'').toUpperCase()) && p.numero);
-  let novidades = 0;
-  let falhas = 0;
-  const alertas = [];
-  for(const p of ativos) {
-    const r = await _buscarAndamentosDatajud(p.numero, _extrairTribunalDoProcesso(p.numero));
-    if(!r.ok) { falhas++; continue; }
-    if(!r.movimentacoes.length) continue;
-    const ultimo = r.movimentacoes[0];
-    const chave = String(p.id || p.numero);
-    const antigo = _pjeMovCache[chave];
-    const assinatura = (ultimo.data||'')+'|'+(ultimo.tipo||'')+'|'+(ultimo.texto||'');
-    if(antigo && antigo !== assinatura) {
-      try {
-        const result = await applyPjeMovement({processos, sbReq, origem:'datajud',
-          onPersisted:()=>_bumpProcessos('datajud')},
-          {cnj:p.numero, data:ultimo.data, andamento_texto:ultimo.texto});
-        if(!result.duplicado) { novidades++; alertas.push({processo:result.processo, mov:ultimo}); }
-      } catch(e) { falhas++; continue; }
-
-    }
-    _pjeMovCache[chave] = assinatura;
-  }
-  _pjeUltimoCheck = new Date().toISOString();
-  return { ok: falhas===0, falhas, monitorados: ativos.length, novidades, ultimo_check: _pjeUltimoCheck, alertas };
+  if(_varreduraDatajudEmCurso) return _varreduraDatajudEmCurso;
+  _varreduraDatajudEmCurso = (async () => {
+    const r = await Datajud.syncRegistered(processStore, {apiKey:process.env.DATAJUD_API_KEY, integrityKey:process.env.COURT_READING_INTEGRITY_KEY, fetchImpl:globalThis.fetch, actor:'LEX Datajud'});
+    _pjeUltimoCheck = new Date().toISOString();
+    const erro = !r.skipped ? null
+      : r.reason === 'DATAJUD_API_KEY_NOT_CONFIGURED' ? 'Consulta pública Datajud não configurada (DATAJUD_API_KEY): nada foi consultado.'
+      : 'A chave que assina as leituras (COURT_READING_INTEGRITY_KEY) não está configurada: nada foi consultado.';
+    const alertas = (r.resultados || []).filter(x => x && Number(x.novos) > 0 && x.processo).map(x => ({processo:x.processo, novos:Number(x.novos)}));
+    return { ok: r.ok === true, falhas: Number(r.erros) || 0, nao_encontrados: Number(r.nao_encontrados) || 0, monitorados: Number(r.total) || 0, novidades: Number(r.novos) || 0, ultimo_check: _pjeUltimoCheck, alertas, erro };
+  })();
+  try { return await _varreduraDatajudEmCurso; } finally { _varreduraDatajudEmCurso = null; }
 }
 
 async function logAtividade(agenteId, chatId, acao, detalhes) {
@@ -3959,7 +3941,7 @@ PROCESSO ALVO:
 - Arquivos já analisados: ${(proc.arquivos||[]).slice(0,5).join(', ')||'nenhum'}
 
 ANDAMENTOS RECENTES:
-${(proc.andamentos||[]).slice(0,10).map(a=>`- ${a.data}: ${a.txt}`).join('\n')||'(nenhum andamento registrado)'}
+${Andamentos.ultimosAndamentos(proc,10).map(a=>`- ${Andamentos.dataLegivel(a)||a.data||'sem data'}: ${Andamentos.textoDoAndamento(a)}`).join('\n')||'(nenhum andamento registrado)'}
 
 MEMÓRIA DO CASO (fatos estratégicos de longo prazo):
 ${memTxt}
@@ -5950,14 +5932,10 @@ const COBRADOR_LIMIARES_DIAS = {
 function _diasSemAtualizacao(proc) {
   // Pega data mais recente entre: último andamento, atualizado_em, prazo
   let maisRecente = null;
-  if(proc.andamentos && proc.andamentos.length) {
-    // Formato data BR dd/mm/aaaa no primeiro andamento (mais recente)
-    const dataStr = proc.andamentos[0].data;
-    if(dataStr && /^\d{2}\/\d{2}\/\d{4}$/.test(dataStr)) {
-      const [d,m,a] = dataStr.split('/').map(Number);
-      maisRecente = new Date(a, m-1, d);
-    }
-  }
+  // O andamento mais novo que já aconteceu (data real, em qualquer formato: dd/mm/aaaa, aaaa-mm-dd
+  // ou ISO do Datajud). Anotação com data futura não zera os dias sem atualização.
+  const instante = Andamentos.instanteDoAndamento(Andamentos.ultimoAndamentoAte(proc, hojeBrasil()));
+  if(instante != null) maisRecente = new Date(instante);
   if(proc.atualizado_em) {
     const d = new Date(proc.atualizado_em);
     if(!isNaN(d.getTime()) && (!maisRecente || d > maisRecente)) maisRecente = d;
@@ -6637,7 +6615,7 @@ async function processarMensagem(ctx, dados) {
       juiz: proc.juiz_relator || proc.juiz || ''
     };
     salvarMemoria(ctx.chatId, ctx.threadId);
-    const ultAnd = (proc.andamentos||[]).slice(0,3).map(a => '- '+(a.data||'')+' '+(a.txt||'')).join('\n') || '- sem andamentos';
+    const ultAnd = Andamentos.ultimosAndamentos(proc,3).map(a => '- '+(Andamentos.dataLegivel(a)||a.data||'sem data')+' '+Andamentos.textoDoAndamento(a)).join('\n') || '- sem andamentos';
     await env(
       '📂 Processo ativo selecionado: '+(proc.nome||proc.id)+
       (proc.numero ? ' ('+proc.numero+')' : '')+
@@ -7358,10 +7336,12 @@ FORMATO CONSULTA (quando encontrar processo):
       const proc = processos.find(p => String(p.id) === matchId[1]);
       if(proc && !acoes.length) {
         const extra = [];
-        const ands = Array.isArray(proc.andamentos) ? proc.andamentos.slice(-3) : [];
+        // Os 3 mais novos pela data real (a ordem gravada no array não é garantida).
+        const A_ = require('./lib/andamentos');
+        const ands = A_.ultimosAndamentos(proc, 3);
         if(ands.length) {
           extra.push('\n📜 Últimos andamentos:');
-          ands.forEach(a => extra.push('  • [' + (a.data||'?') + '] ' + (a.texto||a.descricao||a.txt||'?')));
+          ands.forEach(a => extra.push('  • [' + (A_.dataLegivel(a)||a.data||'?') + '] ' + (A_.textoDoAndamento(a)||'?')));
         }
         if(proc.observacoes) extra.push('\n📝 Obs: ' + proc.observacoes);
         if(extra.length) msgLimpa += '\n' + extra.join('\n');
@@ -7452,8 +7432,8 @@ async function _conversaInteligente(ctx, mem, txt, low) {
     if(lc === 'decisao' || lc === 'decisão') {
       tipoConteudo = 'decisao';
       // Usa o último andamento + descrição como "decisão"
-      const ultimoAnd = (proc.andamentos||[])[0];
-      conteudo = ultimoAnd ? ('Último andamento: '+ultimoAnd.data+' - '+ultimoAnd.txt+'\n\nDescrição do caso: '+(proc.descricao||'')) : (proc.descricao||'(sem conteúdo direto)');
+      const ultimoAnd = Andamentos.ultimoAndamento(proc); // o mais novo pela data real
+      conteudo = ultimoAnd ? ('Último andamento: '+(Andamentos.dataLegivel(ultimoAnd)||ultimoAnd.data||'sem data')+' - '+Andamentos.textoDoAndamento(ultimoAnd)+'\n\nDescrição do caso: '+(proc.descricao||'')) : (proc.descricao||'(sem conteúdo direto)');
     } else if(lc === 'adversa' || lc.includes('peça adversa') || lc.includes('peca adversa')) {
       tipoConteudo = 'peca_adversa';
       conteudo = '(o titular vai colar a peça adversa na próxima mensagem ou já está em algum PDF analisado)';
@@ -9196,8 +9176,9 @@ async function agenteAtualizacaoProcessual(ctx, mem, arq, analise) {
   };
 
   // Último andamento do processo cadastrado (pra exibição)
-  const ultimoAnd = (proc.andamentos && proc.andamentos.length)
-    ? ((proc.andamentos[0].data||'?')+': '+String(proc.andamentos[0].txt||'').substring(0,150))
+  const _ultAnd = Andamentos.ultimoAndamento(proc);
+  const ultimoAnd = _ultAnd
+    ? ((Andamentos.dataLegivel(_ultAnd)||_ultAnd.data||'?')+': '+Andamentos.textoDoAndamento(_ultAnd).substring(0,150))
     : '(sem andamentos registrados)';
 
   // Monta a mensagem de confirmação estruturada
@@ -9445,7 +9426,7 @@ Se não conseguir extrair como JSON, descreva normalmente.`}
       if(procMatch) {
         // Atualiza andamento
         if(!Array.isArray(procMatch.andamentos)) procMatch.andamentos = [];
-        procMatch.andamentos.push({
+        procMatch.andamentos.unshift({
           data: horaBrasilia().toLocaleDateString('pt-BR'),
           texto: '[Imagem] ' + (dados.tipo_documento||'documento') + ': ' + (dados.resumo||resposta.substring(0,200)),
           canal: ctx.canal||'telegram'
@@ -12031,8 +12012,8 @@ if(url==='/api/memoria' && req.method==='GET') {
         }
       }
       if(!processo_numero) { res.writeHead(400,corsHeaders(req)); res.end(JSON.stringify({error:'processo_numero obrigatorio (ou processo_id de processo com numero cadastrado)'})); return; }
-      const trib = u.searchParams.get('tribunal') || _extrairTribunalDoProcesso(processo_numero);
-      const r = await _buscarAndamentosDatajud(processo_numero, trib);
+      // O tribunal sai do próprio número CNJ (segmento J.TR); não se aceita endereço escolhido à mão.
+      const r = await _buscarAndamentosDatajud(processo_numero);
       const ultima = r.movimentacoes[0] || null;
       const chave = String(processo_numero);
       const assinatura = ultima ? (ultima.data+'|'+ultima.tipo+'|'+ultima.texto) : '';
@@ -12071,10 +12052,17 @@ if(url==='/api/memoria' && req.method==='GET') {
           nome:p.nome,
           numero:p.numero,
           tribunal:p.tribunal || _extrairTribunalDoProcesso(p.numero),
-          ultimoAndamento:(p.andamentos&&p.andamentos[0]) ? p.andamentos[0].txt : ''
+          ultimoAndamento:Andamentos.textoDoAndamento(Andamentos.ultimoAndamento(p))
         })),
-        resumo: 'Monitorados: '+varredura.monitorados+' | Novidades: '+varredura.novidades,
-        novosAndamentos: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero })),
+        monitorados:varredura.monitorados,
+        novidades:varredura.novidades,
+        nao_encontrados:varredura.nao_encontrados,
+        erro:varredura.erro||null,
+        resumo: varredura.erro ? varredura.erro
+          : 'Monitorados: '+varredura.monitorados+' | Novidades: '+varredura.novidades
+            +(varredura.nao_encontrados?' | Não encontrados no Datajud: '+varredura.nao_encontrados:'')
+            +(varredura.falhas?' | Falhas: '+varredura.falhas:''),
+        novosAndamentos: varredura.alertas.map(a => ({ nome:a.processo.nome, numero:a.processo.numero, novos:a.novos })),
         ultimo_check: varredura.ultimo_check
       }));
     } catch(e) { res.writeHead(_statusErroLex(e),corsHeaders(req)); res.end(JSON.stringify({error:e.message})); }
@@ -13941,7 +13929,7 @@ Responda SOMENTE o texto da peça + recomendações (sem JSON).`;
 // com postura crítica (evitar otimismo injustificado).
 // ════════════════════════════════════════════════════════════════════════════
 async function _gerarPrognosticoRealista(processo) {
-  const ands = (processo.andamentos||[]).slice(0,8).map(a=>`${a.data||''}: ${a.txt||''}`).join('\n') || 'Sem andamentos relevantes cadastrados.';
+  const ands = Andamentos.ultimosAndamentos(processo,8).map(a=>`${Andamentos.dataLegivel(a)||a.data||'sem data'}: ${Andamentos.textoDoAndamento(a)}`).join('\n') || 'Sem andamentos relevantes cadastrados.';
   const docs = (processo.provas||[]).slice(0,10).join('; ') || 'Sem provas/listas de documentos cadastradas.';
   const frentes = (processo.frentes||[]).slice(0,8).join('; ') || 'Sem teses/frentes estruturadas.';
   const valorBase = Number(processo.valor)||0;

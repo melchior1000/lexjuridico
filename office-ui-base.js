@@ -11,7 +11,7 @@ async function lexApi(path,options={}) {
   try{
     const response=await fetchComTimeout(SERVIDOR+path,{...requestOptions,headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken(),...(requestOptions.headers||{})}},timeoutMs);
     const data=await response.json();
-    if(!response.ok || data.ok===false) throw new Error(data.error||'Não foi possível confirmar a operação.');
+    if(!response.ok || data.ok===false) throw new Error(data.error||data.erro||'Não foi possível confirmar a operação.');
     return data;
   }catch(error){
     if(error?.name==='AbortError'||/aborted|abort/i.test(String(error?.message||''))){
@@ -176,7 +176,7 @@ function renderFontesProcessos() {
 }
 async function lexConnectorCode(){try{const d=await lexApi('/api/conector/parear',{method:'POST',body:'{}'});document.getElementById('connector-code').value=d.token;document.getElementById('connector-notice').textContent='Código gerado. O código anterior foi invalidado.';}catch(e){document.getElementById('connector-notice').textContent=e.message;}}
 async function lexDownloadConnector(){try{const r=await fetchComTimeout(SERVIDOR+'/api/conector/download',{headers:{Authorization:'Bearer '+getAuthToken()}},30000);if(!r.ok)throw new Error('Conector não disponível nesta versão do servidor.');const u=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=u;a.download='LEX_conector_navegador.zip';a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}catch(e){toast(e.message,'erro');}}
-async function lexQueryPublic(){const el=document.getElementById('datajud-notice');el.textContent='Consultando…';try{const d=await lexApi('/api/pje/sincronizar',{method:'POST',body:'{}'});el.textContent='Consulta concluída. '+(d.processos||[]).length+' processos consultados. Confira as datas dos movimentos.';}catch(e){el.textContent=e.message;}}
+async function lexQueryPublic(){const el=document.getElementById('datajud-notice');el.textContent='Consultando…';try{const d=await lexApi('/api/pje/sincronizar',{method:'POST',body:'{}'});el.textContent=d.ok===false&&d.erro?d.erro:'Consulta concluída. '+(d.resumo||((d.monitorados??0)+' processos lidos'))+'. O Datajud pode atrasar alguns dias e não traz o Diário: para prazo, vale a publicação.';}catch(e){el.textContent=e.message;}}
 
 function lexReceptionTime(value){
   if(!value) return 'sem horário';

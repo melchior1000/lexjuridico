@@ -50,23 +50,37 @@ test('endpoint PJe não confirma sucesso quando persistência falha',async()=>{
 });
 const vm=require('node:vm');
 const {source}=require('./runtime');
+// A leitura avulsa do servidor usa a mesma consulta da rotina diária (lib/datajud.js), pelo fetch.
+const Datajud=require('../lib/datajud');
+const {primaryCnj}=require('../lib/pje-sync');
+const corpo=obj=>({ok:true,status:200,text:async()=>JSON.stringify(obj)});
 function datajud(extra={}){
  const start=source.indexOf('async function _buscarAndamentosDatajud(');
  const end=source.indexOf('async function _varrerAndamentosPjeAgora()',start);
- const context=vm.createContext({process:{env:{DATAJUD_API_KEY:'test-public-key'}},_extrairTribunalDoProcesso:()=> 'tjmg', ...extra});
+ const context=vm.createContext({process:{env:{DATAJUD_API_KEY:'test-public-key'}},Datajud,primaryCnj,fetch:async()=>{throw new Error('Não chamar');},...extra});
  vm.runInContext(source.slice(start,end),context);return context;
 }
 test('Datajud sem configuração não faz rede nem afirma consulta concluída',async()=>{
- const ctx=datajud({process:{env:{}},httpsPost:()=>{throw new Error('Não chamar');}});
- assert.equal((await ctx._buscarAndamentosDatajud(cnj)).ok,false);
+ let chamadas=0;
+ const ctx=datajud({process:{env:{}},fetch:async()=>{chamadas++;throw new Error('Não chamar');}});
+ assert.equal((await ctx._buscarAndamentosDatajud(cnj)).ok,false);assert.equal(chamadas,0);
 });
 test('Datajud erro de API não vira resultado vazio bem-sucedido',async()=>{
- const ctx=datajud({httpsPost:async()=>({error:{type:'security_exception'}})});
- assert.equal((await ctx._buscarAndamentosDatajud(cnj)).ok,false);
+ const erroNoCorpo=datajud({fetch:async()=>corpo({error:{type:'security_exception'}})});
+ const a=await erroNoCorpo._buscarAndamentosDatajud(cnj);
+ assert.equal(a.ok,false);assert.notEqual(a.nao_encontrado,true,'erro da base não é "processo não encontrado"');
+ const recusado=datajud({fetch:async()=>({ok:false,status:403,text:async()=>'{}'})});
+ assert.equal((await recusado._buscarAndamentosDatajud(cnj)).ok,false);
 });
 test('Datajud inclui autorização e seleciona o movimento mais recente',async()=>{
- let headers;
- const ctx=datajud({httpsPost:async(h,p,b,c)=>{headers=c;return {hits:{hits:[{_source:{movimentos:[{dataHora:'2026-01-01',nome:'Antigo'},{dataHora:'2026-09-08',nome:'Novo'}]}}]}};}});
+ let headers,url;
+ const ctx=datajud({fetch:async(u,o)=>{url=u;headers=o.headers;return corpo({hits:{hits:[{_source:{movimentos:[{dataHora:'2026-01-01',nome:'Antigo'},{dataHora:'2026-09-08',nome:'Novo'}]}}]}});}});
  const r=await ctx._buscarAndamentosDatajud(cnj);
  assert.equal(headers.Authorization,'APIKey test-public-key');assert.equal(r.movimentacoes[0].texto,'Novo');
+ assert.match(url,/api_publica_tjmg\/_search$/,'tribunal pelo número (8.13 = TJMG)');
+});
+test('Datajud: número que a base não acha não vira "sem movimentação"',async()=>{
+ const ctx=datajud({fetch:async()=>corpo({hits:{hits:[]}})});
+ const r=await ctx._buscarAndamentosDatajud(cnj);
+ assert.equal(r.ok,false);assert.equal(r.nao_encontrado,true);assert.match(r.erro,/não encontrou este número/);
 });

@@ -25,6 +25,7 @@ const { aiBloqueadaPorTeto, erroTetoAtingido } = require('./lib/ai-budget');
 const { rowsFromResult } = require('./lib/supabase');
 const { withProcessLock } = require('./lib/process-lock');
 const { hojeBrasil } = require('./lib/data-brasil');
+const Andamentos = require('./lib/andamentos');
 const { OFFICIAL_LEGAL_DOMAINS, regraRecencia } = require('./lib/legal-quality');
 const { modelsFor, positiveInteger, admission: aiAdmission } = require('./lib/ai-runtime');
 
@@ -445,12 +446,11 @@ const TOOL_BUSCAR_DOCUMENTOS = {
 
 function montarContextoProcesso(p) {
   if (!p) return 'Processo não encontrado.';
-  const ands = Array.isArray(p.andamentos) ? p.andamentos : [];
-  const ultimos = ands.slice(-5).map((a, i) => {
-    if (!a) return `  ${i + 1}. [?] (andamento vazio)`;
-    const data = a.data || a.criado_em || '?';
-    const texto = a.texto || a.descricao || a.andamento || JSON.stringify(a);
-    return `  ${i + 1}. [${data}] ${texto}`;
+  // Os 5 mais novos pela data real (a ordem gravada no array não é garantida): lib/andamentos.js.
+  const ultimos = Andamentos.ultimosAndamentos(p, 5).map((a, i) => {
+    const data = Andamentos.dataLegivel(a) || a.data || a.criado_em || '?';
+    const texto = Andamentos.textoDoAndamento(a) || '(sem texto)';
+    return `  ${i + 1}. [${data}]${a.origem ? ' (' + a.origem + ')' : ''} ${texto}`;
   }).join('\n');
 
   const partes = p.partes
@@ -546,7 +546,7 @@ function montarContextoProcesso(p) {
   if (p.observacoes) linhas.push(`- Observações: ${p.observacoes}`);
 
   linhas.push('');
-  linhas.push('- Últimos andamentos (mais recentes no fim):');
+  linhas.push('- Últimos andamentos (do mais novo para o mais antigo):');
   linhas.push(ultimos || '  (nenhum)');
 
   if (movPje.length > 0) {
