@@ -126,3 +126,13 @@ test('servidor: "Verificar andamentos" mostra o resultado real da leitura (e o e
     assert.match(b,/Monitorados: 12 \| Novidades: 3/);assert.match(b,/pode atrasar/);
   });
 });
+
+test('app: erro do servidor no campo "erro" chega à tela (não vira mensagem genérica) — CodeRabbit #164',async()=>{
+  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+  const base=fs.readFileSync(path.join(__dirname,'..','office-ui-base.js'),'utf8');
+  const ini=base.indexOf('async function lexApi(');
+  const fim=base.indexOf('\n}\n',ini)+2;
+  const c=vm.createContext({SERVIDOR:'https://lex.example',getAuthToken:()=>'t',fetchComTimeout:async()=>({ok:true,json:async()=>({ok:false,erro:'Consulta pública Datajud não configurada (DATAJUD_API_KEY): nada foi consultado.'})})});
+  vm.runInContext(base.slice(ini,fim),c);
+  await assert.rejects(c.lexApi('/api/pje/sincronizar',{method:'POST',body:'{}'}),/Consulta pública Datajud não configurada/);
+});

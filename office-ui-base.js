@@ -11,7 +11,7 @@ async function lexApi(path,options={}) {
   try{
     const response=await fetchComTimeout(SERVIDOR+path,{...requestOptions,headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken(),...(requestOptions.headers||{})}},timeoutMs);
     const data=await response.json();
-    if(!response.ok || data.ok===false) throw new Error(data.error||'Não foi possível confirmar a operação.');
+    if(!response.ok || data.ok===false) throw new Error(data.error||data.erro||'Não foi possível confirmar a operação.');
     return data;
   }catch(error){
     if(error?.name==='AbortError'||/aborted|abort/i.test(String(error?.message||''))){

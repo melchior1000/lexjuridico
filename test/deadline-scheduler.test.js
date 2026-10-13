@@ -113,3 +113,15 @@ test('rotina que quebra no meio avisa uma vez e guarda que o Datajud já foi lid
   const job=rec.get('lex_deadline_daily_job');
   assert.equal(job.status,'retry');assert.equal(job.datajud_date,'2026-09-26','não relê a carteira só porque a rotina quebrou depois');
 });
+
+test('aviso que falha depois de ler o Datajud não faz a carteira ser lida de novo (CodeRabbit #164)',async()=>{
+  const rec=records();const opcoes=[];let falhar=true;
+  const s=createDeadlineScheduler({records:rec,now:()=>new Date('2026-09-26T08:00:00-03:00'),
+    notify:async()=>{if(falhar)throw new Error('canal fora do ar')},
+    run:async(now,o)=>{opcoes.push(o);return{ok:false,djen:{enabled:true,ok:false,cunhar_total:0},datajud:o?.pularDatajud?{enabled:true,total:0,skipped:true,reason:'DATAJUD_JA_LIDO_HOJE'}:{enabled:true,total:50,novos:2,falhas:0},alerts:{novos:0},exceptions:[]}}});
+  await s.tick();
+  assert.equal(rec.get('lex_deadline_daily_job').datajud_date,'2026-09-26','a leitura aconteceu antes da falha do aviso');
+  falhar=false;await s.tick();s.stop();
+  assert.deepEqual(opcoes.map(o=>o.pularDatajud),[false,true]);
+  assert.equal(rec.get('lex_rotina_noturna_2026-09-26').consultados,50,'sem soma repetida nos Recibos');
+});
