@@ -348,3 +348,28 @@ test('servidor: o OK do titular é conferido antes da IA, e o "pode" solto do Wh
   const nada=await rodar({conversaAtiva:false,previaAberta:false});
   assert.equal(nada.chamadas,0);assert.match(nada.enviados[0],/Nenhuma mensagem foi autorizada/);
 });
+
+// Apontamento do CodeRabbit no PR #162: reconciliar não pode soltar mensagem cuja fila ainda pode entregar.
+test('reinício no meio do envio: fila ainda ativa mantém a mensagem em envio; só fila parada devolve para o OK',async()=>{
+  const m=montar();
+  const rascunho=(id,extra)=>m.rec.change('lex_cliente_msg_'+id,()=>({id,conversa:'telegram:1',processo_id:'p1',processo:'Maria Silva x Banco Alfa',
+    destino:{origem:'whatsapp',id:'5561988887777',nome:'Maria Silva'},texto:TEXTO_MARIA,status:'enviando',tentativas:1,
+    preparado_em:new Date(Date.parse('2026-10-13T12:40:00Z')).toISOString(),aprovado_em:new Date(Date.parse('2026-10-13T12:45:00Z')).toISOString(),...extra}));
+  // a) job ainda "confirmado" na fila (não terminal), com job_id gravado
+  const ativo=await m.outbox.enqueueApproved({origem:'whatsapp',id:'5561988887777',texto:TEXTO_MARIA,confirmado_por:'admin',request_id:'cliente-a-1'});
+  await rascunho('a',{job_id:ativo.id});
+  // b) caiu entre criar o job e gravar o job_id: o id do job é previsível pelo rascunho
+  await m.rec.change('lex_channel_command_cliente-b-1',()=>({id:'cliente-b-1',origem:'whatsapp',contato_id:'5561911112222',status:'enviando',texto_final:'x'}));
+  await rascunho('b',{job_id:null});
+  // c) fila terminou falhando
+  await m.rec.change('lex_channel_command_cliente-c-1',()=>({id:'cliente-c-1',origem:'whatsapp',contato_id:'5561933334444',status:'falhou',last_error:'reinício'}));
+  await rascunho('c',{job_id:'cliente-c-1'});
+  // d) nenhum job na fila
+  await rascunho('d',{job_id:null});
+  await m.A.reconciliarEnvios();
+  const st=async id=>(await m.rec.read('lex_cliente_msg_'+id)).value;
+  assert.equal((await st('a')).status,'enviando');assert.equal((await st('a')).job_id,ativo.id,'continua ligado ao job da fila');
+  assert.equal((await st('b')).status,'enviando','job achado pelo id previsível');
+  assert.equal((await st('c')).status,'aguardando_ok');assert.match((await st('c')).ultimo_erro,/confira a conversa/);
+  assert.equal((await st('d')).status,'aguardando_ok');
+});
