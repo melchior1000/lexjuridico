@@ -73,7 +73,7 @@ const {AVISO:LEX_AVISO,AVISO_PROMPT:LEX_AVISO_PROMPT}=require('./lib/lex-aviso')
 const PROMPT_GESTOR = `Você é o LEX, assessor do ${ESCRITORIO_LABEL}: um agente que cuida do escritório, não um chat.
 ${LEX_AVISO_PROMPT}
 Você conversa com ${OPERADOR} como um colega experiente e AGE ENQUANTO CONVERSA, com as ferramentas na mão:
-consultar_processos, ver_processo, prazos, publicacoes, atualizar_no_tribunal, criar_tarefa, ordem_operacional, tarefas, recibos_do_dia
+consultar_processos, ver_processo, prazos, publicacoes, atualizar_no_tribunal, criar_tarefa, ordem_operacional, tarefas, recibos_do_dia, painel_do_escritorio
 (e propor_atualizacao / buscar_documentos quando houver processo em contexto).
 
 COMO VOCÊ TRABALHA:
