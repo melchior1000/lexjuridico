@@ -100,3 +100,42 @@ Implementado o cliente MNI 2.2.2 (`lib/pje-mni.js`) e a vigia de expedientes (`l
 ## Registro 24/09/2026 (4) — isolamento entre escritórios (gate SaaS)
 
 Auditoria: 12 tabelas usadas pelo LEX estavam fora da muralha (contatos, sessões do WhatsApp, documentos, mensagens, auditoria, cobranças, checkpoints etc.) e o código deixava tabela não declarada passar sem filtro. Corrigido em três camadas: código recusa tabela não isolada; migração `20260924120000` leva RLS às 12 tabelas e cria `ativar_multi_escritorio()`, que remove o padrão "primeiro escritório" e as chaves globais legadas; trava de inicialização do modo comercial. Evidência: `test/tenant-migrations-pglite.test.js` (A/B em PostgreSQL real, todas as tabelas) e `test/tenant-guard.test.js`. Falta aplicar em produção e homologar A/B com dados sintéticos (§9).
+
+## Registro 13/10/2026 — intimações e prazos sem atraso (etapa 15)
+
+Pedido do titular: ver como ADVBOX, Projuris, Astrea e AASP evitam perda de prazo e tirar do LEX
+todo aviso que chega atrasado. Regra que decide: desde 16/05/2025 o prazo do advogado conta da
+publicação no DJEN (Res. CNJ 455/2022, art. 11, §3º, red. Res. 569/2024); o resto é só aviso.
+
+Corrigido (cada item com teste que falha se o erro voltar — `test/intimacoes-sem-atraso.test.js`,
+`test/prazos-abertos.test.js`, `test/pje-mni.test.js`, `test/djen.test.js`, `test/djen-monitor.test.js`,
+`test/djen-alerts.test.js`, `test/forensic-calendar.test.js`):
+- intimação do Diário fica **pendente até o titular decidir** (confirmar prazo, cadastrar o processo,
+  "sem prazo", "não é nosso"), no app (Prazos › Diário), no "o que precisa de mim", no resumo da manhã
+  e no aviso diário — antes, a de processo não cadastrado era avisada uma vez e sumia, e nenhuma tela
+  confirmava o prazo da casada (o botão "Conferir" abria outra lista);
+- confirmar prazo com leitura de mais de 36 h relê a intimação no Diário (antes: erro `reading_not_fresh`);
+- Diário lido de 2 em 2 horas (6h–22h), aviso logo depois (e conferido a cada 30 min: aviso que o canal
+  não confirmou sai de novo), e **alarme às 8h** se o Diário do dia não foi lido; leitura que o DJEN
+  informa e não entrega por inteiro guarda o que veio e não dá o dia por lido (antes passava como
+  lida); resposta sem total não para mais na 1ª página; falha numa OAB não derruba as outras;
+- intimação longa (sentença inteira, mais de 20 mil caracteres) não entrava no processo nem gerava
+  aviso: agora entra (andamento resumido, teor completo na intimação); intimação lida e não ligada ao
+  processo aparece "a conferir", sai no aviso e é tentada de novo a cada leitura;
+- intimação **cancelada** pelo tribunal depois de avisada (ou com prazo já confirmado) gera aviso único;
+- **vários prazos por processo, um por intimação**: confirmar a 2ª intimação apagava o prazo da 1ª;
+  o prazo cumprido continuava na vigia e virava "vencido"; prazo novo depois de uma baixa nascia
+  "cumprido" e sumia. Agora cada um tem data e baixa próprias, e o mais próximo fica em destaque;
+- **lembrete de vencimento** com processo, número, data e quanto falta (5 dias antes, 2, 1, no dia e
+  vencido sem baixa) — antes saía só "N marco(s) entraram na fila de alerta";
+- segunda rede pelo **nome do advogado** (publicação com OAB faltando/errada), marcada para conferência;
+- aviso de PRAZOS sai na hora (antes esperava o resumo, que saía uma vez por dia; aviso das 10h só
+  chegava no dia seguinte); o resumo passou a mandar na próxima janela o que chegou depois;
+- mensagem do PJe não diz mais que o prazo do advogado começa ao abrir a intimação no sistema;
+- Datajud não manda mais aviso de "novidade" (chega com dias de atraso): só completa o histórico;
+- feriados nacionais (Leis 662/1949, 6.802/1980 e 14.759/2023) entram na conta proposta.
+
+Limites: feriado local e suspensão do tribunal seguem como "a conferir"; Domicílio Judicial
+Eletrônico só a parte acessa; servidor no plano gratuito do Render (plano pago depende do titular).
+Estado da etapa 15 não muda até homologação real (leitura do DJEN no ar, alarme e confirmação pelo app).
+

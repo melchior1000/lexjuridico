@@ -270,3 +270,26 @@ test('diagnóstico do eproc explica que login pessoal não substitui credencial 
   const d=await M.diagnoseMni(client,{configurado:true,tribunais:[{sigla:'TRF6',sistema:'eproc'}],eproc:[]});
   assert.match(M.diagnoseMessage(d),/credencial MNI[\s\S]*credenciamento institucional[\s\S]*login pessoal do eproc não substitui/);
 });
+
+// Res. CNJ 455/2022, art. 11, §3º (red. Res. 569/2024), desde 16/05/2025: para o advogado o
+// prazo conta da publicação no DJEN; a intimação pelo sistema é só informativa. A mensagem não
+// pode levar a contar o prazo da abertura no PJe (isso faria perder o prazo).
+test('PJe: mensagens dizem que o prazo do advogado conta do DJEN, não da abertura no sistema',async()=>{
+  const records=memoryRecords();
+  const store=processStore([{id:'p1',nome:'Maria Silva x Banco',numero:CNJ,andamentos:[]}]);
+  const transport=fakeTransport({consultarAvisosPendentes:avisosXml([{id:'1',data:'20260920101500',cnj:CNJ_D}]),consultarTeorComunicacao:teorXml('Fica a parte intimada.')});
+  const deps=pjeDeps(records,store,transport);
+  await Monitor.syncPjeAvisos({client:deps.pje.client,records,processStore:store,now:new Date('2026-09-24T13:00:00Z')});
+  const list=await say(deps,'intimações do PJe');
+  const ask=await say(deps,'abrir intimação TJMG #1');
+  const done=await say(deps,'Confirmo ciência TJMG 1');
+  for(const m of [list.message,ask.message,done.message]){
+    assert.match(m,/prazo conta da publicação no DJEN \(Res\. CNJ 455\/2022, art\. 11, §3º\)/);
+    assert.doesNotMatch(m,/o prazo começa a correr|O prazo está correndo/);
+  }
+  const sent=[];
+  const vigia=Monitor.createPjeMonitor({records:memoryRecords(),processStore:store,env:ENV,transport:fakeTransport({consultarAvisosPendentes:avisosXml([{id:'9',data:'20260923090000',cnj:CNJ_D}])}),notify:async t=>sent.push(t),now:()=>new Date('2026-09-24T13:00:00Z')});
+  await vigia.tick();
+  assert.ok(sent.some(t=>/só aviso/.test(t)&&/DJEN/.test(t)),'aviso de expediente novo lembra a regra');
+  assert.ok(!sent.some(t=>/fim do prazo de 10 dias/.test(t)));
+});

@@ -108,7 +108,7 @@ test('sem a chave que assina a leitura, nem a chave do Datajud: não gasta consu
   await assert.rejects(Datajud.queryByCnj(cnj(2009),{apiKey:'k',fetchImpl:async()=>({ok:true,status:200,text:async()=>'{"error":{"type":"security_exception"}}'})}),/não confirmou a consulta/);
 });
 
-test('servidor: "Verificar andamentos" mostra o resultado real da leitura (e o erro, quando não leu)',()=>{
+test('servidor: "Verificar andamentos" mostra o resultado real da leitura (e o erro, quando não leu)',async()=>{
   const fs=require('node:fs'),path=require('node:path');
   const src=fs.readFileSync(path.join(__dirname,'..','bot.js'),'utf8');
   const rota=src.slice(src.indexOf("if(url==='/api/pje/sincronizar'"),src.indexOf('// GET /api/relatorio'));
@@ -120,7 +120,11 @@ test('servidor: "Verificar andamentos" mostra o resultado real da leitura (e o e
   const vm=require('node:vm');
   const base=fs.readFileSync(path.join(__dirname,'..','office-ui-base.js'),'utf8');
   const fn=base.slice(base.indexOf('async function lexQueryPublic('),base.indexOf('\n',base.indexOf('async function lexQueryPublic(')));
-  const run=async d=>{const el={textContent:''};const c=vm.createContext({document:{getElementById:()=>el},lexApi:async()=>d});vm.runInContext(fn,c);await c.lexQueryPublic();return el.textContent};
+  let opcoes=null;
+  const run=async d=>{const el={textContent:''};const c=vm.createContext({document:{getElementById:()=>el},lexApi:async(rota,op)=>{opcoes=op;return d}});vm.runInContext(fn,c);await c.lexQueryPublic();return el.textContent};
+  // A consulta lê a carteira inteira no Datajud: a tela espera até 3 minutos (antes desistia em 30 s
+  // e mostrava erro enquanto o servidor ainda lia) — trecho que faltava do PR #113.
+  await run({ok:true,resumo:'x'});assert.equal(opcoes.timeoutMs,180000);
   return Promise.all([run({ok:false,erro:'Consulta pública Datajud não configurada (DATAJUD_API_KEY): nada foi consultado.'}),run({ok:true,resumo:'Monitorados: 12 | Novidades: 3'})]).then(([a,b])=>{
     assert.match(a,/nada foi consultado/);assert.doesNotMatch(a,/Consulta concluída/);
     assert.match(b,/Monitorados: 12 \| Novidades: 3/);assert.match(b,/pode atrasar/);

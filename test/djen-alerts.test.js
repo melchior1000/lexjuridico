@@ -46,7 +46,7 @@ test('publicação nova depois disso vira aviso imediato com processo, tribunal 
   assert.match(t,/só vale depois da sua confirmação/);
   // A consulta pede só publicações já classificadas (casada/órfã) de uma janela recente.
   assert.equal(db.calls[0].table,'djen_comunicacoes');
-  assert.equal(db.calls[0].query.status,'in.(casada,orfa)');
+  assert.equal(db.calls[0].query.status,'in.(casada,orfa,nova,cancelada)');
   assert.equal(db.calls[0].query.order,'data_disponibilizacao.asc,djen_id.asc');
   assert.match(db.calls[0].query.data_disponibilizacao,/^gte\.2026-09-1\d$/);
 });
@@ -159,6 +159,42 @@ test('guarda todos os avisados da janela (mesmo acima de 5 mil) e descarta só o
   assert.ok(!guardados.includes('fora-da-janela'),'id que saiu da janela é descartado');
   assert.equal((await alerts.tick()).novas,0,'nada é reenviado');
   assert.equal(sent.length,1);
+});
+
+// Intimação que o LEX gravou e não conseguiu ligar ao processo ("nova" parada) não pode ficar sem aviso.
+test('intimação gravada e não ligada ao processo é avisada (depois de 15 min parada), com o alerta de conferir',async()=>{
+  const records=memoryRecords(),sent=[];
+  records.rows.set(KEY,{canais:{whatsapp:{ids:[]}}});
+  const db=fakeDb([
+    pub('presa',{status:'nova',processo_id:null,observado_em:'2026-09-27T13:00:00Z'}),
+    pub('chegando',{status:'nova',processo_id:null,observado_em:'2026-09-27T13:58:00Z'})
+  ]);
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async t=>{sent.push(t);return true}},now});
+  assert.equal((await alerts.tick()).novas,1);
+  assert.match(sent[0],/nº presa ·[^\n]*não conseguiu ligar ao processo/);
+  assert.doesNotMatch(sent[0],/chegando/,'a que acabou de ser lida ainda está sendo classificada');
+  assert.deepEqual(records.rows.get(KEY).canais.whatsapp.ids,['presa']);
+});
+
+// O tribunal cancela uma intimação já avisada (publicada por engano, republicada): o titular precisa
+// saber — principalmente se já contou prazo dela. Aviso uma vez por canal.
+test('intimação cancelada no Diário depois de avisada: aviso único de CANCELADA (e alerta do prazo já confirmado)',async()=>{
+  const records=memoryRecords(),sent=[];
+  records.rows.set(KEY,{canais:{whatsapp:{ids:['a','b']}}});
+  const db=fakeDb([
+    pub('a',{status:'cancelada',motivo_cancelamento:'publicada por engano'}),
+    pub('b',{status:'cancelada',motivo_cancelamento:'erro material',prazo_cunhado:true}),
+    pub('c',{status:'cancelada',motivo_cancelamento:'nunca avisada'})
+  ]);
+  const alerts=createDjenAlerts({sbReq:db.sbReq,records,processStore,canais:{whatsapp:async t=>{sent.push(t);return true}},now});
+  await alerts.tick();
+  assert.equal(sent.length,1);
+  assert.match(sent[0],/CANCELADA/);
+  assert.match(sent[0],/nº a[^\n]*publicada por engano/);
+  assert.match(sent[0],/nº b[\s\S]*prazo que você confirmou/);
+  assert.doesNotMatch(sent[0],/nº c/,'cancelada que nunca foi avisada não vira aviso');
+  await alerts.tick();
+  assert.equal(sent.length,1,'não repete');
 });
 
 test('bot.js chama o aviso do DJEN depois da leitura diária, com controle por canal',()=>{

@@ -81,11 +81,14 @@ automático do EasyJur: ele conversa.
 
 Como funciona (`lib/andamento-conversa.js`):
 
-1. A cada 30 minutos o LEX confere a carteira. Andamento **oficial** novo (Datajud, DJEN, PJe,
+1. A cada 30 minutos o LEX confere a carteira. Andamento **oficial** novo (DJEN, PJe, MNI,
    captura do tribunal, últimos 30 dias) num processo ativo vira conversa: a IA escreve ao
    titular, pelo Telegram e pelo WhatsApp dele, o que aconteceu, o que significa, se pode haver
    providência (sem nunca calcular prazo) e se vale avisar o cliente — e termina perguntando.
    Fora do horário de trabalho (mesma janela das mensagens automáticas) a conversa espera.
+   O Datajud **não** abre conversa (decisão do titular, 13/10/2026): ele chega dias depois do
+   fato, e aviso atrasado de andamento confunde com novidade. Ele continua atualizando a
+   carteira em silêncio (ver seção 10).
 2. O titular responde do jeito dele ("avisa a Maria", "fala que vamos recorrer", "não precisa").
    A IA escreve a mensagem do cliente a partir da conversa e chama `preparar_mensagem_cliente`.
 3. O código mostra, logo abaixo da fala da IA, o texto **exato** e o destinatário. O "pode" do
@@ -267,3 +270,63 @@ Limites que continuam (registrados, sem correção nesta fase): o histórico fin
 pacote da carteira que o app baixa (qualquer perfil que vê processos vê esse campo); processo
 citado só dentro do número de outro ("vinculado a…") fica de fora da importação e deve ser
 cadastrado pelo número.
+
+## 10. Frente 6 — intimações e prazos sem atraso (13/10/2026)
+
+**Pedido do titular:** "atualização atrasada arrebenta com advogado: perda de prazo perde a ação…
+veja o que a ADVBOX e esses aplicativos fazem para evitar perda de prazo e notificação atrasada,
+implemente no nosso e o que for de notificação atrasada exclua".
+
+### A regra que decide (fonte oficial)
+
+- Desde 16/05/2025, quando a lei não exige intimação pessoal, o prazo conta **da publicação no DJEN**;
+  intimação simultânea por outro meio (painel do PJe, e-mail) tem valor "meramente informacional"
+  (Res. CNJ 455/2022, art. 11, §3º, com a redação da Res. CNJ 569/2024).
+- Publicação = 1º dia útil após a disponibilização; o prazo começa no dia útil seguinte (CPC,
+  art. 224, §§ 2º e 3º). Citação e intimação pessoal da parte vão pelo Domicílio Judicial
+  Eletrônico (art. 18; prazos de leitura no art. 20, §§ 3º-A, 3º-B e 4º).
+
+### O que os sistemas de mercado fazem (pesquisa de 13/10/2026)
+
+| Prática | Quem | LEX antes | LEX agora |
+|---|---|---|---|
+| Captura por OAB **e por nome** (com variações; exceção para homônimo) | Projuris, AASP | só OAB | OAB + nome (o que vier só pelo nome é marcado para conferir) |
+| Mais de uma leitura por dia | AASP (duas levas) | 1 vez (6h) | de 2 em 2 h, 6h–22h |
+| Publicação de processo não cadastrado também chega | Projuris, AASP | avisada 1 vez e esquecida | pendente até tratar |
+| Cada intimação fica pendente até alguém tratar ("contador em zero") | Projuris, Astrea | não havia tela para confirmar o prazo | Prazos › Diário + frases do titular |
+| IA sugere o prazo; pessoa confere | Astrea | sugestão sem tela de confirmação | sugestão + confirmação (botão ou frase) |
+| Alerta de falha na captura / conferência diária | Projuris, OAB/PI | só depois de 26 h | alarme às 8h; aviso de normalização |
+| Cada intimação ligada ao processo e acompanhada até a conclusão (quem concluiu e quando) | ADVBOX | um prazo por processo: o 2º apagava o 1º | um prazo por intimação, com baixa própria registrada |
+| Alertas automáticos que lembram o prazo | ADVBOX | "N marco(s) na fila", sem dizer qual | lembrete com processo, número, data e dias (5, 2, 1, no dia, vencido) |
+| Prazo interno antes do fatal (D-1); dupla checagem | ADVBOX, Projuris | — | lembrete na véspera; proposta é sugestão e a confirmação é humana (prazo interno próprio: próxima frente) |
+
+### O que foi implementado
+
+Ver `docs/LEX_LISTA_MESTRA.md` (registro de 13/10/2026). Módulos: `lib/djen-tratamento.js`
+(intimações a tratar), `lib/djen-vigia.js` (leitura ao longo do dia e alarme), `lib/djen.js`
+(leitura que falha fechada; busca por nome), `lib/notification-digest.js` (aviso depois do resumo
+sai na próxima janela), `lib/forensic-calendar.js` (feriados nacionais), `lib/pje-monitor.js`
+(regra do DJEN nas mensagens), `lib/prazos-abertos.js` (um prazo por intimação), `lib/deadline-alerts.js`
+(lembrete de vencimento) e `lib/djen-alerts.js` (aviso de intimação não ligada e de cancelada). Frases do titular (só valem digitadas por ele; a IA é recusada):
+`CONFIRMO PRAZO nº dd/mm/aaaa`, `SEM PRAZO nº`, `NÃO É NOSSO nº`, `JÁ TRATEI nº`, `REABRIR INTIMAÇÃO nº`.
+
+### Aviso atrasado que saiu
+
+- Datajud (atrasa dias): não chama mais o titular como "andamento novo", nem pelo relógio do PJe,
+  nem pela leitura avulsa; só completa o histórico.
+- Aviso de PRAZOS não espera mais o resumo do dia (que saía uma vez por dia).
+
+### Fontes
+
+- AASP — novas regras de contagem: https://www.aasp.org.br/?p=84278
+- Texto da Res. CNJ 569/2024: https://sintse.tse.jus.br/documentos/2024/Ago/15/diario-da-justica-eletronico-cnj/resolucao-no-569-de-13-de-agosto-de-2024-altera-a-resolucao-cnj-no-455-2022-para-disciplinar-a
+- TRT-11 — prazos só pelo DJE/DJEN: https://portal.trt11.jus.br/index.php/comunicacao/10272-novas-regras-de-contagem-de-prazos-processuais-valem-a-partir-de-16-de-maio
+- Cartilha OAB/PI sobre o DJEN: https://www.oabpi.org.br/wp-content/uploads/2025/06/CARTILHA-NOVAS-INTIMACOES-DJEN-1.pdf
+- Projuris — intimações eletrônicas: https://www.projuris.com.br/blog/intimacoes-eletronicas-como-controlar-prazos/
+- Projuris ADV — controle de intimações: https://www.projuris.com.br/blog/controle-de-intimacoes-no-projuris-adv/
+- Regulamento de intimações da AASP: https://www.aasp.org.br/regulamentos/intimacoes
+- Astrea — tratamento de publicação com IA: https://www.aurum.com.br/blog/tratamento-de-publicacao-ia/
+- ADVBOX — gestão de intimações: https://advbox.com.br/blog/gestao-de-intimacoes-e-prazos/
+- ADVBOX — sistema de prazo fatal (modelo D-1): https://advbox.com.br/blog/sistema-de-prazo-fatal/
+- Parâmetros da API do DJEN (nomeAdvogado, destinatarioadvogados): https://github.com/vbarcelosbt/API_DJEN
+

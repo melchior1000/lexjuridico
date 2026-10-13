@@ -127,14 +127,15 @@ function renderProcessList(){
   const summary=$('#lex-proc-summary');if(summary)summary.innerHTML=procSummary(list,['vencidos','hoje','semana','semcnj'].includes(procTab));
 }
 function setDeadlineServerState(work){deadlineServerState=Array.isArray(work?.prazos?.todos)?work.prazos.todos.filter(x=>x?.deadline_legal_truth===true&&x?.case_id!=null):[]}
-function deadlineTruthMap(){return new Map(deadlineServerState.map(x=>[String(x.case_id),x]))}
+// Prazos confirmados no servidor por processo (um processo pode ter vários: um por intimação).
+function deadlineTruthMap(){const m=new Map();for(const x of deadlineServerState){const k=String(x.case_id);if(!m.has(k))m.set(k,[]);m.get(k).push(x)}return m}
 // Mantida pelo contrato de prazos (test/commercial-ui-corrections); usada por trustedDeadline().
 function deadlineConfirmed(p){return deadlineTruthMap().has(String(p?.id))}
-function deadlineItems(){const trusted=deadlineTruthMap();return procs().map(p=>{const t=trusted.get(String(p.id));if(t){const d=Number(t.days_to_due);return{p,d:Number.isFinite(d)?d:9999,confirmed:true,due:t.prazo||null}}return{p,d:days(p),confirmed:false,due:null}}).filter(x=>x.d<9999).sort((a,b)=>a.d-b.d)}
+function deadlineItems(){const trusted=deadlineTruthMap();return procs().flatMap(p=>{const ts=trusted.get(String(p.id));if(ts&&ts.length)return ts.map(t=>{const d=Number(t.days_to_due);return{p,d:Number.isFinite(d)?d:9999,confirmed:true,due:t.prazo||null,djen:t.djen_id_origem||null}});return[{p,d:days(p),confirmed:false,due:null}]}).filter(x=>x.d<9999).sort((a,b)=>a.d-b.d)}
 function deadlineBuckets(all=deadlineItems()){return{revisar:all.filter(x=>!x.confirmed),vencidos:all.filter(x=>x.confirmed&&x.d<0),hoje:all.filter(x=>x.confirmed&&x.d===0),dias7:all.filter(x=>x.confirmed&&x.d>0&&x.d<=7),todos:all}}
 function deadlineVisible(all=deadlineItems()){const b=deadlineBuckets(all);return prazoTab==='revisar'?b.revisar:prazoTab==='vencidos'?b.vencidos:prazoTab==='hoje'?b.hoje:prazoTab==='7dias'?b.dias7:b.todos}
 function deadlineEmptyMessage(){return prazoTab==='revisar'?'Nenhum prazo legado aguardando conferência.':prazoTab==='vencidos'?'Nenhum prazo confirmado está vencido.':prazoTab==='hoje'?'Nenhum prazo confirmado vence hoje.':prazoTab==='7dias'?'Nenhum prazo confirmado vence nos próximos 7 dias.':'Nenhum prazo cadastrado.'}
-function deadlineRows(list,emptyMessage=deadlineEmptyMessage()){return list.map(x=>{const legacy=!x.confirmed,label=legacy?'REVISAR':x.d<0?'vencido '+Math.abs(x.d)+'d':x.d===0?'hoje':x.d+'d',meta=legacy?'Anotado no LEX, ainda não conferido no tribunal · '+(x.p.prazoReal||x.p.prazo||'data não informada'):[x.p.numero,x.due?'vence '+x.due:null].filter(Boolean).join(' · ')||(x.p.tribunal||'');return'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><i class="'+(legacy?'amber':x.d<=0?'red':x.d<=2?'amber':'blue')+'"></i><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(meta)+'</small></span><em>'+esc(label)+'</em></button>'}).join('')||'<div class="lex-empty">'+esc(emptyMessage)+'</div>'}
+function deadlineRows(list,emptyMessage=deadlineEmptyMessage()){return list.map(x=>{const legacy=!x.confirmed,label=legacy?'REVISAR':x.d<0?'vencido '+Math.abs(x.d)+'d':x.d===0?'hoje':x.d+'d',meta=legacy?'Anotado no LEX, ainda não conferido no tribunal · '+(x.p.prazoReal||x.p.prazo||'data não informada'):[x.p.numero,x.due?'vence '+x.due:null,x.djen?'intimação nº '+x.djen:null].filter(Boolean).join(' · ')||(x.p.tribunal||'');return'<button onclick="lexOpenProc(\''+esc(String(x.p.id))+'\')"><i class="'+(legacy?'amber':x.d<=0?'red':x.d<=2?'amber':'blue')+'"></i><span><strong>'+esc(x.p.nome||x.p.numero||'Processo')+'</strong><small>'+esc(meta)+'</small></span><em>'+esc(label)+'</em></button>'}).join('')||'<div class="lex-empty">'+esc(emptyMessage)+'</div>'}
 function deadlineOrganizeCommand(){
   const critical=deadlineItems().filter(x=>!x.confirmed||x.d<=7).slice(0,30);
   if(!critical.length)return'Confira a controladoria de prazos e diga se existe alguma pendência que exige ação. Não invente prazo nem vencimento.';
@@ -304,8 +305,67 @@ window.lexMoreProcGroup=key=>{const k=String(key);procGroupShow[k]=(procGroupSho
 window.lexSetProcSort=value=>{procSort=['recentes','nome','numero'].includes(value)?value:'recentes';procPage=1;renderProcessList()};
 window.lexSetProcPage=page=>{procPage=Math.max(1,Number(page)||1);renderProcessList();window.scrollTo?.({top:0,behavior:'smooth'})};
 window.lexFilterProc=q=>{procQuery=String(q||'').toLowerCase();procPage=1;renderProcessList()};
-window.lexPrazos=async function(){navMark('prazos');let serverError=null;try{const d=await lexApi('/api/trabalho');setDeadlineServerState(d)}catch(err){deadlineServerState=[];serverError=err?.message||'Falha ao consultar o servidor'}const all=deadlineItems(),b=deadlineBuckets(all),visible=deadlineVisible(all),page=pageSlice(visible,prazoPage,DEADLINE_PAGE_SIZE);prazoPage=page.page;const recommendation=b.revisar.length?'Há '+b.revisar.length+' prazo(s) anotado(s) no LEX ainda não conferido(s) no tribunal. Confira antes de contar com a data.':b.vencidos.length?'Há '+b.vencidos.length+' prazo(s) confirmado(s) vencido(s). Confira primeiro a situação jurídica e a ação pendente.':b.hoje.length?'Há '+b.hoje.length+' prazo(s) confirmado(s) vencendo hoje. Priorize a conferência agora.':b.dias7.length?'Há '+b.dias7.length+' prazo(s) confirmado(s) nos próximos 7 dias. Organize a ordem de trabalho.':'Nenhum prazo confirmado crítico nos próximos 7 dias.';const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')" aria-label="Abrir calendário">▣</button></div>'+(serverError?'<div class="lex-warning">Não consegui confirmar os prazos auditáveis no servidor: '+esc(serverError)+'. Dados locais aparecem apenas para conferência.</div>':'')+'<div class="lex-tabs"><button class="'+(prazoTab==='revisar'?'on':'')+'" onclick="lexSetPrazoTab(\'revisar\')">Revisar <b>'+b.revisar.length+'</b></button><button class="'+(prazoTab==='vencidos'?'on':'')+'" onclick="lexSetPrazoTab(\'vencidos\')">Vencidos <b>'+b.vencidos.length+'</b></button><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+b.hoje.length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+b.dias7.length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos <b>'+b.todos.length+'</b></button></div><div class="lex-timeline">'+deadlineRows(page.items)+'</div>'+pagerHtml(page,'lexSetPrazoPage')+'<div class="lex-recommend"><b>💡 LEX recomenda</b><p>'+esc(recommendation)+'</p><button onclick="lexOrganizeDeadlines()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
-window.lexSetPrazoTab=tab=>{prazoTab=['revisar','vencidos','hoje','7dias','todos'].includes(tab)?tab:'todos';prazoPage=1;window.lexPrazos()};
+// Prazos › Diário: intimações do DJEN a tratar (lib/djen-tratamento.js). Cada uma mostra QUEM,
+// O QUÊ, POR QUÊ e a AÇÃO; confirmar prazo e dar por tratada são atos do advogado (o servidor confere).
+let diarioResumo=null,diarioLista=[];
+function diarioData(ymd){const m=String(ymd||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'/'+m[2]+'/'+m[1]:'—'}
+function diarioIsoDeBr(v){const m=String(v||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(!m)return null;const iso=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');const d=new Date(iso+'T12:00:00Z');return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==iso?null:iso}
+// O número vai dentro de onclick="...('nº')": só letras, números, - e _ (o resto não gera botão).
+function diarioId(v){const s=String(v??'');return /^[A-Za-z0-9_-]{1,40}$/.test(s)?s:null}
+function diarioCard(i){
+  const orfa=i.situacao==='processo_nao_cadastrado',naoLigada=i.situacao==='a_conferir',id=diarioId(i.djen_id);
+  const quem=orfa?(i.cnj_formatado||'sem número')+' — processo NÃO cadastrado no LEX'
+    :naoLigada?(i.cnj_formatado||'sem número')+' — o LEX leu, mas não conseguiu ligar ao processo: confira e anote o prazo'
+    :(i.processo||'Processo')+(i.cnj_formatado?' · '+i.cnj_formatado:'');
+  const prazo=i.prazo_proposto?'Prazo proposto: '+diarioData(i.prazo_proposto)+(i.dias_prazo?' ('+i.dias_prazo+' dias)':'')+(i.dias_ate_prazo_proposto<0?' — já passou':i.dias_ate_prazo_proposto===0?' — vence hoje':' — faltam '+i.dias_ate_prazo_proposto+' dia(s)')+'. É sugestão: confira no texto.'
+    :'Sem prazo calculado: leia o texto e informe a data.';
+  const botoes=!id?'<small>Use o chat para tratar esta intimação.</small>':orfa
+    ?'<button onclick="lexDiarioCadastrar(\''+id+'\')">Cadastrar processo</button><button class="ghost" onclick="lexDiarioTratar(\''+id+'\',\'nao_e_nosso\')">Não é nosso</button>'
+    :naoLigada
+    ?'<button onclick="lexDiarioTratar(\''+id+'\',\'tratada_fora\')">Já tratei</button><button class="ghost" onclick="lexDiarioTratar(\''+id+'\',\'sem_prazo\')">Sem prazo para nós</button>'
+    :'<button onclick="lexDiarioConfirmar(\''+id+'\')">Confirmar prazo</button><button class="ghost" onclick="lexDiarioTratar(\''+id+'\',\'sem_prazo\')">Sem prazo para nós</button>';
+  return'<article class="lex-diario-item'+(i.urgente?' urgente':'')+'"><div><b>'+(i.urgente?'🔴 ':'')+esc(i.tipo)+' · '+esc(i.tribunal||'tribunal?')+'</b> <small>nº '+esc(i.djen_id)+' · disponibilizada '+diarioData(i.disponibilizada_em)+' · publicada '+diarioData(i.publicada_em)+'</small></div>'
+    +'<p>'+esc(quem)+'</p>'+(i.achada_pelo_nome?'<p class="lex-diario-trecho">⚠️ Achada pelo nome do advogado, sem a sua OAB: confira se é sua (se for homônimo, use "Não é nosso").</p>':'')+'<p><b>'+esc(prazo)+'</b></p>'+(i.trecho?'<p class="lex-diario-trecho">“'+esc(i.trecho)+'”</p>':'')
+    +(i.texto?'<details><summary>Texto da intimação</summary><p>'+esc(i.texto)+'</p></details>':'')+'<div class="lex-diario-acoes">'+botoes+'</div></article>';
+}
+async function diarioHtml(){
+  let r;
+  try{r=await lexApi('/api/escritorio/intimacoes')}
+  catch(err){diarioLista=[];return'<div class="lex-warning">Não consegui ler as intimações do Diário: '+esc(err?.message||'falha no servidor')+'. Isso NÃO significa que não há intimações — confira o DJEN.</div>'}
+  diarioLista=Array.isArray(r?.pendentes)?r.pendentes:[];
+  diarioResumo={total:Number(r?.total)||0,orfas:Number(r?.orfas)||0,urgentes:Number(r?.urgentes)||0};
+  const tratadas=Array.isArray(r?.tratadas_recentes)?r.tratadas_recentes.slice(0,5):[];
+  return'<p class="lex-diario-regra">O prazo do advogado conta da publicação no DJEN (Res. CNJ 455/2022, art. 11, §3º). Cada intimação fica aqui até você decidir: confirmar o prazo, cadastrar o processo ou dizer que não há prazo para o escritório.</p>'
+    +(diarioLista.length?diarioLista.map(diarioCard).join(''):'<div class="lex-empty">Nenhuma intimação do Diário esperando tratamento.</div>')
+    +(tratadas.length?'<details class="lex-diario-tratadas"><summary>Tratadas recentemente ('+tratadas.length+')</summary>'+tratadas.map(t=>{const id=diarioId(t.djen_id);return'<p>nº '+esc(t.djen_id)+' · '+esc(t.processo||t.cnj_formatado||'')+' — '+esc(t.tratamento?.descricao||'')+(t.tratamento?.motivo?' ('+esc(t.tratamento.motivo)+')':'')+' · '+esc(t.tratamento?.por||'')+' em '+diarioData(String(t.tratamento?.em||'').slice(0,10))+(id?' <button class="ghost" onclick="lexDiarioReabrir(\''+id+'\')">Reabrir</button>':'')+'</p>'}).join('')+'</details>':'');
+}
+window.lexDiarioConfirmar=async function(id){
+  const i=diarioLista.find(x=>x.djen_id===id);if(!i)return;
+  const v=window.prompt('Data final do prazo (dd/mm/aaaa) — '+(i.processo||i.cnj_formatado||'processo')+'.\nA data proposta é sugestão: confira no texto da intimação antes de confirmar.',i.prazo_proposto?diarioData(i.prazo_proposto):'');
+  if(v==null)return;
+  const iso=diarioIsoDeBr(v);
+  if(!iso){window.toast?.('Data inválida. Use dd/mm/aaaa.','erro');return}
+  try{await lexApi('/api/escritorio/prazos/cunhar',{method:'POST',body:JSON.stringify({djen_id:i.djen_id,due_at:iso,regime:i.regime||'manual',suggestion_source_hash:i.sugestao_hash||null,observacao:'Confirmado em Prazos › Diário'})});window.toast?.('Prazo confirmado: '+diarioData(iso)+'.','ok')}
+  catch(err){window.toast?.(err?.message||'Prazo não confirmado','erro')}
+  window.lexPrazos();
+};
+window.lexDiarioTratar=async function(id,acao){
+  const i=diarioLista.find(x=>x.djen_id===id);if(!i)return;
+  const pergunta=acao==='nao_e_nosso'?'A intimação nº '+id+' NÃO é de processo do escritório?':acao==='tratada_fora'?'A intimação nº '+id+' já foi tratada (prazo anotado e providência tomada)?':'A intimação nº '+id+' NÃO tem prazo para o escritório?';
+  const motivo=window.prompt(pergunta+'\nEla sai da lista do que falta tratar, fica registrada com o seu nome e pode ser reaberta.\nMotivo (opcional):','');
+  if(motivo==null)return;
+  try{await lexApi('/api/escritorio/intimacoes/tratar',{method:'POST',body:JSON.stringify({djen_id:id,acao,motivo})});window.toast?.('Intimação marcada.','ok')}
+  catch(err){window.toast?.(err?.message||'Não marquei','erro')}
+  window.lexPrazos();
+};
+window.lexDiarioReabrir=async function(id){
+  try{await lexApi('/api/escritorio/intimacoes/reabrir',{method:'POST',body:JSON.stringify({djen_id:id})});window.toast?.('Intimação voltou para a lista.','ok')}
+  catch(err){window.toast?.(err?.message||'Não reabri','erro')}
+  window.lexPrazos();
+};
+window.lexDiarioCadastrar=function(id){const i=diarioLista.find(x=>x.djen_id===id);if(i?.cnj_formatado&&typeof window.lexAskLex==='function')window.lexAskLex('cadastre o processo '+i.cnj_formatado)};
+window.lexPrazos=async function(){navMark('prazos');let serverError=null;try{const d=await lexApi('/api/trabalho');setDeadlineServerState(d);diarioResumo=d?.prazos?.intimacoes&&!d.prazos.intimacoes.erro?d.prazos.intimacoes:diarioResumo}catch(err){deadlineServerState=[];serverError=err?.message||'Falha ao consultar o servidor'}const diario=prazoTab==='diario'?await diarioHtml():null;const all=deadlineItems(),b=deadlineBuckets(all),visible=deadlineVisible(all),page=pageSlice(visible,prazoPage,DEADLINE_PAGE_SIZE);prazoPage=page.page;const recommendation=b.revisar.length?'Há '+b.revisar.length+' prazo(s) anotado(s) no LEX ainda não conferido(s) no tribunal. Confira antes de contar com a data.':b.vencidos.length?'Há '+b.vencidos.length+' prazo(s) confirmado(s) vencido(s). Confira primeiro a situação jurídica e a ação pendente.':b.hoje.length?'Há '+b.hoje.length+' prazo(s) confirmado(s) vencendo hoje. Priorize a conferência agora.':b.dias7.length?'Há '+b.dias7.length+' prazo(s) confirmado(s) nos próximos 7 dias. Organize a ordem de trabalho.':'Nenhum prazo confirmado crítico nos próximos 7 dias.';const body='<div class="lex-page-head"><div><small>Controladoria</small><h1>Prazos</h1></div><button onclick="goLex(\'calendario\')" aria-label="Abrir calendário">▣</button></div>'+(serverError?'<div class="lex-warning">Não consegui confirmar os prazos auditáveis no servidor: '+esc(serverError)+'. Dados locais aparecem apenas para conferência.</div>':'')+'<div class="lex-tabs"><button class="'+(prazoTab==='diario'?'on':'')+'" onclick="lexSetPrazoTab(\'diario\')">Diário <b>'+(diarioResumo?(diarioResumo.urgentes?'🔴 ':'')+Number(diarioResumo.total||0):'?')+'</b></button><button class="'+(prazoTab==='revisar'?'on':'')+'" onclick="lexSetPrazoTab(\'revisar\')">Revisar <b>'+b.revisar.length+'</b></button><button class="'+(prazoTab==='vencidos'?'on':'')+'" onclick="lexSetPrazoTab(\'vencidos\')">Vencidos <b>'+b.vencidos.length+'</b></button><button class="'+(prazoTab==='hoje'?'on':'')+'" onclick="lexSetPrazoTab(\'hoje\')">Hoje <b>'+b.hoje.length+'</b></button><button class="'+(prazoTab==='7dias'?'on':'')+'" onclick="lexSetPrazoTab(\'7dias\')">7 dias <b>'+b.dias7.length+'</b></button><button class="'+(prazoTab==='todos'?'on':'')+'" onclick="lexSetPrazoTab(\'todos\')">Todos <b>'+b.todos.length+'</b></button></div><div class="lex-timeline">'+(diario??deadlineRows(page.items))+'</div>'+(diario?'':pagerHtml(page,'lexSetPrazoPage'))+'<div class="lex-recommend"><b>💡 LEX recomenda</b><p>'+esc(recommendation)+'</p><button onclick="lexOrganizeDeadlines()">Organizar com o LEX</button></div>';shell('Prazos',body,'prazos')};
+window.lexSetPrazoTab=tab=>{prazoTab=['diario','revisar','vencidos','hoje','7dias','todos'].includes(tab)?tab:'todos';prazoPage=1;window.lexPrazos()};
 window.lexSetPrazoPage=page=>{prazoPage=Math.max(1,Number(page)||1);window.lexPrazos();window.scrollTo?.({top:0,behavior:'smooth'})};
 let taskWatch=null;
 function stopTaskWatch(expected){if(taskWatch&&(!expected||taskWatch===expected)){clearInterval(taskWatch);taskWatch=null}}

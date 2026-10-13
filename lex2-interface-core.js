@@ -105,8 +105,14 @@ function prazosSheet(ids){
   if(done){
    const id=done.dataset.done;done.disabled=true;
    try{
-     await lexApi('/api/escritorio/prazos/cumprido',{method:'POST',body:JSON.stringify({processo_id:id,acao:'marcar'})});
-     marked.add(id);await pullProcs();render();
+     // Diz QUAL prazo foi cumprido (o processo pode ter vários abertos): clique repetido não baixa o seguinte.
+     const alvo=procs().find(p=>String(p.id)===id);
+     const r=await lexApi('/api/escritorio/prazos/cumprido',{method:'POST',body:JSON.stringify({processo_id:id,acao:'marcar',vencimento:alvo?deadlineTruthDue(alvo)||undefined:undefined,djen_id:alvo?.deadline_truth?.source_ref||undefined})});
+     const restantes=Number(r?.processo?.prazo_baixa?.restantes)||0;
+     if(!restantes)marked.add(id);
+     await pullProcs();render();
+     const aviso=s.body.querySelector?.('.lex-sheet-msg');
+     if(restantes&&aviso)aviso.textContent='Prazo baixado. Este processo ainda tem '+restantes+' prazo(s) aberto(s): o próximo aparece acima.';
    }catch(err){done.disabled=false;if(msg)msg.textContent=err.message||'Não consegui marcar o prazo como cumprido.'}
    return;
   }
@@ -156,7 +162,10 @@ async function briefing(){
    if(late.length)say(late.length+' prazo'+(late.length===1?' oficial venceu':'s oficiais venceram')+'. Confira no tribunal se foi cumprido; a baixa é gravada no servidor.','late',[{label:'Resolver agora',onclick:'lexPrazosVencidos()'}],true);
    if(today_.length)say(today_.length+' prazo'+(today_.length===1?' oficial vence':'s oficiais vencem')+' hoje.','urgent',[{label:'Ver com o LEX',onclick:"lexAskLex('prazos de hoje')"}],true);
    if(confirmed.length)say('Há '+confirmed.length+' prazo'+(confirmed.length===1?' oficial em acompanhamento':'s oficiais em acompanhamento')+'.','info',[{label:'Ver prazos',onclick:'lexPrazos()'}]);
-   if(toReview.length)say('Há '+toReview.length+' publicação'+(toReview.length===1?' aguardando':' aguardando')+' conferência de prazo. Eu não conto como prazo confirmado antes disso.','soon',[{label:'Conferir',onclick:"lexSetPrazoTab('revisar')"}],true);
+   // O que falta tratar do Diário: casadas sem prazo confirmado + processos não cadastrados (Prazos › Diário).
+   const pend=desk.intimacoes&&Number.isFinite(Number(desk.intimacoes.total))?Number(desk.intimacoes.total):toReview.length,orf=Number(desk.intimacoes?.orfas)||0,urg=Number(desk.intimacoes?.urgentes)||0;
+   if(desk.intimacoes?.erro)say('Não consegui ler as intimações do Diário a tratar ('+desk.intimacoes.erro+'). Isso NÃO significa que não há intimações.','warn',[{label:'Ver Diário',onclick:"lexSetPrazoTab('diario')"}],true);
+   else if(pend)say('Há '+pend+' intimaç'+(pend===1?'ão':'ões')+' do Diário a tratar'+(orf?' ('+orf+' de processo não cadastrado)':'')+(urg?', '+urg+' urgente'+(urg===1?'':'s'):'')+'. Eu não conto como prazo confirmado antes da sua decisão.',urg?'urgent':'soon',[{label:'Tratar agora',onclick:"lexSetPrazoTab('diario')"}],true);
    const tasks=list(work.value?.tarefas);
    const review=tasks.filter(t=>t?.status==='aguardando_revisao').length;
    waiting=tasks.filter(t=>['aguardando_revisao','aguardando_dados','aguardando_documento_nitido','aguardando_configuracao','falhou'].includes(t?.status)).length;

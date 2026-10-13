@@ -101,7 +101,7 @@ test('Home relata somente prazos do servidor e publicações pendentes como conf
   await h.window.lexHome();
   const html=h.nodes['.lex-today-list'].innerHTML;
   assert.match(html,/1 prazo oficial em acompanhamento/);
-  assert.match(html,/1 publicação aguardando conferência de prazo/);
+  assert.match(html,/Há 1 intimação do Diário a tratar\. Eu não conto como prazo confirmado antes da sua decisão/);
   assert.match(html,/1 entrega está aguardando sua revisão/);
   assert.match(html,/1 conversa de cliente está em andamento/);
   assert.match(html,/PJe\/eproc está configurado para: TJMG/);
