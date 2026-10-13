@@ -188,6 +188,12 @@ test('o bom dia ganha a linha do painel só quando há algo pedindo ação',asyn
   assert.doesNotMatch(limpo.message,/📊 Painel/);
 });
 
+test('Task Engine fora do ar não apaga a linha do painel no bom dia (processos parados continuam)',async()=>{
+  const r=await executeNaturalOfficeCommand(deps({engine:{async list(){throw new Error('fora')}}}),{text:'resumo do dia',profile:'advogado',now:NOW});
+  assert.equal(r.command.action,'daily_brief');
+  assert.match(r.message,/📊 Painel: \d+ pontos pedindo ação \(2 processos parados\)/);
+});
+
 test('o agente LEX tem a ferramenta do painel e ela devolve o texto e os números',async()=>{
   const defs=LexTools.definitions({});
   const def=defs.find(d=>d.name==='painel_do_escritorio');
