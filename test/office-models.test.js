@@ -200,3 +200,10 @@ test('texto branco sobre fundo colorido (cabeçalho de tabela) fica; hífen inse
   for(const v of ['DOS FATOS','DO DIREITO','DOS PEDIDOS','CPF 123-45 • fim'])assert.ok(t.includes(v),v+' em: '+t);
   assert.doesNotMatch(t,/ORDEM BRANCA/);
 });
+
+test('o motor só pede modelo de tipo de peça conhecido; arquivo esperando o tipo nunca vira modelo (CodeRabbit #163)',async()=>{
+  const rec=records(),M=createOfficeModels({records:rec});
+  await M.receberArquivo({buffer:await docx(PARAGRAFOS),nome:'modelo.docx',perfil:'admin'});
+  assert.ok((await rec.read('lex_modelo_pendente'))?.value?.texto,'há arquivo esperando o tipo');
+  for(const t of ['pendente','__proto__','constructor',''])assert.equal(await M.paraTarefa(t),null,t);
+});

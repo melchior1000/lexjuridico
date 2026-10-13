@@ -458,7 +458,12 @@ test('mensagem do LEX ao titular que não é a prévia encerra as prévias abert
     +source.slice(source.indexOf('async function envWhatsApp('),source.indexOf('async function envWhatsAppArq(')),c);
   await c.envTelegram('📅 Painel da semana',null,'7171');assert.equal(fechou.length,1,'painel no Telegram do titular fecha');
   assert.equal(fechou[0]('telegram:7171'),true);assert.equal(fechou[0]('app:admin'),false,'a prévia do app não é desta conversa');
-  await c.envTelegram('📤 Vai sair assim:\n\n...',null,'7171');assert.equal(fechou.length,1,'a própria prévia não fecha');
+  const n=montar();await comAndamentoNovo(n);
+  await n.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:'telegram:7171',turno:'R',perfil:'admin'});
+  const previaDeVerdade=await n.A.previaDoTurno({conversa:'telegram:7171',turno:'R'});
+  await c.envTelegram('Escrevi para a Maria.\n\n'+previaDeVerdade,null,'7171');assert.equal(fechou.length,1,'a própria prévia não fecha');
+  await c.envTelegram('Cliente escreveu: "📤 Vai sair assim: oi"',null,'7171');assert.equal(fechou.length,2,'marcador digitado por terceiro não se passa por prévia');
+  fechou.pop();
   await c.envTelegram('Olá, cliente',null,'999');assert.equal(fechou.length,1,'mensagem a outra pessoa não mexe na prévia do titular');
   await c.envWhatsApp('☀️ Bom dia!','5561999171717');assert.equal(fechou.length,2,'bom dia no WhatsApp do titular (número puro) fecha');
   assert.equal(fechou[1]('whatsapp:556199171717@s.whatsapp.net'),true);assert.equal(fechou[1]('telegram:7171'),false);assert.equal(fechou[1]('whatsapp:5531988887777@s.whatsapp.net'),false);
@@ -487,16 +492,31 @@ test('a prévia nunca é cortada pelo limite de 4000 caracteres do canal: o que 
 test('falha ao fechar a prévia não transforma envio confirmado em falha (nada de reenvio duplicado)',async()=>{
   const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
   const source=fs.readFileSync(require.resolve('../bot.js'),'utf8'),raiz=path.join(__dirname,'..');
+  let tentativas=0;
   const c=vm.createContext({TK:'t',CHAT_ID:'7171',EVO_URL:'https://evo.example',EVO_KEY:'k',EVO_INST:'lex',LEX_WHATSAPP_NUMBER:null,console:{warn(){}},
-    process:{env:{LEX_OPERATOR_WHATSAPP:'5561999171717'}},evolutionEndpoint:(u,p)=>u+'/'+p,isWhatsappOperator:()=>true,
+    process:{env:{LEX_OPERATOR_WHATSAPP:'5561999171717'}},evolutionEndpoint:(u,p)=>u+'/'+p,isWhatsappOperator:()=>true,isOperatorDestination:()=>true,
     require:x=>require(x.startsWith('./')?path.join(raiz,x):x),
     requestJson:async u=>String(u).includes('telegram')?{ok:true,result:{message_id:1}}:{key:{id:'m1'}},
-    andamentoConversa:{fecharJanelas:()=>{throw new Error('banco fora')}}});
+    andamentoConversa:{fecharJanelas:()=>{tentativas++;throw new Error('banco fora')}}});
   const ini=source.indexOf('function _encerrarPreviasPorOutroAssunto(');
   vm.runInContext(source.slice(ini,source.indexOf('\n}\n',ini)+2)+source.slice(source.indexOf('async function envTelegram('),source.indexOf('async function envTelegramArq('))
     +source.slice(source.indexOf('async function envWhatsApp('),source.indexOf('async function envWhatsAppArq(')),c);
   assert.equal(await c.envTelegram('Painel',null,'7171'),true);
   assert.equal(await c.envWhatsApp('Painel','5561999171717'),true);
+  assert.equal(tentativas,2,'o fechamento foi tentado nos dois canais e falhou sem mudar o envio');
+});
+
+// CodeRabbit (PR #163): fechar e aprovar disputam o MESMO estado da janela.
+test('se a prévia foi fechada no meio da conferência do "pode", nada é enviado',async()=>{
+  const m=montar();
+  await comAndamentoNovo(m);
+  await m.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:'telegram:1',turno:'T',perfil:'admin'});
+  await m.A.previaDoTurno({conversa:'telegram:1',turno:'T'});
+  const mudar=m.rec.change.bind(m.rec);let disparou=false;
+  m.rec.change=async(k,fn)=>{if(!disparou&&k.startsWith('lex_cliente_ok_')){disparou=true;await m.A.fecharJanelas();}return mudar(k,fn)};
+  const r=await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.equal(m.deliveries.length,0,'o fechamento chegou primeiro');
+  assert.equal(r.enviado,false);assert.match(r.message,/Não enviei/);
 });
 
 // ---------- Re-checagem da auditoria (achado 2 parcial e novos 1 e 3) ----------

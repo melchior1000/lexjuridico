@@ -74,3 +74,11 @@ test('o painel separa a equipe por pessoa quando há conta; só por perfil, ele 
   assert.match(soPerfil.equipe.observacao,/própria conta/);
   assert.match(I.officeInsightsMessage(r),/• Dra\. Ana: 2 ordens, 0 revisões\./);
 });
+
+test('painel marcado para 12h ou mais tarde não é pulado em silêncio (CodeRabbit #163)',async()=>{
+  const rec=records(),enviados=[];
+  const mk=(iso,hour)=>createMorningBrief({records:rec,key:'lex_painel_semanal',weekdays:[1],hour,compose:async()=>'Painel',deliver:async t=>{enviados.push(t);return true},now:()=>new Date(iso)});
+  assert.equal((await mk('2026-10-12T16:05:00Z',13).tick()).ok,true,'segunda, 13h05 em Brasília');
+  assert.equal((await mk('2026-10-19T21:30:00Z',13).tick()).skipped,'fora_horario','depois da janela de 4 horas');
+  assert.equal((await mk('2026-10-19T12:00:00Z',99).tick()).ok,true,'hora inválida volta ao padrão');
+});

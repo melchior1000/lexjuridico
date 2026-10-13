@@ -195,3 +195,8 @@ test('valor ilegível com parcela não vira quitação da parcela inteira; mesma
   const b=H.registrarPagamento(P({honorarios:a.honorarios}),{parcela:3,data:'13/10/2026'},{agora:AGORA,turno:'T'});
   assert.equal(b.honorarios.parcelas[2].status,'paga','parcelas diferentes de mesmo valor, no mesmo turno: as duas entram');
 });
+
+test('contrato mensal com total acima do teto é recusado (CodeRabbit #163)',()=>{
+  assert.throws(()=>H.registrarContrato(P(),{tipo:'mensal',valor_mensal:'100.000.000',meses:120,primeiro_vencimento:'10/11/2026'},{agora:AGORA}),/acima do limite/);
+  assert.equal(H.registrarContrato(P(),{tipo:'mensal',valor_mensal:'1.000',meses:120,primeiro_vencimento:'10/11/2026'},{agora:AGORA}).honorarios.contrato.valor_total,12000000);
+});
