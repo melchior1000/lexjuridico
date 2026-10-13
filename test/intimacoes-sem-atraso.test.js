@@ -167,6 +167,9 @@ test('pelo canal, com a frase exata do titular: SEM PRAZO, NÃO É NOSSO, CONFIR
   assert.match(lista.message,/Nenhuma intimação do Diário \(DJEN\) esperando tratamento/);
   assert.match((await say('reabrir intimação 113')).message,/voltou para a lista/);
   assert.match((await say('intimações a tratar')).message,/1 intimação do Diário a tratar/);
+  // Data que não existe no calendário (31/02): pede de novo, sem confirmar — CodeRabbit #165.
+  const invalida=await say('CONFIRMO PRAZO 113 31/02/2026');
+  assert.equal(invalida.needs_input,true);assert.match(invalida.message,/31\/02\/2026 não existe[\s\S]*CONFIRMO PRAZO 113 dd\/mm\/aaaa[\s\S]*Nada foi confirmado/);
   // A órfã não tem processo: confirmar prazo pede o cadastro antes, sem confirmar nada.
   await say('reabrir intimação 112');
   assert.match((await say('CONFIRMO PRAZO 112 30/10/2026')).message,/não está cadastrado no LEX[\s\S]*Nada foi confirmado/);

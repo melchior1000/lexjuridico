@@ -152,6 +152,23 @@ test('lembrete de vencimento diz o processo, a data e quanto falta — um por pr
   assert.match(require('../lib/deadline-alerts').textoLembretes(r2.lembretes),/HOJE \(14\/10\/2026\)/);
 });
 
+// CodeRabbit #165: duas intimações do mesmo processo com a MESMA data — o lembrete é um por
+// processo/data/marco (o banco não repete), mas tem de citar as duas intimações.
+test('mesma data em duas intimações do processo: um lembrete que cita as duas',async()=>{
+  const {runDailyOfficeJobs}=require('../lib/office-daily-jobs');
+  const c=cenario();
+  await c.confirmar('dj1','2026-10-14');await c.confirmar('dj2','2026-10-14');
+  const criados=[];
+  const sbReq=async(method,table,data)=>{
+    if(table==='prazo_alertas'&&method==='POST'){const k=data.processo_id+'|'+data.due_at+'|'+data.marco;if(criados.includes(k))return{ok:true,status:200,body:[]};criados.push(k);return{ok:true,status:201,body:[{...data}]}}
+    return{ok:true,status:200,body:[]};
+  };
+  const r=await runDailyOfficeJobs({processStore:c.ps,sbReq,now:NOW,datajudOptions:{integrityKey:KEY},djenOptions:{oabs:[],integrityKey:KEY}});
+  assert.equal(r.lembretes.length,1);
+  assert.deepEqual(r.lembretes[0].djen_ids,['dj1','dj2']);
+  assert.match(require('../lib/deadline-alerts').textoLembretes(r.lembretes),/intimações nº dj1 e dj2/);
+});
+
 test('vigia diária manda o lembrete detalhado (não mais "N marco(s) entraram na fila")',async()=>{
   const {createDeadlineScheduler}=require('../lib/deadline-scheduler');
   const mem=new Map(),avisos=[];
