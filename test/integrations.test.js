@@ -160,3 +160,14 @@ test('mensagem da recepção ou de comando ao titular avisa o LEX (fecha a prév
     assert.equal(await I.handleWhatsappOperatorCommand({data:{...body.data,key:{...body.data.key,id:'k2'}}},'lex',{url:'https://evo.example',key:'k',request:async()=>({key:{id:'m2'}}),store:{list:async()=>[]}}),true);
   }finally{I.setOperatorOutboundHook(null);if(env.LEX_OPERATOR_WHATSAPP===undefined)delete process.env.LEX_OPERATOR_WHATSAPP;else process.env.LEX_OPERATOR_WHATSAPP=env.LEX_OPERATOR_WHATSAPP}
 });
+
+// Auditoria da fase 2, rodada final: titular configurado sem o 55; fixo não se passa pelo titular.
+test('destino do titular reconhecido com ou sem 55; número fixo com os mesmos dígitos não se passa pelo titular',()=>{
+  const I=require('../lib/integration-status');
+  assert.equal(I.isOperatorDestination('61999998888','61999998888'),true,'titular gravado sem o 55');
+  assert.equal(I.isOperatorDestination('5561999998888','61999998888'),true);
+  assert.equal(I.isOperatorDestination('5561988887777','61999998888'),false,'cliente não é titular');
+  assert.equal(I.sameBrazilWhatsappNumber('556199998888','5561999998888'),true,'conta antiga do WhatsApp, sem o nono dígito');
+  assert.equal(I.sameBrazilWhatsappNumber('556133334444','5561933334444'),false,'fixo 61 3333-4444 não é o celular 61 9 3333-4444');
+  assert.equal(I.isWhatsappOperator('556133334444@s.whatsapp.net','5561933334444'),false);
+});

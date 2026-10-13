@@ -256,6 +256,13 @@ com parcela é recusado; nome de arquivo limpo nas instruções; nome enorme nã
 O envio ao titular por número puro (como o LEX manda o bom dia e o painel) também passou a
 ser reconhecido — a primeira versão da correção só reconhecia o identificador completo.
 
+Rodada final (verificação do commit): todas as correções confirmadas. Três ajustes pequenos,
+também com teste: letra branca sobre fundo colorido (cabeçalho de tabela) continua no modelo,
+e hífen inseparável e símbolo inserido aparecem; o titular configurado sem o 55 é reconhecido
+no envio; e um número **fixo** com os mesmos dígitos do celular do titular sem o nono dígito
+(61 3333-4444 × 61 9 3333-4444) deixou de passar pelo titular — falha anterior a esta fase,
+na conferência de quem é o titular no WhatsApp.
+
 Limites que continuam (registrados, sem correção nesta fase): o histórico financeiro vai no
 pacote da carteira que o app baixa (qualquer perfil que vê processos vê esse campo); processo
 citado só dentro do número de outro ("vinculado a…") fica de fora da importação e deve ser
