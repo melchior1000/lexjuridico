@@ -91,3 +91,28 @@ test('cancelamento antes do envio impede entrega',async()=>{
   assert.equal(saved.status,'cancelado');
   assert.equal(deliveries.length,0);
 });
+
+test('mensagem já aprovada pelo titular sai com o texto aprovado, sem compositor, e exige quem aprovou',async()=>{
+  const rec=records(),deliveries=[];
+  let composed=0;
+  const out=createChannelCommandOutbox({
+    records:rec,
+    compose:async()=>{composed++;return'NÃO DEVIA SER USADO'},
+    deliverDetailed:async input=>{deliveries.push(input);return{ok:true,state:'confirmado',provider_id:'msg-9'}},
+    receptionStore:{appendEvent:async()=>{}},
+    log:()=>{}
+  });
+  await assert.rejects(out.enqueueApproved({origem:'whatsapp',id:'5561977776666',texto:'Olá'}),/aprovação registrada/);
+  await assert.rejects(out.enqueueApproved({origem:'whatsapp',id:'61977776666',texto:'Olá',confirmado_por:'admin'}),/contato válidos/,'sem o 55 a fila não adivinha o número');
+  const job=await out.enqueueApproved({origem:'whatsapp',id:'5561977776666',nome:'Maria',texto:'Olá, Maria! Saiu decisão no seu processo.',confirmado_por:'admin',request_id:'cliente-x-1',tipo:'mensagem_cliente'});
+  assert.equal(job.status,'confirmado');assert.equal(job.contato_id,'5561977776666');assert.equal(job.confirmado_por,'admin');
+  // Mesma ordem de novo: devolve a mesma, não cria outra.
+  assert.equal((await out.enqueueApproved({origem:'whatsapp',id:'5561977776666',texto:'outra',confirmado_por:'admin',request_id:'cliente-x-1'})).texto_final,'Olá, Maria! Saiu decisão no seu processo.');
+  // Outra mensagem para o mesmo contato enquanto a primeira está ativa: recusada.
+  await assert.rejects(out.enqueueApproved({origem:'whatsapp',id:'5561977776666',texto:'segunda',confirmado_por:'admin',request_id:'cliente-x-2'}),/em andamento/);
+  out.kick(job.id);await flush();await flush();
+  const saved=await out.read(job.id);
+  assert.equal(saved.status,'enviado');
+  assert.deepEqual(deliveries,[{origem:'whatsapp',id:'5561977776666',texto:'Olá, Maria! Saiu decisão no seu processo.'}]);
+  assert.equal(composed,0,'texto aprovado é o texto enviado');
+});

@@ -24,7 +24,7 @@ do PricingSaaS. Preço e recurso de concorrente mudam: conferir antes de usar em
 | Rotinas automáticas | Sim | Sim (workflows) | Setores, rotina noturna, bom dia, radar da recepção | Já tem |
 | **Produção medida (Taskscore) e painel de desempenho** | Taskscore® | Painel: êxito, receita por advogado, clientes em risco | Não tinha | **Frente 1 — este PR** |
 | **Alertas que pedem ação** (parado, prazo em risco) | Justine sugere próximas ações | "Insights acionáveis" | Só o radar de quem espera resposta (#157) | **Frente 1 — este PR** |
-| Aviso de andamento ao cliente pelo WhatsApp | Não citado no site | Sim | Não tem (o Astrea também não — queixa de usuário) | Frente 2 |
+| Aviso de andamento ao cliente pelo WhatsApp | Não citado no site | Sim (envio automático) | Não tinha (o Astrea também não — queixa de usuário) | **Frente 2 — feita como conversa, sem texto pronto** |
 | Importar a carteira de planilha/sistema antigo | Não citado no site | Migração assistida em até 7 dias | Só cadastro por CNJ, um a um | Frente 3 |
 | Financeiro e honorários (contratos, parcelas, atraso, cobrança Pix) | Sim | Sim, com cobrança escalonada | Só modelo de contrato de honorários | Frente 4 (grande; depende da Etapa 4) |
 | Peças com os modelos do próprio escritório | Editor de documentos | Sim | Playbooks, sem biblioteca de modelos | Frente 5 |
@@ -68,9 +68,7 @@ Taskscore, a próxima fatia é gravar a conta individual (`lib/lex-users.js`) em
 
 1. **Frente 1b (pequena):** conta individual nas tarefas + envio semanal do painel pelo
    canal do titular, com o mesmo controle de entrega do bom dia.
-2. **Frente 2 — aviso de andamento ao cliente:** quando entra andamento oficial, o LEX
-   redige o aviso em linguagem simples e o titular aprova com um toque; depois, opção de
-   envio automático só para movimentos simples, respeitando o ritmo (#156) e o PARE (#155).
+2. **Frente 2 — andamento vira conversa (feita):** ver a seção 4.
 3. **Frente 3 — importar carteira:** planilha (CSV/XLSX) com CNJ e cliente; cada número
    conferido (dígito verificador e tribunal) antes de gravar; relatório antes/depois; sem
    duplicar processo que já existe. Essencial para implantar nos escritórios que esperam.
@@ -79,3 +77,41 @@ Taskscore, a próxima fatia é gravar a conta individual (`lib/lex-users.js`) em
    do LEX (AGENTS.md §12). Só depois da Etapa 4.
 5. **Frente 5 — modelos do escritório:** biblioteca de modelos por escritório usada pelo
    Task Engine na redação, com versão e hash.
+
+## 4. Frente 2 — andamento vira conversa com o titular (sem texto pronto)
+
+Decisão do titular (13/10/2026): *"não quero texto padrão de mensagem ao cliente; a IA tem
+que interagir comigo; quero interação, nada mecânico"*. Por isso o LEX **não** copia o envio
+automático do EasyJur: ele conversa.
+
+Como funciona (`lib/andamento-conversa.js`):
+
+1. A cada 30 minutos o LEX confere a carteira. Andamento **oficial** novo (Datajud, DJEN, PJe,
+   captura do tribunal, últimos 30 dias) num processo ativo vira conversa: a IA escreve ao
+   titular, pelo Telegram e pelo WhatsApp dele, o que aconteceu, o que significa, se pode haver
+   providência (sem nunca calcular prazo) e se vale avisar o cliente — e termina perguntando.
+   Fora do horário de trabalho (mesma janela das mensagens automáticas) a conversa espera.
+2. O titular responde do jeito dele ("avisa a Maria", "fala que vamos recorrer", "não precisa").
+   A IA escreve a mensagem do cliente a partir da conversa e chama `preparar_mensagem_cliente`.
+3. O código mostra, logo abaixo da fala da IA, o texto **exato** e o destinatário. O "pode" do
+   titular na mensagem seguinte envia — pela fila de mensagens do LEX, com conferência do
+   provedor, histórico da recepção e recibo do dia.
+
+Cintos (testados em `test/andamento-conversa.test.js`):
+
+- não existe ferramenta de envio para a IA; o OK é conferido no código, antes do modelo;
+- o OK vale só para a prévia da última resposta, só na mensagem seguinte e por 30 min;
+  qualquer outra mensagem fecha a janela; sem prévia mostrada, "pode" não envia nada;
+- destinatário só por vínculo gravado (recepção, atendimento, cadastro, agenda de contatos);
+  vários contatos → a IA pergunta; número dito na conversa aparece por extenso com alerta e,
+  depois do envio, fica gravado no processo;
+- PARE conferido ao preparar e de novo ao enviar; secretária não prepara nem autoriza;
+- primeira varredura, processo recém-chegado e religar marcam o histórico como visto;
+- sem IA, o LEX avisa o titular em poucas linhas e diz que a IA está fora.
+
+Ligar/desligar: `LEX_ANDAMENTO_CONVERSA=0` desliga por padrão; o titular também pode pedir na
+conversa ("pare de me avisar dos andamentos") — ferramenta `avisos_de_andamento`.
+
+Limites conhecidos: no app, a conversa é identificada pelo perfil (duas pessoas com o mesmo
+perfil compartilham a prévia); no WhatsApp, se o titular escrever de outro aparelho (LID
+diferente), o "pode" de lá não aprova a prévia mostrada no primeiro — falha fechada.

@@ -994,6 +994,47 @@ const channelOutbox=createChannelCommandOutbox({
   log:msg=>console.log(msg)
 });
 channelOutbox.start();
+// Andamento oficial novo → o LEX chama o titular para CONVERSAR (sem texto pronto); a IA
+// escreve a mensagem do cliente a partir da conversa e ela só sai com o "pode" dele, conferido
+// no código (lib/andamento-conversa.js). LEX_ANDAMENTO_CONVERSA=0 desliga por padrão.
+let _ultimoChatOperadorWhatsApp=null;
+async function _entregarAoTitularNaConversa(texto){
+  const resultado=[];
+  // Carrega a conversa gravada antes de acrescentar a fala do LEX (depois de um reinício,
+  // sem isso a memória começaria só com a abertura e o histórico antigo não seria lido).
+  const lembrar=async(chatId)=>{try{await inicializarMemoria(chatId,null);const mem=getMem(chatId,null);mem.hist.push({role:'assistant',content:texto});if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);salvarMemoria(chatId,null);}catch(e){console.warn('[Andamento] memória da conversa: '+e.message);}};
+  if(CHAT_ID){
+    const ok=!!(await envTelegram(texto,null,CHAT_ID).catch(()=>false));
+    if(ok)await lembrar(String(CHAT_ID));
+    resultado.push({conversa:'telegram:'+CHAT_ID,ok});
+  }
+  const op=process.env.LEX_OPERATOR_WHATSAPP;
+  if(op){
+    const ok=!!(await envWhatsApp(texto,op).catch(()=>false));
+    const chat=_ultimoChatOperadorWhatsApp||(String(op).replace(/\D/g,'')+'@s.whatsapp.net');
+    if(ok)await lembrar(chat);
+    resultado.push({conversa:'whatsapp:'+chat,ok});
+  }
+  return resultado;
+}
+const andamentoConversa=require('./lib/andamento-conversa').configureAndamentoConversa({
+  records:recordStore,processStore,outbox:channelOutbox,
+  podeReceber:numero=>whatsappAutomaticAllowed(numero),
+  contatosDoProcesso:async pid=>{try{return (await sbGet('contatos',{processo_id:String(pid)},{limit:5}))||[];}catch(e){return [];}},
+  contatoLegado:async chat=>{try{const r=((await sbGet('clientes_pendentes',{chat_id:String(chat)},{limit:1}))||[])[0];return r?{origem:r.canal==='whatsapp'?'whatsapp':'telegram',id:String(r.chat_id||''),nome:r.nome||null}:null;}catch(e){return null;}},
+  iaDisponivel:()=>aiAvailable()&&process.env.LEX_AI_NO_CREDIT!=='1',
+  compor:({system,mensagem})=>runWithAiPonto('andamento_conversa',()=>ia([{role:'user',content:mensagem}],system,700,MODELO_RAPIDO)),
+  entregarAoTitular:texto=>_entregarAoTitularNaConversa(texto),
+  dentroDoHorario:agora=>require('./lib/whatsapp-pacing').dentroDaJanela(agora,require('./lib/whatsapp-pacing').configFromEnv()),
+  ligadoPorPadrao:process.env.LEX_ANDAMENTO_CONVERSA!=='0',
+  log:msg=>console.warn(msg)
+});
+setInterval(()=>andamentoConversa.varrer().catch(e=>console.warn('[Andamento] varredura: '+e.message)),30*60*1000);
+// Com a IA no ar, um "sim/pode" solto do titular é resposta à conversa; com prévia de mensagem ao
+// cliente aberta, é o OK dele. Sem nenhum dos dois, o adaptador do WhatsApp não autoriza nada.
+function _lexConversaAtiva(){return aiAvailable()&&IA_PROVIDER==='anthropic'&&process.env.LEX_AI_NO_CREDIT!=='1'&&!!lex_agente_vivo;}
+async function _okDoTitularAberto(conversa){try{return await andamentoConversa.temJanela(conversa);}catch(e){return false;}}
+setTimeout(()=>andamentoConversa.varrer().catch(e=>console.warn('[Andamento] varredura: '+e.message)),4*60*1000);
 
 async function sbPost(tabela, dados) {
   return sbReq('POST', tabela, dados, null, {'Prefer':'return=minimal'});
@@ -6155,6 +6196,21 @@ async function processarMensagem(ctx, dados) {
     dados={...dados,texto:heard,audio:null};
     await env('🎙 Entendi: "'+heard.slice(0,400)+'"',ctx);
   }
+  if(ctx.canal==='whatsapp' && isOperator) _ultimoChatOperadorWhatsApp=chatId;
+  // "pode" do titular à mensagem ao cliente que o LEX acabou de mostrar: conferido aqui,
+  // no código, e só para a prévia da última resposta (lib/andamento-conversa.js).
+  if(isOperator && txt && !global._intakeSessoes?.[chatId]) {
+    let okEnvio=null;
+    try { okEnvio=await andamentoConversa.confirmarSeFor({conversa:ctx.canal+':'+chatId,mensagem:txt,perfil:operatorProfile}); }
+    catch(e) { okEnvio={handled:true,message:'Não enviei: '+e.message}; }
+    if(okEnvio?.handled) {
+      mem.hist.push({role:'user',content:txt},{role:'assistant',content:okEnvio.message});
+      if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
+      salvarMemoria(ctx.chatId,ctx.threadId);
+      await env(okEnvio.message,ctx);
+      return;
+    }
+  }
   if(!mem.aguardando && isOperator && txt) {
     // "1", "o segundo" ou o CNJ respondem à última pergunta de "qual processo?".
     let choice=null;
@@ -6176,7 +6232,7 @@ async function processarMensagem(ctx, dados) {
       try{
         const vivoDeps={...coreDeps,processos,ANTHROPIC_KEY:AK,https,CORS:{},perfil:operatorProfile,sbReq,
           sbGet:(t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v])))};
-        vivoDeps.tools=lex_agente_vivo.lexToolsFor(vivoDeps,{profile:operatorProfile,requestId:ctx.eventId||CRYPTO.randomUUID(),canal:ctx.canal});
+        vivoDeps.tools=lex_agente_vivo.lexToolsFor(vivoDeps,{profile:operatorProfile,requestId:ctx.eventId||CRYPTO.randomUUID(),canal:ctx.canal,chatId});
         const casoId=processos.find(p=>String(p.id)===String(mem.casoAtual)||String(p.nome||'').toLowerCase()===String(mem.casoAtual||'').toLowerCase())?.id||null;
         const out=await lex_agente_vivo.conversarLex(vivoDeps,{mensagem:txt,historico:mem.hist,processo_id:casoId,canal:ctx.canal});
         const answer=String(out?.texto||'').trim()||'Feito. (A ferramenta executou, mas não devolveu texto.)';
@@ -9500,7 +9556,9 @@ async function adapterEvolution(body) {
   if(await handleWhatsappOperatorCommand(body,EVO_INST)) return;
   const ownerText=String(msgData.conversation||msgData.extendedTextMessage?.text||'').trim();
   if(/^(oi|olá|ola|quem é vc\??|quem é você\??)[!. ]*$/i.test(ownerText)) return envWhatsApp('Olá, '+_titularSaudacao()+'. Sou o '+_idLex().assistente+', coordenador do seu escritório virtual. Qual tarefa devo organizar? Para responder a um cliente, use /responder NUMERO TEXTO EXATO.',chatIdWpp);
-  if(/^(sim|ok|autorizo|pode|manda|envia)[!. ]*$/i.test(ownerText)) return envWhatsApp('Para enviar uma resposta ao cliente, preciso do destinatário e do texto exato: /responder NUMERO TEXTO. Nenhuma mensagem foi autorizada por este comando genérico.',chatIdWpp);
+  // "pode/sim" solto: se o LEX acabou de mostrar mensagem ao cliente, é o OK do titular; se a IA
+  // está disponível, ela entende pela conversa o que foi perguntado. Sem nenhum dos dois, nada é autorizado.
+  if(/^(sim|ok|autorizo|pode|manda|envia)[!. ]*$/i.test(ownerText) && !_lexConversaAtiva() && !(await _okDoTitularAberto('whatsapp:'+chatIdWpp))) return envWhatsApp('Para enviar uma resposta ao cliente, preciso do destinatário e do texto exato: /responder NUMERO TEXTO. Nenhuma mensagem foi autorizada por este comando genérico.',chatIdWpp);
   const operador={perfil:'admin'};
   const txtOp=ownerText;
       // /configsecretaria <chat_id> — titular configura o Telegram da secretária

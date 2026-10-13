@@ -5,9 +5,14 @@ const {executeNaturalOfficeCommand,runTaskThroughOffice,assertTaskGate}=require(
 const LexTools=require('./lib/lex-tools');
 
 // Corpo do LEX (ferramentas) montado sobre as dependências do servidor.
+// O contexto leva a conversa (canal + chat, ou o app do perfil) e o turno desta resposta:
+// a prévia de mensagem ao cliente fica presa a eles (lib/andamento-conversa.js).
 function lexToolsFor(deps,ctx={}){
-  const toolDeps={...deps,executeNaturalOfficeCommand,assertTaskGate,runTask:task=>runTaskThroughOffice(deps,task,ctx.profile||'admin')};
-  return{definitions:LexTools.definitions,executar:LexTools.executar,deps:toolDeps,ctx};
+  const turno=String(ctx.turno||ctx.requestId||require('node:crypto').randomUUID());
+  const conversa=String(ctx.conversa||(ctx.canal&&ctx.chatId?ctx.canal+':'+ctx.chatId:'app:'+(ctx.profile||'admin')));
+  const full={...ctx,turno,conversa};
+  const toolDeps={...deps,executeNaturalOfficeCommand,assertTaskGate,runTask:task=>runTaskThroughOffice(deps,task,full.profile||'admin')};
+  return{definitions:LexTools.definitions,executar:LexTools.executar,deps:toolDeps,ctx:full};
 }
 
 function jsonResponse(res, status, obj, CORS) {
@@ -63,6 +68,19 @@ async function tratarRota(req, res, url, deps) {
         codigo: 'PROCESSO_CONTEXTO_INVALIDO'
       }, nextDeps.CORS);
       return true;
+    }
+
+    // OK do titular à mensagem ao cliente que o LEX acabou de mostrar: conferido no código,
+    // nunca pela IA, e só vale para a prévia da última resposta (lib/andamento-conversa.js).
+    const andamentos=nextDeps.andamentos||require('./lib/andamento-conversa').current();
+    if(andamentos&&typeof body.mensagem==='string'&&body.mensagem.trim()){
+      let ok=null;
+      try{ok=await andamentos.confirmarSeFor({conversa:'app:'+(nextDeps.perfil||'admin'),mensagem:body.mensagem,perfil:nextDeps.perfil})}
+      catch(e){ok={handled:true,message:'Não enviei: '+String(e?.message||e).slice(0,300)}}
+      if(ok?.handled){
+        jsonResponse(res,200,{ok:true,texto:ok.message,execucao:{action:'mensagem_cliente_ok',enviado:!!ok.enviado},processo_id:processoId||null},nextDeps.CORS);
+        return true;
+      }
     }
 
     const specialist=specializedIntent(body.mensagem);
