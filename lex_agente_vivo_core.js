@@ -73,7 +73,8 @@ const {AVISO:LEX_AVISO,AVISO_PROMPT:LEX_AVISO_PROMPT}=require('./lib/lex-aviso')
 const PROMPT_GESTOR = `Você é o LEX, assessor do ${ESCRITORIO_LABEL}: um agente que cuida do escritório, não um chat.
 ${LEX_AVISO_PROMPT}
 Você conversa com ${OPERADOR} como um colega experiente e AGE ENQUANTO CONVERSA, com as ferramentas na mão:
-consultar_processos, ver_processo, prazos, publicacoes, atualizar_no_tribunal, criar_tarefa, ordem_operacional, tarefas, recibos_do_dia, painel_do_escritorio
+consultar_processos, ver_processo, prazos, publicacoes, atualizar_no_tribunal, criar_tarefa, ordem_operacional, tarefas, recibos_do_dia, painel_do_escritorio,
+andamentos_para_comunicar, preparar_mensagem_cliente, descartar_mensagem_cliente, avisos_de_andamento
 (e propor_atualizacao / buscar_documentos quando houver processo em contexto).
 
 COMO VOCÊ TRABALHA:
@@ -83,6 +84,8 @@ COMO VOCÊ TRABALHA:
 - Se a ferramenta devolver mais de um processo compatível, pergunte qual. Nunca escolha o primeiro.
 - Tome iniciativa: se ao ler um processo vir prazo vencendo, publicação sem prazo confirmado ou dado a conferir, diga na hora e proponha o próximo passo concreto.
 - Fale como gente: direto, sem floreio, sem lista quando uma frase resolve, sem repetir apresentação. ${OPERADOR_CAP} odeia resposta genérica.
+
+ANDAMENTO NOVO → CLIENTE: quando entra andamento oficial, você mesmo chama ${OPERADOR} e conversa sobre ele. Se ele quiser avisar o cliente, VOCÊ escreve a mensagem do jeito que vocês combinarem — linguagem simples, sem juridiquês, sem prometer resultado, sem afirmar prazo — e chama preparar_mensagem_cliente (uma vez por cliente). O LEX mostra o texto exato logo abaixo da sua resposta e só envia com o OK dele na mensagem seguinte; você não repete o texto e nunca diz que enviou. Se ele disser que não precisa, chame descartar_mensagem_cliente. Nada de texto pronto: cada mensagem nasce da conversa.
 
 CINTOS DE SEGURANÇA (o código também trava, mas você respeita por convicção):
 - Você não protocola, não dá ciência em intimação, não envia mensagem em nome do escritório nem confirma prazo: prepara tudo e a decisão final é de ${OPERADOR}, com a frase exata que só ele digita.
@@ -864,7 +867,13 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
     ? '\n\nATENÇÃO — MOVIMENTOS PJe RECÉM IMPORTADOS (analise cada um e oriente o próximo passo):\n' + movimentos_pje.map((m, i) => { if (!m) return ''; const dt = m.dataHora || m.data || '?'; const cod = m.codigo || m.codigoNacional || ''; const desc = m.descricao || m.nome || JSON.stringify(m); return `  ${i + 1}. [${dt}]${cod ? ' Código ' + cod + ':' : ''} ${desc}`; }).filter(Boolean).join('\n')
     : '';
   const canalNota = canal && canal !== 'web' ? '\n\nCANAL: ' + canal + ' — respostas curtas, sem markdown pesado; quebre em parágrafos pequenos.' : '';
-  const systemPrompt = PROMPT_GESTOR + '\n\n' + contexto + instrucaoPje + canalNota + '\n\nREGRA DE APROVAÇÃO: faça no máximo uma chamada propor_atualizacao por resposta. Se houver mais de uma atualização possível, apresente uma por vez para aprovação humana.';
+  // Andamentos novos que o LEX já levou ao titular: a conversa continua de onde parou.
+  const andamentos = deps.andamentos || require('./lib/andamento-conversa').current();
+  let notaAndamentos = '';
+  if (andamentos && typeof andamentos.contextoParaIA === 'function') {
+    try { const c = await andamentos.contextoParaIA(); if (c) notaAndamentos = '\n\n' + c; } catch (_) { /* contexto opcional */ }
+  }
+  const systemPrompt = PROMPT_GESTOR + '\n\n' + contexto + instrucaoPje + canalNota + notaAndamentos + '\n\nREGRA DE APROVAÇÃO: faça no máximo uma chamada propor_atualizacao por resposta. Se houver mais de uma atualização possível, apresente uma por vez para aprovação humana.';
   const messages = sanitizarHistorico(historico);
   messages.push({ role: 'user', content: mensagem });
   garantirPrimeiroUser(messages);
@@ -872,7 +881,18 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
   const corpo = deps.tools && typeof deps.tools.definitions === 'function' ? deps.tools.definitions(deps.tools.ctx || {}) : [];
   const tools = processo ? [TOOL_PROPOR_ATUALIZACAO, TOOL_BUSCAR_DOCUMENTOS, ...corpo] : (corpo.length ? corpo : [TOOL_PROPOR_ATUALIZACAO, TOOL_BUSCAR_DOCUMENTOS]);
   const payload = { model: modelo, max_tokens: 4096, system: systemPrompt, tools, messages };
-  const { texto, toolsUsadas, stop_reason } = await resolverToolUse(deps, payload);
+  const resolvido = await resolverToolUse(deps, payload);
+  const { toolsUsadas, stop_reason } = resolvido;
+  let texto = resolvido.texto;
+  // Mensagem ao cliente preparada nesta resposta: o código mostra o texto EXATO e o
+  // destinatário logo abaixo da fala da IA. É isso — e só isso — que o "pode" do titular envia.
+  const ctxTools = deps.tools && deps.tools.ctx;
+  if (andamentos && ctxTools && ctxTools.conversa && ctxTools.turno && typeof andamentos.previaDoTurno === 'function') {
+    try {
+      const previa = await andamentos.previaDoTurno({ conversa: ctxTools.conversa, turno: ctxTools.turno });
+      if (previa) texto = (String(texto || '').trim() ? String(texto).trim() + '\n\n' : '') + previa;
+    } catch (_) { /* sem prévia, nada fica armado para envio */ }
+  }
   const propostas = toolsUsadas.filter(t => t.name === 'propor_atualizacao').map(t => ({ id: t.id, ...t.input }));
   return { texto, toolsUsadas, proposta: propostas[0] || null, propostas, modelo, stop_reason };
 }
