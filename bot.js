@@ -111,7 +111,7 @@ const {createTelegramReception,isTelegramOwner} = require('./lib/telegram-recept
 const {createReceptionComposer} = require('./lib/reception-ai');
 const {createTelegramPoller} = require('./lib/telegram-poller');
 
-const {setReceptionComposer, brazilMobile, isWhatsappOperator, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound, whatsappAutomaticAllowed} = require('./lib/integration-status');
+const {setReceptionComposer, brazilMobile, isWhatsappOperator, isOperatorDestination, publicWhatsappReception, handleWhatsappOperatorCommand, requestJson, evolutionEndpoint, whatsappStatus, telegramStatus, webhookAuthStatus, incomingWhatsappMessage, claimWhatsappEvent, setWhatsappInbound, whatsappAutomaticAllowed} = require('./lib/integration-status');
 const {createWhatsappInbound} = require('./lib/whatsapp-inbound');
 const {configureAiUsage, recordAiResponse, aiUsageSummary, currentAiPonto, runWithAiPonto} = require('./lib/ai-usage');
 const {aiBloqueadaPorTeto, erroTetoAtingido} = require('./lib/ai-budget');
@@ -939,7 +939,8 @@ const pjeMonitor = createPjeMonitor({
 const telegramPoller = createTelegramPoller({token:TK,requestJson,adapter:adapterTelegram,records:recordStore,takeoverWebhook:process.env.TELEGRAM_POLLING_TAKEOVER==='1'});
 let officeProfile={...ESCRITORIO};
 const taskEngine=new TaskEngine({store:recordStore,processes:async()=>(await processStore.read()).processes,
-  ai:(messages,system,tokens)=>runWithAiPonto(currentAiPonto()||'tarefa',()=>ia(messages,system,tokens,MODELO_TOP)),available:aiAvailable,office:()=>officeProfile});
+  ai:(messages,system,tokens)=>runWithAiPonto(currentAiPonto()||'tarefa',()=>ia(messages,system,tokens,MODELO_TOP)),available:aiAvailable,office:()=>officeProfile,
+  models:tipo=>require('./lib/office-models').current()?.paraTarefa(tipo)??null});
 
 function _historicoCanalParaPrompt(rows){
   return [...(Array.isArray(rows)?rows:[])]
@@ -1030,6 +1031,15 @@ const andamentoConversa=require('./lib/andamento-conversa').configureAndamentoCo
   log:msg=>console.warn(msg)
 });
 setInterval(()=>andamentoConversa.varrer().catch(e=>console.warn('[Andamento] varredura: '+e.message)),30*60*1000);
+// Resumo da recepção e resposta a comando que vão ao titular pelo WhatsApp (lib/integration-status.js)
+// também encerram a prévia de mensagem ao cliente.
+require('./lib/integration-status').setOperatorOutboundHook((texto)=>_encerrarPreviasPorOutroAssunto(texto,'whatsapp'));
+// Planilha da carteira (Excel/CSV) mandada pelo titular: o LEX lê, confere os números e
+// conversa antes de gravar (lib/carteira-import.js).
+const carteiraImport=require('./lib/carteira-import').configureCarteiraImport({records:recordStore,processStore,log:msg=>console.warn(msg),
+  leituraAutomatica:()=>!!String(process.env.DATAJUD_API_KEY||'').trim()});
+// Modelos do escritório: o titular manda o Word com "modelo" no nome; as peças seguem a forma dele.
+const officeModels=require('./lib/office-models').configureOfficeModels({records:recordStore,log:msg=>console.warn(msg)});
 // Com a IA no ar, um "sim/pode" solto do titular é resposta à conversa; com prévia de mensagem ao
 // cliente aberta, é o OK dele. Sem nenhum dos dois, o adaptador do WhatsApp não autoriza nada.
 function _lexConversaAtiva(){return aiAvailable()&&IA_PROVIDER==='anthropic'&&process.env.LEX_AI_NO_CREDIT!=='1'&&!!lex_agente_vivo;}
@@ -1450,13 +1460,32 @@ function _httpsPostRequest(host, path, data, headers) {
 
 // ── TELEGRAM ──
 // FIX-02: loga erros de envio em vez de engolir silenciosamente
+// Mensagem do LEX ao titular que não é a prévia de mensagem ao cliente (painel, bom dia, aviso,
+// resumo de planilha) encerra as prévias abertas: o "ok" que vier depois responde a ela, nunca
+// a uma mensagem ao cliente mostrada antes (lib/andamento-conversa.js). Falha aqui não impede o envio.
+// Só fecha a prévia da conversa do titular NO CANAL em que a mensagem saiu: a do app, ou a de
+// outra conta, continua valendo (o que ela viu por último segue sendo a prévia).
+function _encerrarPreviasPorOutroAssunto(texto,canal){
+  try {
+    if(require('./lib/andamento-conversa').ehPrevia(texto)) return Promise.resolve(0);
+    const op=process.env.LEX_OPERATOR_WHATSAPP;
+    const doTitular=canal==='telegram'
+      ? c=>c==='telegram:'+String(CHAT_ID)
+      : c=>!!op&&c.startsWith('whatsapp:')&&isWhatsappOperator(c.slice(9),op);
+    return andamentoConversa.fecharJanelas({filtro:doTitular,motivo:'outra_mensagem'}).catch(e=>{ console.warn('[Andamento] não fechei as prévias: '+e.message); return 0; });
+  } catch(e) { return Promise.resolve(0); }
+}
+
 async function envTelegram(texto, tId, chatId) {
   if(!TK || !(chatId || CHAT_ID)) return false;
   const pay={chat_id:chatId||CHAT_ID, text:String(texto).substring(0,4000)};
   if(tId) pay.message_thread_id=tId;
   try {
     const r = await requestJson('https://api.telegram.org/bot'+TK+'/sendMessage', {method:'POST',data:pay});
-    return r?.ok === true && Number.isSafeInteger(r.result?.message_id);
+    const ok = r?.ok === true && Number.isSafeInteger(r.result?.message_id);
+    // Falha ao fechar a prévia nunca muda o resultado do envio (que já aconteceu).
+    if(ok && String(chatId||CHAT_ID)===String(CHAT_ID)) { try { await _encerrarPreviasPorOutroAssunto(texto,'telegram'); } catch(_) { /* envio confirmado */ } }
+    return ok;
   } catch(e) { console.warn('[Telegram] envio nao confirmado'); return false; }
 }
 
@@ -1499,7 +1528,10 @@ async function envWhatsApp(texto, numero, {podeEnviar} = {}) {
     const r = await requestJson(evolutionEndpoint(EVO_URL, 'message/sendText/'+encodeURIComponent(EVO_INST)), {
       method:'POST', data:{number:numero, text:String(texto).substring(0,4000)}, headers:{apikey:EVO_KEY}
     });
-    return !!(r?.key?.id && !r.error);
+    const ok = !!(r?.key?.id && !r.error);
+    // Falha ao fechar a prévia nunca muda o resultado do envio (que já aconteceu).
+    if(ok) { try { if(isOperatorDestination(numero,process.env.LEX_OPERATOR_WHATSAPP)) await _encerrarPreviasPorOutroAssunto(texto,'whatsapp'); } catch(_) { /* envio confirmado */ } }
+    return ok;
   } catch(e) { console.warn('[WhatsApp] envio nao confirmado'); return false; }
 }
 
@@ -6184,7 +6216,9 @@ async function processarMensagem(ctx, dados) {
   const operatorProfile=isAdvogado(chatId)?'admin':(ctx.canal==='whatsapp'?_isOperadorWhatsApp(_numeroPlanoWhats(ctx.numero||chatId),ctx.numero||chatId,ctx.numeroAlt)?.perfil:null);
   const isOperator=['admin','advogado','secretaria'].includes(operatorProfile);
   // Áudio do advogado/secretária vira ordem escrita (fora da sessão de cadastro,
-  // que acumula o áudio no próprio fluxo). A transcrição é devolvida para conferência.
+  // que acumula o áudio no próprio fluxo). A transcrição é devolvida para conferência —
+  // depois da conferência do "pode", para o eco não encerrar a prévia aprovada por voz.
+  let ecoAudio=null;
   if(isOperator && !txt && dados.audio?.buffer && !global._intakeSessoes?.[chatId]) {
     const tr=await _transcreverAudioWhisper(dados.audio.buffer,dados.audio.mime,dados.audio.nome||'audio.ogg').catch(e=>({ok:false,erro:e.message}));
     const heard=String(tr?.texto||'').trim();
@@ -6194,12 +6228,17 @@ async function processarMensagem(ctx, dados) {
     }
     txt=heard;low=txt.toLowerCase();
     dados={...dados,texto:heard,audio:null};
-    await env('🎙 Entendi: "'+heard.slice(0,400)+'"',ctx);
+    ecoAudio='🎙 Entendi: "'+heard.slice(0,400)+'"';
   }
   if(ctx.canal==='whatsapp' && isOperator) _ultimoChatOperadorWhatsApp=chatId;
+  // Arquivo ou foto do titular encerra a prévia de mensagem ao cliente: o "pode" que vier
+  // depois responde a outra pergunta (importar planilha, guardar modelo), nunca à prévia antiga.
+  if(isOperator && (dados.arquivo||dados.imagem)) {
+    try { await andamentoConversa.fecharJanela(ctx.canal+':'+chatId); } catch(e) { console.warn('[Andamento] não fechei a prévia: '+e.message); }
+  }
   // "pode" do titular à mensagem ao cliente que o LEX acabou de mostrar: conferido aqui,
   // no código, e só para a prévia da última resposta (lib/andamento-conversa.js).
-  if(isOperator && txt && !global._intakeSessoes?.[chatId]) {
+  else if(isOperator && txt && !global._intakeSessoes?.[chatId]) {
     let okEnvio=null;
     try { okEnvio=await andamentoConversa.confirmarSeFor({conversa:ctx.canal+':'+chatId,mensagem:txt,perfil:operatorProfile}); }
     catch(e) { okEnvio={handled:true,message:'Não enviei: '+e.message}; }
@@ -6207,10 +6246,11 @@ async function processarMensagem(ctx, dados) {
       mem.hist.push({role:'user',content:txt},{role:'assistant',content:okEnvio.message});
       if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
       salvarMemoria(ctx.chatId,ctx.threadId);
-      await env(okEnvio.message,ctx);
+      await env((ecoAudio?ecoAudio+'\n\n':'')+okEnvio.message,ctx);
       return;
     }
   }
+  if(ecoAudio) await env(ecoAudio,ctx);
   if(!mem.aguardando && isOperator && txt) {
     // "1", "o segundo" ou o CNJ respondem à última pergunta de "qual processo?".
     let choice=null;
@@ -6342,6 +6382,26 @@ async function processarMensagem(ctx, dados) {
 
   // ── ARQUIVO (PDF / DOCX / imagem) ──
   if(dados.arquivo) {
+    // Modelo de peça do escritório (arquivo com "modelo" no nome): guardar e passar a seguir.
+    if(isOperator && require('./lib/office-models').ehModelo(dados.arquivo.nome)) {
+      const r=await officeModels.receberArquivo({buffer:dados.arquivo.buffer,nome:dados.arquivo.nome,perfil:operatorProfile}).catch(e=>({ok:false,erro:e.message}));
+      const texto=r.ok?r.texto:'Não guardei o modelo: '+r.erro;
+      mem.hist.push({role:'user',content:'[Modelo enviado: '+(dados.arquivo.nome||'arquivo')+']'},{role:'assistant',content:texto});
+      if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
+      salvarMemoria(ctx.chatId,ctx.threadId);
+      await env(texto,ctx);
+      return;
+    }
+    // Planilha da carteira mandada pelo titular: ler, conferir e conversar antes de gravar.
+    if(isOperator && require('./lib/carteira-import').ehPlanilha(dados.arquivo.nome,dados.arquivo.mime)) {
+      const r=await carteiraImport.receber({buffer:dados.arquivo.buffer,nome:dados.arquivo.nome,perfil:operatorProfile}).catch(e=>({ok:false,erro:e.message}));
+      const texto=r.ok?r.texto:'Não consegui usar essa planilha: '+r.erro;
+      mem.hist.push({role:'user',content:'[Planilha enviada: '+(dados.arquivo.nome||'arquivo')+']'},{role:'assistant',content:texto});
+      if(mem.hist.length>30)mem.hist=mem.hist.slice(-30);
+      salvarMemoria(ctx.chatId,ctx.threadId);
+      await env(texto,ctx);
+      return;
+    }
     // Se é cliente (não-admin), roteia PDF para o cadastrador para extrair dados pessoais
     if(modo === 'cliente') {
       const processou = await _cadastradorRecebeu(ctx, 'pdf', dados.arquivo);
@@ -9485,8 +9545,9 @@ async function adapterTelegram(msg) {
     const doc = msg.document;
     const nome = doc.file_name||'documento';
     const isPdf = doc.mime_type==='application/pdf' || nome.toLowerCase().endsWith('.pdf');
-    const isOk = isPdf || nome.toLowerCase().match(/\.(docx?|txt)$/);
-    if(!isOk) { await env('Formato não suportado. Envie PDF, DOCX, TXT ou imagem.', ctx); return; }
+    // Planilha (importar a carteira) e modelo em .md também entram: o titular decide pela conversa.
+    const isOk = isPdf || nome.toLowerCase().match(/\.(docx?|txt|md|csv|xlsx|xlsm|xls|ods)$/);
+    if(!isOk) { await env('Formato não suportado. Envie PDF, DOCX, TXT, planilha (XLSX ou CSV) ou imagem.', ctx); return; }
     if(doc.file_size > 20971520) {
       await env('📎 Recebendo arquivo grande ('+Math.round(doc.file_size/1048576)+'MB), vou processar em partes...', ctx);
     }
@@ -10705,6 +10766,7 @@ const server = http.createServer(async (req, res) => {
   if(url.startsWith('/api/escritorio')||url.startsWith('/api/tarefas')||url==='/api/trabalho'||url==='/api/entrada-processual') {
     await officeRoutes(req,res,{headers:CORS,authenticate:r=>validarToken(getToken(r)),records:recordStore,pje:typeof pjeMonitor==='undefined'?null:pjeMonitor,oab:typeof lexOab==='undefined'?null:lexOab,
       engine:taskEngine,processStore,body:lerBody,docx:_gerarDocxBufferPeca,aiAvailable,channelOutbox:typeof channelOutbox==='undefined'?null:channelOutbox,onTaskResult:notice=>avisarTitular(notice),
+      conta:r=>{const id=contaDoToken(getToken(r));return id?{id,nome:equipeLex.nome(id)||id}:null},
       setOffice:o=>{officeProfile=o;ESCRITORIO={...ESCRITORIO,...o};officeIdentity.setOfficeProfile(ESCRITORIO);},log:msg=>console.warn('[Tarefa]',msg)});
     return;
   }
@@ -11348,7 +11410,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
-        req, res, body: bodyAgv, perfil: pfAgv, processos, CORS,
+        req, res, body: bodyAgv, perfil: pfAgv, conta: contaDoToken(getToken(req)), processos, CORS,
         ANTHROPIC_KEY: AK, https, lerBody,records:recordStore,engine:taskEngine,processStore,onTaskResult:notice=>avisarTitular(notice),
         log:msg=>console.warn('[LEX Core]',msg),onIaErro:e=>creditGuard.registrarErro(e),
         sbGet: (t,q)=>sbRows(t,Object.fromEntries(Object.entries(q||{}).map(([k,v])=>[k,'eq.'+v]))),
@@ -13549,6 +13611,16 @@ const morningBrief=createMorningBrief({
   log:msg=>console.warn(msg)
 });
 if(process.env.LEX_OPERATOR_WHATSAPP && process.env.LEX_BOM_DIA!=='0') morningBrief.start();
+// Painel do escritório toda segunda-feira, 8h, no WhatsApp do titular (LEX_PAINEL_SEMANAL=0 desliga):
+// produção, êxito, prazos, honorários e o que pede ação — o mesmo painel que ele pede na conversa.
+const painelSemanal=createMorningBrief({
+  records:recordStore,key:'lex_painel_semanal',weekdays:[1],hour:Number(process.env.LEX_PAINEL_SEMANAL_HORA)||8,
+  compose:now=>require('./lib/office-queries').executeOfficeQuery({records:recordStore,engine:taskEngine,processStore,log:()=>{}},{action:'office_panel'},{now,profile:'admin'})
+    .then(r=>'📅 Painel da semana\n\n'+String(r?.message||'')),
+  deliver:text=>envWhatsApp(text,process.env.LEX_OPERATOR_WHATSAPP),
+  log:msg=>console.warn(msg)
+});
+if(process.env.LEX_OPERATOR_WHATSAPP && process.env.LEX_PAINEL_SEMANAL!=='0') painelSemanal.start();
 if(pjeMonitor.config.configurado){pjeMonitor.start();console.log('[LEX] Vigia do PJe (MNI) ativa: '+pjeMonitor.config.tribunais.map(t=>t.sigla).join(', '));}
 else console.log('[LEX] Vigia do PJe (MNI) desligada: '+(pjeMonitor.config.erro||'faltam '+pjeMonitor.config.faltando.join(', ')));
 console.log('[LEX] Vigia de prazos agendada — DJEN diário + alertas persistentes');

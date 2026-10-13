@@ -373,3 +373,184 @@ test('reinício no meio do envio: fila ainda ativa mantém a mensagem em envio; 
   assert.equal((await st('c')).status,'aguardando_ok');assert.match((await st('c')).ultimo_erro,/confira a conversa/);
   assert.equal((await st('d')).status,'aguardando_ok');
 });
+
+// Revisão adversarial da fase 2: o "pode" que o titular dá a OUTRA pergunta (importar planilha,
+// guardar modelo) não pode soltar uma mensagem ao cliente mostrada antes.
+test('arquivo mandado pelo titular fecha a prévia aberta: o "pode" seguinte não envia a mensagem antiga',async()=>{
+  const m=montar();
+  await comAndamentoNovo(m);
+  await m.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:'whatsapp:5561999171717',turno:'T',perfil:'admin'});
+  await m.A.previaDoTurno({conversa:'whatsapp:5561999171717',turno:'T'});
+  assert.equal(await m.A.temJanela('whatsapp:5561999171717'),true);
+  await m.A.fecharJanela('whatsapp:5561999171717');
+  assert.equal(await m.A.temJanela('whatsapp:5561999171717'),false);
+  assert.equal((await m.A.confirmarSeFor({conversa:'whatsapp:5561999171717',mensagem:'pode',perfil:'admin'})).handled,false);
+  assert.equal(m.deliveries.length,0);
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
+  const ini=source.indexOf('async function processarMensagem('),proc=source.slice(ini,source.indexOf('\nasync function ',ini+30));
+  const fecha=proc.indexOf('andamentoConversa.fecharJanela(');
+  assert.ok(fecha>0,'o servidor fecha a prévia quando chega arquivo ou foto do titular');
+  assert.ok(fecha<proc.indexOf('ehPlanilha(')&&fecha<proc.indexOf('ehModelo('),'antes de ler planilha ou modelo');
+});
+
+test('número que veio da planilha importada aparece na prévia com aviso para conferir',async()=>{
+  const PLAN={id:'p9',nome:'Bia x Banco',numero:'5007777-11.2026.8.13.0704',cliente:'Bia',status:'ATIVO',setor:'judicial',andamentos:[],
+    cliente_whatsapp:'5531999998888',cliente_whatsapp_fonte:'planilha',origem_cadastro:'importacao'};
+  const m=montar({processos:[PLAN]});
+  const p=await m.A.preparar({processo_id:'p9',texto:'Olá, Bia! Passando para avisar que o seu processo andou. Qualquer dúvida, me chame.',conversa:'telegram:1',turno:'T',perfil:'admin'});
+  assert.equal(p.ok,true);assert.equal(p.para.fonte,'planilha importada');
+  const previa=await m.A.previaDoTurno({conversa:'telegram:1',turno:'T'});
+  assert.match(previa,/WhatsApp \+55 31 99999-8888 \(número veio da planilha importada — confira\)/);
+});
+
+// ---------- Auditoria de segurança da fase 2 (achados 1 e 2) ----------
+const resJson=()=>{const r={};r.writeHead=s=>{r.status=s};r.end=b=>{r.body=JSON.parse(b)};return r};
+
+test('pelo app, a prévia é da conta que a viu: outro advogado dizendo "pode" não envia',async()=>{
+  const m=montar();
+  await comAndamentoNovo(m);
+  const https=fakeHttps([
+    {content:[{type:'tool_use',id:'tu1',name:'preparar_mensagem_cliente',input:{processo_id:'p1',texto:TEXTO_MARIA}}],stop_reason:'tool_use'},
+    {content:[{type:'text',text:'Escrevi para a Maria. Posso mandar?'}],stop_reason:'end_turn'},
+    {content:[{type:'text',text:'Não há nada esperando o seu OK agora.'}],stop_reason:'end_turn'}
+  ]);
+  const base={processStore:m.store,engine:{list:async()=>[]},records:m.rec,andamentos:m.A,ANTHROPIC_KEY:'k',https,perfil:'advogado',CORS:{},log(){},
+    executeNaturalOfficeCommand:async()=>null,assertTaskGate:async()=>{},runTask:async()=>{}};
+  let r=resJson();
+  await vivo.tratarRota({method:'POST',headers:{}},r,'/api/vivo/conversar',{...base,conta:'u1',body:{mensagem:'avisa a Maria'}});
+  assert.match(r.body.texto,/Vai sair assim/);
+  r=resJson();
+  await vivo.tratarRota({method:'POST',headers:{}},r,'/api/vivo/conversar',{...base,conta:'u2',body:{mensagem:'pode'}});
+  assert.equal(m.deliveries.length,0,'a outra conta não viu a prévia');
+  assert.equal(await m.A.temJanela('app:advogado:u1'),true,'a prévia continua esperando quem a viu');
+  r=resJson();
+  await vivo.tratarRota({method:'POST',headers:{}},r,'/api/vivo/conversar',{...base,conta:'u1',body:{mensagem:'pode'}});
+  assert.equal(m.deliveries.length,1);
+  const src=require('node:fs').readFileSync(require.resolve('../bot.js'),'utf8');
+  assert.match(src,/perfil: pfAgv, conta: contaDoToken\(getToken\(req\)\)/,'o servidor passa a conta da sessão para a conversa do app');
+});
+
+test('mensagem do LEX ao titular que não é a prévia encerra as prévias abertas (painel, bom dia, resumo de planilha)',async()=>{
+  const {ehPrevia}=require('../lib/andamento-conversa');
+  const m=montar();
+  await comAndamentoNovo(m);
+  for(const c of ['telegram:1','app:admin']){
+    await m.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:c,turno:'T-'+c,perfil:'admin'});
+    assert.equal(ehPrevia(await m.A.previaDoTurno({conversa:c,turno:'T-'+c})),true);
+  }
+  assert.equal(ehPrevia('📅 Painel da semana'),false);
+  assert.equal(await m.A.fecharJanelas(),2);
+  assert.equal(await m.A.temJanela('telegram:1'),false);assert.equal(await m.A.temJanela('app:admin'),false);
+  // No servidor: o envio ao titular (Telegram do dono e WhatsApp do titular) chama o fechamento.
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../bot.js'),'utf8');
+  const fechou=[];
+  const raiz=require('node:path').join(__dirname,'..');
+  const {isWhatsappOperator,isOperatorDestination}=require('../lib/integration-status');
+  const c=vm.createContext({TK:'t',CHAT_ID:'7171',EVO_URL:'https://evo.example',EVO_KEY:'k',EVO_INST:'lex',LEX_WHATSAPP_NUMBER:null,
+    process:{env:{LEX_OPERATOR_WHATSAPP:'5561999171717'}},evolutionEndpoint:(u,p)=>u+'/'+p,isWhatsappOperator,isOperatorDestination,
+    requestJson:async u=>String(u).includes('telegram')?{ok:true,result:{message_id:1}}:{key:{id:'m1'}},console,require:x=>require(x.startsWith('./')?require('node:path').join(raiz,x):x),
+    andamentoConversa:{fecharJanelas:async({filtro})=>{fechou.push(filtro);return 1}}});
+  const ini=source.indexOf('function _encerrarPreviasPorOutroAssunto(');
+  assert.ok(ini>0,'existe o fechamento central');
+  vm.runInContext(source.slice(ini,source.indexOf('\n}\n',ini)+2)+source.slice(source.indexOf('async function envTelegram('),source.indexOf('async function envTelegramArq('))
+    +source.slice(source.indexOf('async function envWhatsApp('),source.indexOf('async function envWhatsAppArq(')),c);
+  await c.envTelegram('📅 Painel da semana',null,'7171');assert.equal(fechou.length,1,'painel no Telegram do titular fecha');
+  assert.equal(fechou[0]('telegram:7171'),true);assert.equal(fechou[0]('app:admin'),false,'a prévia do app não é desta conversa');
+  const n=montar();await comAndamentoNovo(n);
+  await n.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:'telegram:7171',turno:'R',perfil:'admin'});
+  const previaDeVerdade=await n.A.previaDoTurno({conversa:'telegram:7171',turno:'R'});
+  await c.envTelegram('Escrevi para a Maria.\n\n'+previaDeVerdade,null,'7171');assert.equal(fechou.length,1,'a própria prévia não fecha');
+  await c.envTelegram('Cliente escreveu: "📤 Vai sair assim: oi"',null,'7171');assert.equal(fechou.length,2,'marcador digitado por terceiro não se passa por prévia');
+  fechou.pop();
+  await c.envTelegram('Olá, cliente',null,'999');assert.equal(fechou.length,1,'mensagem a outra pessoa não mexe na prévia do titular');
+  await c.envWhatsApp('☀️ Bom dia!','5561999171717');assert.equal(fechou.length,2,'bom dia no WhatsApp do titular (número puro) fecha');
+  assert.equal(fechou[1]('whatsapp:556199171717@s.whatsapp.net'),true);assert.equal(fechou[1]('telegram:7171'),false);assert.equal(fechou[1]('whatsapp:5531988887777@s.whatsapp.net'),false);
+  await c.envWhatsApp('Olá, cliente','5531988887777');assert.equal(fechou.length,2,'mensagem a cliente não fecha');
+});
+
+test('a prévia nunca é cortada pelo limite de 4000 caracteres do canal: o que não cabe não fica armado',async()=>{
+  const m=montar({processos:[...BASE,{...JOAO,id:'p5',origem_recepcao:{origem:'whatsapp',id:'5561977776666',nome:'João'}},{...JOAO,id:'p6',nome:'Ana x Banco',cliente:'Ana',origem_recepcao:{origem:'whatsapp',id:'5561966665555',nome:'Ana'}}]});
+  const longo=n=>('Olá! '+n+' — '+'texto do andamento explicado com calma. '.repeat(40)).slice(0,1490);
+  for(const [pid,n] of [['p1','Maria'],['p5','João'],['p6','Ana']])assert.equal((await m.A.preparar({processo_id:pid,texto:longo(n),conversa:'telegram:1',turno:'T',perfil:'admin'})).ok,true);
+  const previa=await m.A.previaDoTurno({conversa:'telegram:1',turno:'T'});
+  assert.ok(previa.length<=3500,'cabe no canal: '+previa.length);
+  assert.match(previa,/mais 1 mensagem preparada que não coube aqui/);
+  const r=await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.equal(r.enviado,true);assert.equal(m.deliveries.length,2,'só sai o que foi mostrado inteiro');
+  // A fala da IA é que encurta, nunca a prévia.
+  const https=fakeHttps([
+    {content:[{type:'tool_use',id:'t1',name:'preparar_mensagem_cliente',input:{processo_id:'p1',texto:TEXTO_MARIA}}],stop_reason:'tool_use'},
+    {content:[{type:'text',text:'x'.repeat(3900)}],stop_reason:'end_turn'}]);
+  const n=montar();await comAndamentoNovo(n);
+  const d={processStore:n.store,engine:{list:async()=>[]},records:n.rec,andamentos:n.A,ANTHROPIC_KEY:'k',https};
+  const out=await core.conversarLex({...d,tools:vivo.lexToolsFor(d,{profile:'admin',conversa:'telegram:9'})},{mensagem:'avisa a Maria',historico:[],canal:'telegram'});
+  assert.ok(out.texto.length<=4000,'tamanho '+out.texto.length);assert.ok(out.texto.endsWith('me diga o quê.'),'a prévia chega inteira');assert.ok(out.texto.includes(TEXTO_MARIA));
+});
+
+test('falha ao fechar a prévia não transforma envio confirmado em falha (nada de reenvio duplicado)',async()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+  const source=fs.readFileSync(require.resolve('../bot.js'),'utf8'),raiz=path.join(__dirname,'..');
+  let tentativas=0;
+  const c=vm.createContext({TK:'t',CHAT_ID:'7171',EVO_URL:'https://evo.example',EVO_KEY:'k',EVO_INST:'lex',LEX_WHATSAPP_NUMBER:null,console:{warn(){}},
+    process:{env:{LEX_OPERATOR_WHATSAPP:'5561999171717'}},evolutionEndpoint:(u,p)=>u+'/'+p,isWhatsappOperator:()=>true,isOperatorDestination:()=>true,
+    require:x=>require(x.startsWith('./')?path.join(raiz,x):x),
+    requestJson:async u=>String(u).includes('telegram')?{ok:true,result:{message_id:1}}:{key:{id:'m1'}},
+    andamentoConversa:{fecharJanelas:()=>{tentativas++;throw new Error('banco fora')}}});
+  const ini=source.indexOf('function _encerrarPreviasPorOutroAssunto(');
+  vm.runInContext(source.slice(ini,source.indexOf('\n}\n',ini)+2)+source.slice(source.indexOf('async function envTelegram('),source.indexOf('async function envTelegramArq('))
+    +source.slice(source.indexOf('async function envWhatsApp('),source.indexOf('async function envWhatsAppArq(')),c);
+  assert.equal(await c.envTelegram('Painel',null,'7171'),true);
+  assert.equal(await c.envWhatsApp('Painel','5561999171717'),true);
+  assert.equal(tentativas,2,'o fechamento foi tentado nos dois canais e falhou sem mudar o envio');
+});
+
+// CodeRabbit (PR #163): fechar e aprovar disputam o MESMO estado da janela.
+test('se a prévia foi fechada no meio da conferência do "pode", nada é enviado',async()=>{
+  const m=montar();
+  await comAndamentoNovo(m);
+  await m.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:'telegram:1',turno:'T',perfil:'admin'});
+  await m.A.previaDoTurno({conversa:'telegram:1',turno:'T'});
+  const mudar=m.rec.change.bind(m.rec);let disparou=false;
+  m.rec.change=async(k,fn)=>{if(!disparou&&k.startsWith('lex_cliente_ok_')){disparou=true;await m.A.fecharJanelas();}return mudar(k,fn)};
+  const r=await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.equal(m.deliveries.length,0,'o fechamento chegou primeiro');
+  assert.equal(r.enviado,false);assert.match(r.message,/Não enviei/);
+});
+
+// ---------- Re-checagem da auditoria (achado 2 parcial e novos 1 e 3) ----------
+test('prévia fechada por outra mensagem do LEX: o "pode" seguinte recebe resposta clara e não vai para outra ação',async()=>{
+  const m=montar();
+  await comAndamentoNovo(m);
+  const abrir=async(c,t)=>{await m.A.preparar({processo_id:'p1',texto:TEXTO_MARIA,conversa:c,turno:t,perfil:'admin'});await m.A.previaDoTurno({conversa:c,turno:t})};
+  await abrir('whatsapp:556199171717@s.whatsapp.net','W');await abrir('app:advogado:u2','A');
+  // Mensagem ao titular no WhatsApp fecha só a prévia do WhatsApp dele; a do app de outra conta continua.
+  assert.equal(await m.A.fecharJanelas({filtro:c=>c.startsWith('whatsapp:')}),1);
+  assert.equal(await m.A.temJanela('app:advogado:u2'),true);
+  const r=await m.A.confirmarSeFor({conversa:'whatsapp:556199171717@s.whatsapp.net',mensagem:'pode',perfil:'admin'});
+  assert.equal(r.handled,true);assert.equal(r.enviado,false);assert.match(r.message,/Não enviei a mensagem para Maria Silva/);assert.match(r.message,/mostre a mensagem de novo/);
+  assert.equal(m.deliveries.length,0);
+  assert.equal((await m.A.confirmarSeFor({conversa:'whatsapp:556199171717@s.whatsapp.net',mensagem:'pode',perfil:'admin'})).handled,false,'o aviso vale uma vez');
+  await abrir('telegram:1','T');await m.A.fecharJanelas();
+  assert.equal((await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'como está o processo do João?',perfil:'admin'})).handled,false,'outra conversa segue normal');
+  assert.equal((await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'})).handled,false);
+});
+
+test('nome enorme de cliente não estoura o teto da prévia',async()=>{
+  const GRANDE={...MARIA,id:'p7',nome:'P'.repeat(3000),cliente:'N'.repeat(3000),origem_recepcao:{origem:'whatsapp',id:'5561988887777'}};
+  const m=montar({processos:[GRANDE]});
+  await m.A.preparar({processo_id:'p7',texto:'x'.repeat(1490),conversa:'telegram:1',turno:'T',perfil:'admin'});
+  const previa=await m.A.previaDoTurno({conversa:'telegram:1',turno:'T'});
+  assert.ok(previa&&previa.length<=3500,'tamanho '+(previa&&previa.length));
+  assert.ok(previa.includes('x'.repeat(1490)),'o texto ao cliente aparece inteiro');
+});
+
+test('servidor: o eco do áudio sai depois da conferência do "pode"; recepção e comandos do WhatsApp também fecham a prévia',()=>{
+  const src=require('node:fs').readFileSync(require.resolve('../bot.js'),'utf8');
+  const ini=src.indexOf('async function processarMensagem('),proc=src.slice(ini,src.indexOf('\nasync function ',ini+30));
+  const conf=proc.indexOf('andamentoConversa.confirmarSeFor('),eco=proc.indexOf('await env(ecoAudio,ctx)');
+  assert.ok(conf>0&&eco>conf,'o eco do áudio não fecha a prévia que o titular está aprovando por voz');
+  assert.doesNotMatch(proc.slice(0,conf),/await env\('🎙 Entendi/);
+  assert.match(src,/setOperatorOutboundHook\(\(texto\)=>_encerrarPreviasPorOutroAssunto\(texto,'whatsapp'\)\)/);
+});

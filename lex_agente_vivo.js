@@ -7,6 +7,13 @@ const LexTools=require('./lib/lex-tools');
 // Corpo do LEX (ferramentas) montado sobre as dependências do servidor.
 // O contexto leva a conversa (canal + chat, ou o app do perfil) e o turno desta resposta:
 // a prévia de mensagem ao cliente fica presa a eles (lib/andamento-conversa.js).
+// Conversa do app: por conta individual quando a sessão tem uma (dois advogados com o mesmo
+// perfil não compartilham a prévia de mensagem ao cliente); sem conta, pelo perfil.
+function conversaDoApp(deps={}){
+  const conta=deps.conta?String(deps.conta).slice(0,80):'';
+  return 'app:'+(deps.perfil||'admin')+(conta?':'+conta:'');
+}
+
 function lexToolsFor(deps,ctx={}){
   const turno=String(ctx.turno||ctx.requestId||require('node:crypto').randomUUID());
   const conversa=String(ctx.conversa||(ctx.canal&&ctx.chatId?ctx.canal+':'+ctx.chatId:'app:'+(ctx.profile||'admin')));
@@ -75,7 +82,7 @@ async function tratarRota(req, res, url, deps) {
     const andamentos=nextDeps.andamentos||require('./lib/andamento-conversa').current();
     if(andamentos&&typeof body.mensagem==='string'&&body.mensagem.trim()){
       let ok=null;
-      try{ok=await andamentos.confirmarSeFor({conversa:'app:'+(nextDeps.perfil||'admin'),mensagem:body.mensagem,perfil:nextDeps.perfil})}
+      try{ok=await andamentos.confirmarSeFor({conversa:conversaDoApp(nextDeps),mensagem:body.mensagem,perfil:nextDeps.perfil})}
       catch(e){ok={handled:true,message:'Não enviei: '+String(e?.message||e).slice(0,300)}}
       if(ok?.handled){
         jsonResponse(res,200,{ok:true,texto:ok.message,execucao:{action:'mensagem_cliente_ok',enviado:!!ok.enviado},processo_id:processoId||null},nextDeps.CORS);
@@ -142,7 +149,7 @@ async function tratarRota(req, res, url, deps) {
       }
     }
     if (aiOn && nextDeps.engine && nextDeps.processStore && !nextDeps.tools) {
-      nextDeps={...nextDeps,tools:lexToolsFor(nextDeps,{profile:nextDeps.perfil,requestId:body.request_id||req?.headers?.['x-request-id']||undefined})};
+      nextDeps={...nextDeps,tools:lexToolsFor(nextDeps,{profile:nextDeps.perfil,requestId:body.request_id||req?.headers?.['x-request-id']||undefined,conversa:conversaDoApp(nextDeps)})};
     }
   }
 
@@ -158,6 +165,7 @@ module.exports = {
   ...core,
   tratarRota,
   lexToolsFor,
+  conversaDoApp,
   specializedIntent,
   namedJudgeFromMessage
 };
