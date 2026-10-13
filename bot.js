@@ -10792,6 +10792,13 @@ const server = http.createServer(async (req, res) => {
     res.end('Lex OK');
     return;
   }
+  // Qual versão está no ar (prova de deploy no commit certo para a homologação). Sem segredo:
+  // só o início do commit (Render informa em RENDER_GIT_COMMIT) e a hora em que o servidor subiu.
+  if(url==='/health/versao') {
+    res.writeHead(200,{'Content-Type':'application/json',..._corsOriginHeader(req)});
+    res.end(JSON.stringify({ok:true,commit:String(process.env.RENDER_GIT_COMMIT||'').slice(0,7)||null,iniciado_em:new Date(Date.now()-process.uptime()*1000).toISOString()}));
+    return;
+  }
 
   // Negação por padrão: toda rota /api/* exige sessão válida, salvo as públicas
   // abaixo, que têm autenticação própria (senha, segredo de webhook ou conector).

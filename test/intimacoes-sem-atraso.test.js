@@ -289,3 +289,12 @@ test('servidor: aviso de PRAZOS sai na hora (não espera o resumo) e a vigia do 
   assert.match(bot,/require\('\.\/lib\/djen-vigia'\)\.createDjenVigia\(/);
   assert.match(bot,/\ndjenVigia\.start\(\);\n/);
 });
+
+test('servidor: /health/versao diz qual commit está no ar (prova de deploy), sem segredo',()=>{
+  const i=bot.indexOf("if(url==='/health/versao')");
+  assert.ok(i>0,'rota existe');
+  const rota=bot.slice(i,bot.indexOf('return;',i));
+  assert.match(rota,/RENDER_GIT_COMMIT\|\|''\)\.slice\(0,7\)/);
+  assert.doesNotMatch(rota,/KEY|TOKEN|SECRET|SENHA/i);
+  assert.ok(i<bot.indexOf('// Negação por padrão: toda rota /api/* exige sessão válida'),'pública, antes da exigência de sessão (não é /api)');
+});
