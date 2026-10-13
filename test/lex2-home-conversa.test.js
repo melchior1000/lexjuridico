@@ -48,7 +48,8 @@ test('lexHome e lexChat abrem a mesma conversa; avisos do LEX entram no topo com
   await b.flush(); // renderBriefing + refreshOperationalStatus
   const briefing=b.byId('lex2-briefing').innerHTML;
   assert.match(briefing,/1 prazo oficial venceu[\s\S]*onclick="lexPrazosVencidos\(\)">Resolver agora/);
-  assert.match(briefing,/1 publicação aguardando conferência[\s\S]*onclick="lexSetPrazoTab\(&#39;revisar&#39;\)">Conferir/);
+  // Intimação do Diário sem decisão leva para Prazos › Diário (antes ia para "Revisar", que lista outra coisa).
+  assert.match(briefing,/1 intimação do Diário a tratar[\s\S]*onclick="lexSetPrazoTab\(&#39;diario&#39;\)">Tratar agora/);
   assert.match(briefing,/1 entrega está aguardando sua revisão[\s\S]*onclick="lexTarefas\(\)">Revisar/);
   assert.match(briefing,/1 conversa de cliente[\s\S]*onclick="lexChannel\(&#39;all&#39;\)">Abrir/);
   assert.match(briefing,/TJMG[\s\S]*Atualizar no tribunal/);

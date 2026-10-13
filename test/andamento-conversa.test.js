@@ -41,7 +41,7 @@ const JOAO={id:'p2',nome:'João Souza x Estado',numero:'5009999-11.2026.8.13.000
 const ENCERRADO={id:'p3',nome:'Caso encerrado',status:'ARQUIVADO',andamentos:[]};
 const BASE=[MARIA,JOAO,ENCERRADO];
 const comAndamento=(p,a)=>({...p,andamentos:[a,...p.andamentos]});
-const CONCLUSOS={data:'2026-10-12',txt:'[DATAJUD] Conclusos para decisão',origem:'datajud'};
+const CONCLUSOS={data:'2026-10-12',txt:'[PJe] Conclusos para decisão',origem:'pje'};
 const SENTENCA={data:'2026-10-12',txt:'[DJEN] Sentença — julgado procedente o pedido',origem:'djen',djen_id:'777'};
 const TEXTO_MARIA='Olá, Maria! O seu processo foi para o juiz decidir. Assim que sair a decisão, eu te explico. Qualquer dúvida, é só responder.';
 
@@ -553,4 +553,17 @@ test('servidor: o eco do áudio sai depois da conferência do "pode"; recepção
   assert.ok(conf>0&&eco>conf,'o eco do áudio não fecha a prévia que o titular está aprovando por voz');
   assert.doesNotMatch(proc.slice(0,conf),/await env\('🎙 Entendi/);
   assert.match(src,/setOperatorOutboundHook\(\(texto\)=>_encerrarPreviasPorOutroAssunto\(texto,'whatsapp'\)\)/);
+});
+
+// Pedido do titular (13/10/2026): aviso que chega atrasado sai. O Datajud atrasa dias — o
+// andamento dele entra no histórico, mas não chama o titular como novidade.
+test('andamento que veio do Datajud não vira conversa de "andamento novo"; o do Diário vira',async()=>{
+  const m=montar();
+  await m.A.varrer();
+  m.store.set(m.store.rows.map(p=>p.id==='p1'?comAndamento(p,{data:'2026-10-12',txt:'[DATAJUD] Conclusos para decisão',origem:'datajud'}):p));
+  const r=await m.A.varrer();
+  assert.equal(r.processos_com_andamento,0);assert.equal(m.entregas.length,0);
+  m.store.set(m.store.rows.map(p=>p.id==='p1'?comAndamento(p,SENTENCA):p));
+  await m.A.varrer();
+  assert.equal(m.entregas.length,1);assert.doesNotMatch(m.composicoes.at(-1).mensagem,/Conclusos/,'o do Datajud não entra no aviso');
 });

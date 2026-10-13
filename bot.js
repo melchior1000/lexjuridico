@@ -870,6 +870,8 @@ function _djenOabsRuntime(){
   return _oabsLigadas();
 }
 require('./lib/djen-monitor').setOabsProvider(_oabsLigadas);
+// Segunda rede do Diário: o nome do advogado informado junto com a OAB (DJEN_NOMES tem prioridade).
+require('./lib/djen-monitor').setNomesProvider(()=>{const cfg=_configRuntime?.pje||{};return[...(Array.isArray(cfg.nomes)?cfg.nomes:[]),cfg.oab_nome].filter(Boolean)});
 const lexOab={
   get:()=>{try{return require('./lib/djen-monitor').parseOabs()}catch{return _oabsLigadas()}},
   async set(oabs){
@@ -883,7 +885,7 @@ const lexOab={
       djen=await require('./lib/djen-monitor').syncDjen({processStore,sbReq,oabs:process.env.DJEN_OABS?require('./lib/djen-monitor').parseOabs():list,
         clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY,initialLookbackDays:30}});
     }catch(e){djen={ok:false,erro:e.message}}
-    return{oabs:list,ambiente_prioritario:!!process.env.DJEN_OABS,djen:djen&&{ok:djen.ok,erro:djen.erro||null,consultadas:djen.consultadas||0,casadas:djen.casadas||0,orfas:djen.orfas||0,falhas:djen.falhas||[]}};
+    return{oabs:list,ambiente_prioritario:!!process.env.DJEN_OABS,djen:djen&&{ok:djen.ok,erro:djen.erro||djen.error||null,consultadas:djen.consultadas||0,casadas:djen.casadas||0,orfas:djen.orfas||0,falhas:[...(djen.falhas||[]),...(djen.falhas_classificacao||[])]}};
   }
 };
 
@@ -903,7 +905,7 @@ async function _analisarPrazoDjen(input){
 const deadlineScheduler=createDeadlineScheduler({
   records:recordStore,
   run:async (now,opcoes={})=>{const result=await runDailyOfficeJobs({
-    processStore,sbReq,now,pularDatajud:opcoes.pularDatajud===true,
+    processStore,sbReq,records:recordStore,now,pularDatajud:opcoes.pularDatajud===true,
     datajudOptions:{apiKey:process.env.DATAJUD_API_KEY,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,fetchImpl:globalThis.fetch},
     djenOptions:{
       oabs:_djenOabsRuntime(),oabsEnv:process.env.DJEN_OABS,integrityKey:process.env.COURT_READING_INTEGRITY_KEY,
@@ -915,9 +917,21 @@ const deadlineScheduler=createDeadlineScheduler({
   // Intimação nova no Diário: aviso na hora (WhatsApp + Telegram), sem esperar o resumo.
   if(result?.djen?.enabled)await djenAlerts.tick().catch(e=>console.warn('[DJEN avisos] '+e.message));
   return result;},
-  notify:text=>notificationDigest.enqueue(text,CHAT_ID||'central'),
+  // Aviso de PRAZOS sai na hora (Telegram + WhatsApp). O resumo do dia só sai uma vez por janela:
+  // aviso de prazo esperando nele chegava atrasado. Sem canal que confirme, vai para o resumo.
+  notify:async text=>{const ok=await avisarTitular(text).catch(()=>false);if(!ok)await notificationDigest.enqueue(text,CHAT_ID||'central');return ok},
   log:msg=>console.warn(msg)
 });
+// Vigia do Diário (lib/djen-vigia.js): lê de 2 em 2 horas (6h–22h), avisa na hora o que chegou,
+// prepara a sugestão de prazo das novas e dá ALARME se o Diário de hoje não foi lido até as 8h.
+const djenVigia=require('./lib/djen-vigia').createDjenVigia({records:recordStore,sbReq,processStore,
+  oabs:()=>{try{return require('./lib/djen-monitor').parseOabs()}catch{return[]}},
+  syncDjen:args=>require('./lib/djen-monitor').syncDjen(args),
+  alertsTick:()=>djenAlerts.tick(),
+  sugerir:rows=>require('./lib/djen-monitor').suggestPendingDeadlines(sbReq,rows,{aiAnalyze:aiAvailable()?input=>_analisarPrazoDjen(input):null,calendarioVerificado:false}),
+  notify:async text=>{const ok=await avisarTitular(text).catch(()=>false);if(!ok)await notificationDigest.enqueue(text,CHAT_ID||'central');return ok},
+  clientOptions:{base:process.env.DJEN_BASE,gatewayKey:process.env.DJEN_GATEWAY_KEY},
+  log:msg=>console.warn(msg)});
 // Vigia do PJe (MNI): lista expedientes pendentes, nunca abre teor sozinho.
 // Aviso imediato ao titular pelos canais (Telegram + WhatsApp do operador). É a iniciativa do LEX:
 // intimação nova, minuta pronta, tarefa travada — ele fala na hora, não espera o resumo do dia.
@@ -1162,6 +1176,14 @@ function _linkPjeProcesso(tribunal, numero) {
 // Leitura avulsa do Datajud (rota GET /api/pje/andamentos): a mesma consulta da rotina diária
 // (lib/datajud.js) — tribunal pelo número, todos os registros (1º e 2º grau), complemento pelo
 // nome, mais novo primeiro. Não grava nada. Não achar o número NÃO é "sem movimentação".
+// Atos que só o titular pratica, pela frase exata (AGENTS.md): vão direto ao executor, antes da IA,
+// no WhatsApp, no Telegram e no chat do app. A IA, se tentar, é recusada em lib/lex-tools.js.
+function _fraseDoTitular(texto) {
+  // Com o número da intimação logo depois: "não é nosso problema" continua sendo conversa.
+  const num = '\\s+(D[AEO]\\s+)?((A\\s+)?INTIMA[ÇC][ÃA]O\\s+)?(N[ºO°]?\\.?\\s*|#\\s*)?\\d{3,}';
+  const rx = new RegExp('^\\s*(CONFIRMO\\s+CI[ÊE]NCIA\\b|(CONFIRMO\\s+(O\\s+)?PRAZO|SEM\\s+PRAZO|N[ÃA]O\\s+[ÉE]\\s+NOSS[OA]|J[ÁA]\\s+TRATEI|TRATADA\\s+FORA)'+num+'|REABR(IR|A|E)\\s+(A\\s+)?INTIMA[ÇC][ÃA]O\\s+(N[ºO°]?\\.?\\s*|#\\s*)?\\d{3,})', 'i');
+  return rx.test(String(texto||''));
+}
 async function _buscarAndamentosDatajud(processoNumero) {
   let tribunal = null;
   try { tribunal = Datajud.aliasForCnj(primaryCnj(processoNumero) || processoNumero); }
@@ -6244,7 +6266,7 @@ async function processarMensagem(ctx, dados) {
     // fica na frente só para comandos com barra, frases de confirmação e escolha pendente
     // ("1", "2", CNJ), e serve de reserva quando a IA não está disponível.
     const coreDeps={records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,oab:lexOab,onTaskResult:notice=>avisarTitular(notice),log:msg=>console.warn('[LEX Core]',msg)};
-    const literal=!!choice||/^\s*(\/|CONFIRMO\s+CIENCIA\b|APROVO\b)/i.test(txt);
+    const literal=!!choice||/^\s*(\/|CONFIRMO\s+CIENCIA\b|APROVO\b)/i.test(txt)||_fraseDoTitular(txt);
     const vivoOn=aiAvailable()&&IA_PROVIDER==='anthropic'&&process.env.LEX_AI_NO_CREDIT!=='1'&&lex_agente_vivo&&typeof lex_agente_vivo.conversarLex==='function'&&!global._intakeSessoes?.[chatId];
     if(vivoOn&&!literal&&!dados.arquivo&&!dados.imagem){
       try{
@@ -10770,6 +10792,13 @@ const server = http.createServer(async (req, res) => {
     res.end('Lex OK');
     return;
   }
+  // Qual versão está no ar (prova de deploy no commit certo para a homologação). Sem segredo:
+  // só o início do commit (Render informa em RENDER_GIT_COMMIT) e a hora em que o servidor subiu.
+  if(url==='/health/versao') {
+    res.writeHead(200,{'Content-Type':'application/json',..._corsOriginHeader(req)});
+    res.end(JSON.stringify({ok:true,commit:String(process.env.RENDER_GIT_COMMIT||'').slice(0,7)||null,iniciado_em:new Date(Date.now()-process.uptime()*1000).toISOString()}));
+    return;
+  }
 
   // Negação por padrão: toda rota /api/* exige sessão válida, salvo as públicas
   // abaixo, que têm autenticação própria (senha, segredo de webhook ou conector).
@@ -11388,6 +11417,15 @@ const server = http.createServer(async (req, res) => {
         }
         res.writeHead(200,corsHeaders(req));
         res.end(JSON.stringify({ok:true,texto,proposta:null,propostas:[],processo_id:bodyAgv?.processo_id||null,modelo:null,ferramentas:[],sem_ia:true,aviso:require('./lib/lex-aviso').AVISO}));
+        return;
+      }
+      // Frase do titular (confirmar prazo/ciência, dar intimação por tratada): executor direto,
+      // como no WhatsApp — a IA não pratica esses atos.
+      if(vivoUrl==='/api/vivo/conversar' && req.method==='POST' && _fraseDoTitular(bodyAgv?.mensagem)){
+        const exec=await executeNaturalOfficeCommand({records:recordStore,engine:taskEngine,processStore,pje:pjeMonitor,oab:lexOab,onTaskResult:notice=>avisarTitular(notice),log:msg=>console.warn('[LEX Core]',msg)},
+          {text:String(bodyAgv.mensagem).trim(),processo_id:bodyAgv?.processo_id||null,profile:pfAgv,request_id:CRYPTO.randomUUID()}).catch(e=>({handled:true,message:'Não concluí a ordem: '+e.message}));
+        res.writeHead(200,corsHeaders(req));
+        res.end(JSON.stringify({ok:true,texto:exec?.message||'Não reconheci a frase. Confira o número da intimação e a data (dd/mm/aaaa).',proposta:null,propostas:[],processo_id:bodyAgv?.processo_id||null,modelo:null,ferramentas:[],executor:true,aviso:require('./lib/lex-aviso').AVISO}));
         return;
       }
       const out = await lex_agente_vivo.tratarRota(req, res, vivoUrl, {
@@ -12020,9 +12058,7 @@ if(url==='/api/memoria' && req.method==='GET') {
       const antigo = _pjeMovCache[chave];
       const nova = !!(assinatura && antigo && assinatura !== antigo);
       _pjeMovCache[chave] = assinatura || antigo || '';
-      if(nova && ultima) {
-        await envTelegram('MOVIMENTACAO: Processo '+processo_numero+' - '+(ultima.tipo||'Movimentacao')+' em '+(ultima.data||new Date().toISOString()), null, CHAT_ID).catch(()=>{});
-      }
+      // Sem aviso por Telegram: o Datajud atrasa dias; a resposta diz se mudou, e só.
       res.writeHead(200,corsHeaders(req));
       res.end(JSON.stringify({
         ok:r.ok,
@@ -13385,10 +13421,13 @@ setInterval(async ()=>{
     const cfgP = await _carregarConfigPersistida('pje', PJE_CONFIG);
     _configRuntime.pje = {..._configRuntime.pje, ...cfgP};
     if(!_configRuntime.pje.ativo || !_configRuntime.pje.auto_consulta) return;
-    const out = await _varrerAndamentosPjeAgora();
-    if(out.novidades > 0) {
-      await envTelegramAgendado('Consulta pública Datajud: '+out.novidades+' movimentacao(oes) nova(s).', null, CHAT_ID).catch(()=>{});
-    }
+    // O Datajud atrasa dias: uma leitura por dia basta, e a rotina diária já faz. Esta só cobre o
+    // dia em que a rotina não leu. Sem aviso: novidade do Datajud chega atrasada e só vai para o
+    // histórico (pedido do titular, 13/10/2026). Prazo e intimação vêm do Diário (DJEN).
+    const hoje = hojeBrasil();
+    const job = (await recordStore.read('lex_deadline_daily_job').catch(()=>null))?.value;
+    if(job?.datajud_date === hoje || (_pjeUltimoCheck && hojeBrasil(new Date(_pjeUltimoCheck)) === hoje)) return;
+    await _varrerAndamentosPjeAgora();
   } catch(e) { console.warn('[pje] varredura automatica falhou:', e.message); }
 }, _PJE_VARREDURA_HORAS * 60 * 60 * 1000);
 setTimeout(async ()=>{
@@ -13587,6 +13626,7 @@ setTimeout(() => {
 
 console.log('[LEX] Motor Proativo agendado — verificação a cada 6h, 7h-22h (economia API)');
 deadlineScheduler.start();
+djenVigia.start();
 // Bom dia no WhatsApp do titular (o Telegram já recebe o resumo periódico).
 // Desligar com LEX_BOM_DIA=0; hora com LEX_BOM_DIA_HORA (padrão 7h).
 const morningBrief=createMorningBrief({

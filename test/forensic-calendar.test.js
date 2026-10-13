@@ -42,3 +42,19 @@ test('motor genérico recusa prescrição e decadência para não misturar reló
   assert.throws(()=>proposeDjenDeadline({regime:'prescricional',data_disponibilizacao:'2026-09-21',dias:5}),/cpc ou clt/);
   assert.throws(()=>proposeDjenDeadline({regime:'decadencial',data_disponibilizacao:'2026-09-21',dias:5}),/cpc ou clt/);
 });
+
+// Feriados nacionais por lei federal nunca contam como dia útil (antes a conta ignorava todos).
+test('feriado nacional é pulado sem precisar informar, com o nome e a lei no memorial',()=>{
+  // Disponibilizado sexta 09/10/2026 → publicação terça 13/10 (segunda 12/10 é Nossa Senhora Aparecida).
+  const p=proposeDjenDeadline({regime:'cpc',data_disponibilizacao:'2026-10-09',dias:5,calendario_verificado:true});
+  assert.equal(p.data_publicacao,'2026-10-13');assert.equal(p.termo_inicial,'2026-10-14');assert.equal(p.due_at_proposto,'2026-10-20');
+  assert.ok(p.dias_pulados.some(x=>x.data==='2026-10-12'&&x.motivo==='feriado_nacional'&&/6\.802\/1980/.test(x.feriado)));
+  // 15 úteis a partir de 28/10/2026 atravessam 02/11 (Finados) e 20/11 (Consciência Negra, sexta).
+  const q=proposeDjenDeadline({regime:'cpc',data_disponibilizacao:'2026-10-28',dias:15,calendario_verificado:true});
+  assert.ok(q.dias_pulados.some(x=>x.data==='2026-11-02'));assert.ok(q.dias_pulados.some(x=>x.data==='2026-11-20'));
+  assert.ok(!q.dias_contados.includes('2026-11-02')&&!q.dias_contados.includes('2026-11-20'));
+  assert.equal(q.due_at_proposto,'2026-11-23');
+  const {feriadoNacional,publicacaoDjen}=require('../lib/forensic-calendar');
+  assert.equal(feriadoNacional(new Date('2023-11-20T12:00:00Z')),null,'20/11 é nacional só a partir de 2024');
+  assert.equal(publicacaoDjen('2026-11-19'),'2026-11-23','disponibilizado quinta 19/11 → publicação segunda 23/11');
+});
