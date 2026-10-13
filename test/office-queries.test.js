@@ -181,7 +181,7 @@ test('fluxo completo: pergunta ambígua, escolha e resposta do processo certo',a
 test('canal: áudio do operador é transcrito e a escolha pendente é usada',()=>{
   const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','bot.js'),'utf8');
   const start=src.indexOf('async function processarMensagem');
-  const body=src.slice(start,start+6000);
+  const body=src.slice(start,src.indexOf('\nasync function ',start+30));
   assert.match(body,/isOperator && !txt && dados\.audio\?\.buffer && !global\._intakeSessoes/);
   assert.match(body,/_transcreverAudioWhisper\(dados\.audio\.buffer/);
   assert.match(body,/pickChoice\(txt,pending\.candidatos\)/);

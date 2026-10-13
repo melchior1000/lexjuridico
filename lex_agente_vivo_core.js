@@ -74,7 +74,8 @@ const PROMPT_GESTOR = `Você é o LEX, assessor do ${ESCRITORIO_LABEL}: um agent
 ${LEX_AVISO_PROMPT}
 Você conversa com ${OPERADOR} como um colega experiente e AGE ENQUANTO CONVERSA, com as ferramentas na mão:
 consultar_processos, ver_processo, prazos, publicacoes, atualizar_no_tribunal, criar_tarefa, ordem_operacional, tarefas, recibos_do_dia, painel_do_escritorio,
-andamentos_para_comunicar, preparar_mensagem_cliente, descartar_mensagem_cliente, avisos_de_andamento
+andamentos_para_comunicar, preparar_mensagem_cliente, descartar_mensagem_cliente, avisos_de_andamento, importacao_de_carteira,
+honorarios, registrar_honorarios, registrar_pagamento, modelos_do_escritorio
 (e propor_atualizacao / buscar_documentos quando houver processo em contexto).
 
 COMO VOCÊ TRABALHA:
@@ -86,6 +87,11 @@ COMO VOCÊ TRABALHA:
 - Fale como gente: direto, sem floreio, sem lista quando uma frase resolve, sem repetir apresentação. ${OPERADOR_CAP} odeia resposta genérica.
 
 ANDAMENTO NOVO → CLIENTE: quando entra andamento oficial, você mesmo chama ${OPERADOR} e conversa sobre ele. Se ele quiser avisar o cliente, VOCÊ escreve a mensagem do jeito que vocês combinarem — linguagem simples, sem juridiquês, sem prometer resultado, sem afirmar prazo — e chama preparar_mensagem_cliente (uma vez por cliente). O LEX mostra o texto exato logo abaixo da sua resposta e só envia com o OK dele na mensagem seguinte; você não repete o texto e nunca diz que enviou. Se ele disser que não precisa, chame descartar_mensagem_cliente. Nada de texto pronto: cada mensagem nasce da conversa.
+
+HONORÁRIOS: quando ${OPERADOR} contar um acerto ("o João vai pagar 6 mil em 3 vezes a partir de 10/11") ou um pagamento ("a Maria pagou a segunda parcela"), registre com registrar_honorarios / registrar_pagamento e mostre o memorial que o código devolver; nunca faça a conta você. Para cobrar alguém, escreva a mensagem com educação e use preparar_mensagem_cliente.
+MODELOS: se ${OPERADOR} colar um texto e disser que é o modelo dele de alguma peça, guarde com modelos_do_escritorio. As peças passam a seguir a forma dos modelos dele.
+
+PLANILHA DA CARTEIRA: quando ${OPERADOR} manda uma planilha, o LEX lê e mostra o resumo. Se, respondendo a esse resumo, ele mandar importar (do jeito que for: "manda ver", "pode importar", "importa só isso"), chame importacao_de_carteira com acao "importar". Um "pode" ou "ok" solto só é ordem de importar quando a última pergunta da conversa foi a da planilha; se houver dúvida sobre a que ele está respondendo, pergunte. Para explicar o que ficou de fora, acao "ver"; se ele não quiser, acao "descartar"; para desfazer depois, acao "desfazer" (sai só o que ninguém mexeu).
 
 CINTOS DE SEGURANÇA (o código também trava, mas você respeita por convicção):
 - Você não protocola, não dá ciência em intimação, não envia mensagem em nome do escritório nem confirma prazo: prepara tudo e a decisão final é de ${OPERADOR}, com a frase exata que só ele digita.
@@ -873,6 +879,11 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
   if (andamentos && typeof andamentos.contextoParaIA === 'function') {
     try { const c = await andamentos.contextoParaIA(); if (c) notaAndamentos = '\n\n' + c; } catch (_) { /* contexto opcional */ }
   }
+  // Planilha da carteira esperando a ordem do titular (lib/carteira-import.js).
+  const carteira = deps.carteiraImport || require('./lib/carteira-import').current();
+  if (carteira && typeof carteira.contextoParaIA === 'function') {
+    try { const c = await carteira.contextoParaIA(); if (c) notaAndamentos += '\n\n' + c; } catch (_) { /* contexto opcional */ }
+  }
   const systemPrompt = PROMPT_GESTOR + '\n\n' + contexto + instrucaoPje + canalNota + notaAndamentos + '\n\nREGRA DE APROVAÇÃO: faça no máximo uma chamada propor_atualizacao por resposta. Se houver mais de uma atualização possível, apresente uma por vez para aprovação humana.';
   const messages = sanitizarHistorico(historico);
   messages.push({ role: 'user', content: mensagem });
@@ -881,6 +892,9 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
   const corpo = deps.tools && typeof deps.tools.definitions === 'function' ? deps.tools.definitions(deps.tools.ctx || {}) : [];
   const tools = processo ? [TOOL_PROPOR_ATUALIZACAO, TOOL_BUSCAR_DOCUMENTOS, ...corpo] : (corpo.length ? corpo : [TOOL_PROPOR_ATUALIZACAO, TOOL_BUSCAR_DOCUMENTOS]);
   const payload = { model: modelo, max_tokens: 4096, system: systemPrompt, tools, messages };
+  // A mensagem do titular nesta resposta: o que só ele pode fornecer (o texto de um modelo
+  // colado, por exemplo) é conferido contra ela dentro das ferramentas.
+  if (deps.tools && deps.tools.ctx) deps.tools.ctx.mensagem_titular = String(mensagem || '');
   const resolvido = await resolverToolUse(deps, payload);
   const { toolsUsadas, stop_reason } = resolvido;
   let texto = resolvido.texto;
@@ -890,7 +904,13 @@ async function conversarLex(deps, { processo_id, mensagem, historico, movimentos
   if (andamentos && ctxTools && ctxTools.conversa && ctxTools.turno && typeof andamentos.previaDoTurno === 'function') {
     try {
       const previa = await andamentos.previaDoTurno({ conversa: ctxTools.conversa, turno: ctxTools.turno });
-      if (previa) texto = (String(texto || '').trim() ? String(texto).trim() + '\n\n' : '') + previa;
+      if (previa) {
+        // Os canais cortam em 4000 caracteres: quem encurta é a fala da IA, nunca a prévia.
+        let fala = String(texto || '').trim();
+        const cabe = 3990 - previa.length - 2;
+        if (fala.length > cabe) fala = cabe > 1 ? fala.slice(0, cabe - 1).trimEnd() + '…' : '';
+        texto = (fala ? fala + '\n\n' : '') + previa;
+      }
     } catch (_) { /* sem prévia, nada fica armado para envio */ }
   }
   const propostas = toolsUsadas.filter(t => t.name === 'propor_atualizacao').map(t => ({ id: t.id, ...t.input }));
