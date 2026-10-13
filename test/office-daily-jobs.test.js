@@ -50,3 +50,24 @@ test('DataJud ausente não derruba a vigia de prazo nem fabrica evidência',asyn
   assert.equal(out.evidence.validas,0);
   assert.equal(out.ok,true);
 });
+
+// Auditoria de 13/10/2026: processo que o Datajud não acha (segredo de justiça) não pode fazer a
+// rotina recomeçar o dia inteiro; nova tentativa no mesmo dia não relê a carteira no Datajud.
+test('processo que o Datajud não acha fica registrado à parte e não derruba o dia',async()=>{
+  const db=store([{id:'p1',numero:'5001234-56.2026.8.09.0001',nome:'Caso',status:'ATIVO',andamentos:[]}]);
+  const out=await runDailyOfficeJobs({processStore:db,now:new Date('2026-09-20T18:00:00Z'),
+    datajudOptions:{apiKey:'public-key',integrityKey:KEY,fetchImpl:async()=>({ok:true,status:200,headers:{get:()=>''},text:async()=>JSON.stringify({hits:{hits:[]}})})}});
+  assert.equal(out.ok,true,'não achar não é falha de leitura');
+  assert.equal(out.datajud.falhas,0);assert.equal(out.datajud.nao_encontrados,1);
+  assert.ok(out.exceptions.some(e=>e.type==='datajud_not_found'&&e.processo_id==='p1'));
+  assert.ok(!out.exceptions.some(e=>e.type==='datajud_failed'));
+});
+
+test('nova tentativa no mesmo dia (pularDatajud): não consulta o Datajud de novo',async()=>{
+  const db=store([{id:'p1',numero:'5001234-56.2026.8.09.0001',nome:'Caso',status:'ATIVO',andamentos:[]}]);
+  let chamadas=0;
+  const out=await runDailyOfficeJobs({processStore:db,now:new Date('2026-09-20T18:00:00Z'),pularDatajud:true,
+    datajudOptions:{apiKey:'public-key',integrityKey:KEY,fetchImpl:async()=>{chamadas++;return{ok:true,status:200,headers:{get:()=>''},text:async()=>JSON.stringify({hits:{hits:[]}})}}}});
+  assert.equal(chamadas,0);
+  assert.equal(out.datajud.enabled,true);assert.equal(out.datajud.skipped,true);assert.equal(out.datajud.reason,'DATAJUD_JA_LIDO_HOJE');assert.equal(out.datajud.total,0);
+});

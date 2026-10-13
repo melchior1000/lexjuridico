@@ -13,6 +13,8 @@ const RAIZ=path.join(__dirname,'..');
 const index=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8');
 const PAYLOAD='<img src=x onerror=alert(1)>';
 const lexEscapeSrc=index.slice(index.indexOf('function lexEscape(value)'),index.indexOf('const LEX_SETORES'));
+// Ajudantes de andamentos da tela (ordem pela data real, data legível, chave para excluir o certo).
+const andamentosSrc=index.slice(index.indexOf('// LEX: andamentos — o mais novo pela data real'),index.indexOf('// LEX: fim dos andamentos'));
 
 function fatia(ini,fim){const a=index.indexOf(ini);assert.ok(a>=0,'não achei '+ini);const b=index.indexOf(fim,a);assert.ok(b>a,'não achei '+fim);return index.slice(a,b);}
 function semTagViva(html){assert.doesNotMatch(html,/<img/i,'tag viva no HTML');assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);}
@@ -22,16 +24,22 @@ test('detalhe do processo escapa texto e data dos andamentos',()=>{
   // isola só a expressão `const ands=...` do corpo
   const expr=trecho.slice(trecho.indexOf('const ands='));
   const ctx=vm.createContext({});
-  vm.runInContext(lexEscapeSrc+'\nfunction andsDe(p){'+expr+'\nreturn ands;}',ctx);
+  vm.runInContext(lexEscapeSrc+'\n'+andamentosSrc+'\nfunction andsDe(p){'+expr+'\nreturn ands;}',ctx);
   const html=ctx.andsDe({id:1,andamentos:[{txt:PAYLOAD,data:'<b>2026-09-25</b>'}]});
   semTagViva(html);
   assert.match(html,/&lt;b&gt;2026-09-25&lt;\/b&gt;/);
+  // A chave do botão de excluir vai dentro de aspas simples no onclick: aspas e parênteses do texto não escapam dela.
+  const aspas=ctx.andsDe({id:1,andamentos:[{txt:"x');alert(1);('",data:'25/09/2026'}]});
+  const arg=aspas.match(/excluirAndamento\('1',0,'([^']*)'\)/);
+  assert.ok(arg,'onclick bem formado');assert.match(arg[1],/^[A-Za-z0-9%._-]*$/);
+  assert.doesNotMatch(aspas.match(/onclick="[^"]*"/)[0],/alert\(1\)/,'nada do texto vira código no onclick');
 });
 
 test('impressão/relatório do processo escapa andamentos',()=>{
-  const m=index.match(/\$\{p\.andamentos\.map\(a=>`<div class="and-item"><div>\$\{lexEscape\(a\.txt\)\}<\/div><div class="and-data">\$\{lexEscape\(a\.data\)\}<\/div><\/div>`\)\.join\(''\)\}/);
-  assert.ok(m,'template do relatório deve escapar a.txt e a.data');
+  const m=index.match(/\$\{_lexAndamentosRecentes\(p\)\.map\(a=>`<div class="and-item"><div>\$\{lexEscape\(_lexTextoAndamento\(a\)\)\}<\/div><div class="and-data">\$\{lexEscape\(_lexDataBR\(a\)\|\|a\.data\|\|'sem data'\)\}<\/div><\/div>`\)\.join\(''\)\}/);
+  assert.ok(m,'template do relatório deve escapar o texto e a data de cada andamento');
   assert.doesNotMatch(index,/<div class="and-item"><div>\$\{a\.txt\}/);
+  assert.doesNotMatch(index,/<div class="and-item"><div>\$\{_lexTextoAndamento\(a\)\}/);
 });
 
 test('proposta do gestor IA escapa andamento, próxima ação, status, setor, prazo e justificativa',()=>{

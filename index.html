@@ -2198,7 +2198,7 @@ function varreduraInicial(){
     if(!['URGENTE','ATIVO','RECURSAL'].includes(p.status)) return;
     const ands = p.andamentos || [];
     if(!ands.length) return;
-    const [d,m,a] = (ands[0].data||'').split('/').map(Number);
+    const [d,m,a] = _lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
     if(!a) return;
     const dt = new Date(a,m-1,d);
     const dias = Math.ceil((hoje-dt)/86400000);
@@ -2217,7 +2217,7 @@ function varreduraInicial(){
       fn: () => {
         abrirChat(null);
         addMsgEl('ai','🚨 EMERGÊNCIA — 15+ DIAS SEM ANDAMENTO:\n\n'+
-          parados15.map((p,i)=>(i+1)+'. '+p.nome+'\n   Último: '+(p.andamentos[0]?.data||'sem data')+'\n   Status: '+p.status+'\n   Próx.ação: '+(p.proxacao||'não definida')).join('\n\n')+
+          parados15.map((p,i)=>(i+1)+'. '+p.nome+'\n   Último: '+(_lexDataBR(_lexUltimoAndamento(p))||'sem data')+'\n   Status: '+p.status+'\n   Próx.ação: '+(p.proxacao||'não definida')).join('\n\n')+
           '\n\nClique em qualquer processo acima pra abrir o Gestor e atualizar.');
       }
     });
@@ -2232,7 +2232,7 @@ function varreduraInicial(){
       fn: () => {
         abrirChat(null);
         addMsgEl('ai','⚠️ CRÍTICO — 10+ DIAS SEM ANDAMENTO:\n\n'+
-          parados10.map((p,i)=>(i+1)+'. '+p.nome+'\n   Último: '+(p.andamentos[0]?.data||'sem data')+'\n   Tribunal: '+p.tribunal).join('\n\n')+
+          parados10.map((p,i)=>(i+1)+'. '+p.nome+'\n   Último: '+(_lexDataBR(_lexUltimoAndamento(p))||'sem data')+'\n   Tribunal: '+p.tribunal).join('\n\n')+
           '\n\nClique em qualquer processo acima pra abrir o Gestor.');
       }
     });
@@ -2247,7 +2247,7 @@ function varreduraInicial(){
       fn: () => {
         abrirChat(null);
         addMsgEl('ai','⏰ LEMBRETE — 5+ DIAS SEM ANDAMENTO:\n\n'+
-          parados5.map((p,i)=>(i+1)+'. '+p.nome+'\n   Último: '+(p.andamentos[0]?.data||'sem data')).join('\n\n')+
+          parados5.map((p,i)=>(i+1)+'. '+p.nome+'\n   Último: '+(_lexDataBR(_lexUltimoAndamento(p))||'sem data')).join('\n\n')+
           '\n\nClique em qualquer processo acima pra abrir o Gestor.');
       }
     });
@@ -2484,7 +2484,7 @@ function verificarProcessosEsquecidos(){
     if(!['URGENTE','ATIVO','RECURSAL'].includes(p.status)) return false;
     const ands = p.andamentos || [];
     if(!ands.length) return false;
-    const [d,m,a] = (ands[0].data||'').split('/').map(Number);
+    const [d,m,a] = _lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
     if(!a) return false;
     return Math.ceil((hoje-new Date(a,m-1,d))/86400000) >= 10;
   });
@@ -3624,17 +3624,19 @@ async function verificarAndamentosAgora(){
   }, 20000);
   if(!r.ok){ toast('Falha ao verificar andamentos','erro'); return; }
   const d = await r.json();
-  savePjeAdvCfg({ultimo_check:d.ultimo_check||new Date().toISOString(), monitorados:(d.processos||[]).length});
+  const monitorados = d.monitorados!=null ? d.monitorados : (d.processos||[]).length;
+  savePjeAdvCfg({ultimo_check:d.ultimo_check||new Date().toISOString(), monitorados});
   const ul = document.getElementById('pje-ultimo-check');
   const mo = document.getElementById('pje-monitorados');
   if(ul) ul.textContent = d.ultimo_check ? new Date(d.ultimo_check).toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR');
-  if(mo) mo.textContent = String((d.processos||[]).length);
-  toast('Varredura concluída: '+(d.resumo||''),'ok');
+  if(mo) mo.textContent = String(monitorados);
+  if(d.ok===false && d.erro){ toast(d.erro,'erro'); return; }
+  toast('Varredura concluída: '+(d.resumo||'')+'. O Datajud pode atrasar alguns dias e não traz o Diário.', d.ok===false?'erro':'ok');
 }
 
 function verNoPje(id){
   const p = getProcs().find(x => String(x.id)===String(id));
-  if(!p || !p.numero){ toast('Processo sem nÃºmero','erro'); return; }
+  if(!p || !p.numero){ toast('Processo sem número','erro'); return; }
   const trib = String(p.tribunal||'').toUpperCase();
   const num = encodeURIComponent(String(p.numero||''));
   let link = 'https://pje.jus.br/consultaprocessual/'+num;
@@ -3697,6 +3699,53 @@ async function revogarEAtualizar(p){
 
 
 
+// LEX: andamentos — o mais novo pela data real (mesmas regras de lib/andamentos.js).
+// O campo mistura "13/10/2026" (anotação), "2026-10-13" (Diário/PJe) e ISO do Datajud, e a ordem
+// gravada não é garantida: nenhuma tela lê andamentos[0] — pede o mais novo aqui.
+const _LEX_FMT_DIA=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'});
+function _lexDataDoAndamento(a){
+  if(!a||typeof a!=='object')return'';
+  for(const k of ['data','dataHora','data_hora'])if(a[k]!=null&&String(a[k]).trim())return String(a[k]).trim();
+  return'';
+}
+function _lexDiaValido(y,m,d){const t=new Date(Date.UTC(+y,+m-1,+d));return t.getUTCFullYear()===+y&&t.getUTCMonth()===+m-1&&t.getUTCDate()===+d}
+function _lexDiaAndamento(a){
+  const s=_lexDataDoAndamento(a);if(!s)return null;
+  let m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);if(m)return _lexDiaValido(m[3],m[2],m[1])?m[3]+'-'+m[2]+'-'+m[1]:null;
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m)return _lexDiaValido(m[1],m[2],m[3])?s:null;
+  if(/^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?Z$/.test(s))return s.slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}T/.test(s)){const t=Date.parse(s);return Number.isFinite(t)?_LEX_FMT_DIA.format(new Date(t)):null}
+  return null;
+}
+function _lexInstanteAndamento(a){
+  const d=_lexDiaAndamento(a);if(!d)return null;
+  const s=_lexDataDoAndamento(a);
+  if(/^\d{4}-\d{2}-\d{2}T/.test(s)&&!/T00:00:00(?:\.0+)?Z$/.test(s)){const t=Date.parse(s);if(Number.isFinite(t))return t}
+  const t=Date.parse(d+'T12:00:00-03:00');return Number.isFinite(t)?t:null;
+}
+function _lexListaAndamentos(p){
+  let v=p&&p.andamentos;
+  if(typeof v==='string'){try{v=JSON.parse(v)}catch(e){return[]}}
+  return Array.isArray(v)?v.filter(a=>a&&typeof a==='object'):[];
+}
+// Do mais novo para o mais antigo; sem data no fim; mesma data mantém a ordem gravada (o novo entra no início).
+function _lexAndamentosOrdenados(p){
+  return _lexListaAndamentos(p).map((a,i)=>({a,i,t:_lexInstanteAndamento(a)}))
+    .sort((x,y)=>x.t==null&&y.t==null?x.i-y.i:x.t==null?1:y.t==null?-1:(y.t-x.t)||(x.i-y.i));
+}
+function _lexAndamentosRecentes(p,n){const o=_lexAndamentosOrdenados(p).map(x=>x.a);return n==null?o:o.slice(0,n)}
+// O último que já aconteceu (dia de Brasília até hoje); data futura só vale se não houver outro.
+function _lexUltimoAndamento(p){
+  const hoje=_LEX_FMT_DIA.format(new Date()),o=_lexAndamentosRecentes(p);
+  return o.find(a=>{const d=_lexDiaAndamento(a);return !!d&&d<=hoje})||o[0]||null;
+}
+function _lexDataBR(a){const d=_lexDiaAndamento(a);return d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):''}
+function _lexTextoAndamento(a){return String((a&&(a.txt??a.texto??a.descricao??a.andamento))||'').replace(/\s+/g,' ').trim()}
+// Identifica um andamento (data + começo do texto) para apagar o certo mesmo se a lista mudar.
+function _lexChaveAndamento(a){return String((a&&a.data)||'')+'|'+_lexTextoAndamento(a).slice(0,80)}
+// A chave vai dentro de onclick="...('chave')": só letras, números e %XX (aspas e parênteses também codificados).
+function _lexChaveAttr(a){return encodeURIComponent(_lexChaveAndamento(a)).replace(/[!'()*~]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}
+// LEX: fim dos andamentos
 function getProcs(){try{const s=localStorage.getItem(SK);return s?JSON.parse(s):DEFAULT;}catch(e){return DEFAULT;}}
 function saveProcs(d){
   try{localStorage.setItem(SK,JSON.stringify(d));}
@@ -4115,7 +4164,7 @@ function _renderPainelReal(){
     if(!['URGENTE','ATIVO','RECURSAL'].includes(p.status)) return false;
     const ands=p.andamentos||[];
     if(!ands.length) return false;
-    const [dd,mm,aa]=(ands[0].data||'').split('/').map(Number);
+    const [dd,mm,aa]=_lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
     if(!aa) return false;
     return Math.ceil((hoje2-new Date(aa,mm-1,dd))/86400000)>=minDias;
   }).length;
@@ -4220,7 +4269,7 @@ function cardProc(p){
   if(['URGENTE','ATIVO','RECURSAL','EM_PREP'].includes(p.status)){
     const ands=p.andamentos||[];
     if(ands.length){
-      const ultimaData = ands[ands.length-1].data || ands[0].data || '';
+      const ultimaData = _lexDataBR(_lexUltimoAndamento(p)) || '';
       let dt;
       // Suporta YYYY-MM-DD e DD/MM/AAAA
       if(ultimaData.includes('-')) {
@@ -4698,8 +4747,8 @@ function _cacheIA_save(obj){
 }
 function _procHashEstado(p){
   const ands = (p.andamentos||[]).length;
-  const ult = (p.andamentos||[])[0];
-  const ultTxt = ult ? String(ult.txt||'').substring(0,60) : '';
+  const ult = _lexUltimoAndamento(p);
+  const ultTxt = ult ? _lexTextoAndamento(ult).substring(0,60) : '';
   return [p.id||'', p.status||'', p.setor||'', p.prazo||'', ands, ultTxt, p.proxacao||'', p.atualizado_em||''].join('|');
 }
 function _cacheIA_get(tipo, p){
@@ -4852,7 +4901,7 @@ function abrirProc(id){
   mostrarBackBar(p.grupo||'Processos', 'processos');
   const cor=COR[p.area]||'var(--accent)', sc=SC[p.status]||'#888', pf=fmtPrazo(p);
   const ands=(p.andamentos||[]).length
-    ?p.andamentos.map((a,i)=>`<div class="andamento-line"><div class="and-dot"></div><div style="flex:1"><div class="and-txt">${lexEscape(a.txt)}</div><div class="and-data">${lexEscape(a.data)}</div></div><button class="and-del" onclick="excluirAndamento('${p.id}',${i})" title="Excluir">✕</button></div>`).join('')
+    ?_lexAndamentosOrdenados(p).map(({a,i})=>`<div class="andamento-line"><div class="and-dot"></div><div style="flex:1"><div class="and-txt">${lexEscape(_lexTextoAndamento(a))}</div><div class="and-data">${lexEscape(_lexDataBR(a)||a.data||'sem data')}</div></div><button class="and-del" onclick="excluirAndamento('${p.id}',${i},'${_lexChaveAttr(a)}')" title="Excluir">✕</button></div>`).join('')
     :'<div style="font-size:13px;color:var(--text3);font-weight:300">Nenhum andamento registrado.</div>';
   const arquivosHtml=(p.arquivos||[]).length
     ?p.arquivos.map((a,i)=>`<div class="arquivo-item"><div class="arquivo-icon">${a.tipo==='pdf'?'📄':a.tipo==='doc'?'📝':'📎'}</div><div><div class="arquivo-nome">${a.nome||'(sem nome)'}</div><div class="arquivo-tipo">${(a.tipo||'arquivo').toUpperCase()} · ${a.data||''}</div></div><button onclick="removerArquivo('${p.id}',${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;margin-left:auto;font-size:16px">✕</button></div>`).join('')
@@ -4913,7 +4962,7 @@ function abrirProc(id){
       const hoje = new Date(); hoje.setHours(0,0,0,0);
       let diasSemMov = 0;
       if(ands.length){
-        const [dd,mm,aa]=(ands[0].data||'').split('/').map(Number);
+        const [dd,mm,aa]=_lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
         if(aa) diasSemMov=Math.ceil((hoje-new Date(aa,mm-1,dd))/86400000);
       }
       // Calcula score de saúde (0-100)
@@ -5131,7 +5180,7 @@ function imprimirProcesso(id){
     <div class="card"><h2>Descrição Estratégica</h2><p style="white-space:pre-wrap">${p.descricao||'—'}</p></div>
     ${(p.frentes||[]).length?`<div class="card"><h2>Frentes Processuais</h2><ul>${p.frentes.map(f=>`<li>${f}</li>`).join('')}</ul></div>`:''}
     ${(p.provas||[]).length?`<div class="card"><h2>Provas e Documentos</h2><ul>${p.provas.map(pr=>`<li>${pr}</li>`).join('')}</ul></div>`:''}
-    ${(p.andamentos||[]).length?`<div class="card"><h2>Andamentos (${p.andamentos.length})</h2>${p.andamentos.map(a=>`<div class="and-item"><div>${lexEscape(a.txt)}</div><div class="and-data">${lexEscape(a.data)}</div></div>`).join('')}</div>`:''}
+    ${(p.andamentos||[]).length?`<div class="card"><h2>Andamentos (${p.andamentos.length})</h2>${_lexAndamentosRecentes(p).map(a=>`<div class="and-item"><div>${lexEscape(_lexTextoAndamento(a))}</div><div class="and-data">${lexEscape(_lexDataBR(a)||a.data||'sem data')}</div></div>`).join('')}</div>`:''}
     <div style="text-align:center;padding:16px 0;font-size:11px;color:#aaa;border-top:1px solid #eee;margin-top:8px">
       ${esc.nome||''} ${esc.registro?' · '+esc.registro:''} ${esc.endereco?' · '+esc.endereco:''}
       <br>Gerado pelo Lex v14 · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}
@@ -5175,7 +5224,7 @@ function abaAnalise(procId, aba, btn){
 
 async function _gerarAba(p, aba, container, procId){
   const _esc = getEscritorio();
-  const andamentos = (p.andamentos||[]).slice(0,10).map(a=>a.data+': '+a.txt).join('\n');
+  const andamentos = _lexAndamentosRecentes(p,10).map(a=>(_lexDataBR(a)||a.data||'sem data')+': '+_lexTextoAndamento(a)).join('\n');
   const sys = 'Você é um assessor jurídico sênior de '+(_esc.nome||'escritório de advocacia')+
     '. Analise com profundidade e senso crítico. Seja direto, técnico e realista — não suavize cenários ruins.';
 
@@ -5355,11 +5404,19 @@ function addAndamento(id){
   setTimeout(()=>document.getElementById('and-txt-inp')?.focus(),100);
 }
 
-function excluirAndamento(procId,idx){
+// Apaga o andamento certo: a tela mostra a lista ordenada pela data e guarda a posição gravada e a
+// chave (data + texto). Se a lista mudou desde que a tela foi montada, procura pela chave; não achou, não apaga.
+function excluirAndamento(procId,idx,chave){
   if(!confirm('Excluir este andamento?')) return;
   const ps=getProcs(), p=ps.find(x=>String(x.id)===String(procId));
-  if(!p) return;
-  p.andamentos.splice(idx,1);
+  if(!p||!Array.isArray(p.andamentos)) return;
+  let i=idx;
+  if(chave!=null){
+    const alvo=decodeURIComponent(chave);
+    if(_lexChaveAndamento(p.andamentos[i])!==alvo) i=p.andamentos.findIndex(a=>_lexChaveAndamento(a)===alvo);
+  }
+  if(!(i>=0&&i<p.andamentos.length)){ toast('Esse andamento mudou na tela. Abra o processo de novo antes de excluir.','erro'); abrirProc(procId); return; }
+  p.andamentos.splice(i,1);
   saveProcs(ps);
   toast('Andamento excluído.');
   abrirProc(procId);
@@ -5615,7 +5672,7 @@ function renderEstatisticas(){
     // parados 10+ dias
     const ands=p.andamentos||[];
     if(ands.length){
-      const [dd,mm,aa]=(ands[0].data||'').split('/').map(Number);
+      const [dd,mm,aa]=_lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
       if(aa){const dt=new Date(aa,mm-1,dd);const hoje2=new Date();hoje2.setHours(0,0,0,0);if(Math.ceil((hoje2-dt)/86400000)>=10) porTribunal[trib].parados++;}
     }
   });
@@ -6100,7 +6157,7 @@ VALOR DA CAUSA: ${p.valor||'a apurar'}
 DESCRIÇÃO ESTRATÉGICA: ${p.descricao||''}
 FRENTES/TESES: ${(p.frentes||[]).join(', ')||'conforme descrição'}
 PROVAS: ${(p.provas||[]).join(', ')||'a juntar'}
-ANDAMENTOS RECENTES: ${(p.andamentos||[]).slice(0,5).map(a=>a.data+': '+a.txt).join(' | ')||'nenhum'}
+ANDAMENTOS RECENTES: ${_lexAndamentosRecentes(p,5).map(a=>(_lexDataBR(a)||a.data||'sem data')+': '+_lexTextoAndamento(a)).join(' | ')||'nenhum'}
 ${instr?'INSTRUÇÕES ESPECÍFICAS: '+instr:''}
 
 Redija a peça completa:`}],null,3000);
@@ -9604,7 +9661,7 @@ async function enviarChat(){
 
   // Passar TODOS os processos com dados completos para a IA conhecer o escritório inteiro
   const ctx=ps.map(p=>{
-    const ands=(p.andamentos||[]).slice(0,3).map(a=>`    ${a.data}: ${a.txt}`).join('\n');
+    const ands=_lexAndamentosRecentes(p,3).map(a=>`    ${_lexDataBR(a)||a.data||'sem data'}: ${_lexTextoAndamento(a)}`).join('\n');
     return `• ID:${p.id} | ${p.nome}
   Partes: ${p.partes||'—'}
   Número: ${p.numero||'—'} | Tribunal: ${p.tribunal||'—'} | Área: ${p.area||'—'}
@@ -9636,7 +9693,7 @@ async function enviarChat(){
 CASOS EM PREPARAÇÃO (ainda não distribuídos):
 ${_prepsCtx||'Nenhum'}
 
-${instrEstrategica}${chatCtx?`\n\nPROCESSO EM FOCO: ${chatCtx.nome}\nPartes: ${chatCtx.partes}\nTribunal: ${chatCtx.tribunal} | Status: ${chatCtx.status}\nDescrição: ${chatCtx.descricao||''}\nFrentes: ${(chatCtx.frentes||[]).join(', ')}\nAndamentos: ${(chatCtx.andamentos||[]).slice(0,5).map(a=>a.data+': '+a.txt).join(' | ')}`:''}\n\nTODOS OS PROCESSOS DO ESCRITÓRIO (${ps.length} total):\n${ctx}${juizCtxGlobal}`;
+${instrEstrategica}${chatCtx?`\n\nPROCESSO EM FOCO: ${chatCtx.nome}\nPartes: ${chatCtx.partes}\nTribunal: ${chatCtx.tribunal} | Status: ${chatCtx.status}\nDescrição: ${chatCtx.descricao||''}\nFrentes: ${(chatCtx.frentes||[]).join(', ')}\nAndamentos: ${_lexAndamentosRecentes(chatCtx,5).map(a=>(_lexDataBR(a)||a.data||'sem data')+': '+_lexTextoAndamento(a)).join(' | ')}`:''}\n\nTODOS OS PROCESSOS DO ESCRITÓRIO (${ps.length} total):\n${ctx}${juizCtxGlobal}`;
 
   try{
     // Envia no máximo as últimas 20 mensagens — garante contexto sem sobrecarga
@@ -9903,8 +9960,8 @@ async function consultarLexManual(procId){
   const ps = getProcs();
   const p = ps.find(x=>String(x.id)===String(procId)||x.id==procId);
   if(!p) { if(typeof toast==='function') toast('Processo nao encontrado','erro'); return; }
-  const ultimoAnd = (p.andamentos||[])[0];
-  const ctxAcao = ultimoAnd ? (ultimoAnd.txt||'') : 'Consulta manual: analise a situacao atual do processo e oriente proximos passos.';
+  const ultimoAnd = _lexUltimoAndamento(p);
+  const ctxAcao = ultimoAnd ? _lexTextoAndamento(ultimoAnd) : 'Consulta manual: analise a situacao atual do processo e oriente proximos passos.';
   if(typeof toast==='function') toast('🧠 Consultando Lex... (1 chamada IA)','info');
   await lexConsciencia(procId, ctxAcao, 'Consulta manual', true);
 }
@@ -9922,7 +9979,7 @@ async function lexConsciencia(procId, textoAndamento, tipoAcao, forcarManual){
   if(!p) return;
   
   // Montar contexto do processo
-  const ultimosAnd = (p.andamentos||[]).slice(0,5).map(a=>a.data+': '+a.txt).join('\n');
+  const ultimosAnd = _lexAndamentosRecentes(p,5).map(a=>(_lexDataBR(a)||a.data||'sem data')+': '+_lexTextoAndamento(a)).join('\n');
   const ctx = `PROCESSO: ${p.nome}
 ÁREA: ${p.area||'?'} | TIPO: ${p.tipo||'?'} | SETOR ATUAL: ${p.setor||'?'}
 STATUS ATUAL: ${p.status||'?'}
@@ -10147,7 +10204,7 @@ function cicloAtualizacaoInteligente(){
     }
     // ATIVO + 10+ dias sem andamento → URGENTE (regra CEO: só MUITOS dias parado)
     if(p.status==='ATIVO'&&(p.andamentos||[]).length&&!atualizadoHoje){
-      const[dd,mm,aa]=(p.andamentos[0].data||'').split('/').map(Number);
+      const[dd,mm,aa]=_lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
       if(aa){
         const dias=Math.ceil((new Date()-new Date(aa,mm-1,dd))/86400000);
         if(dias>=10){mudancas.push(`${p.nome}: ATIVO → URGENTE (${dias}d sem andamento)`);p.status='URGENTE';n++;}
@@ -10155,7 +10212,7 @@ function cicloAtualizacaoInteligente(){
     }
     // URGENTE + andamento recente (≤3d) + prazo folgado (>5d ou sem prazo) → ATIVO
     if(p.status==='URGENTE'&&(p.andamentos||[]).length){
-      const[dd2,mm2,aa2]=(p.andamentos[0].data||'').split('/').map(Number);
+      const[dd2,mm2,aa2]=_lexDataBR(_lexUltimoAndamento(p)).split('/').map(Number);
       if(aa2){
         const diasSemAnd=Math.ceil((new Date()-new Date(aa2,mm2-1,dd2))/86400000);
         if(diasSemAnd<=3 && (d===null || d>5)){
@@ -10198,7 +10255,7 @@ async function sugerirProximaAcao(procId){
   container.innerHTML = '<div style="font-size:11px;color:var(--text3);font-style:italic">⏳ IA analisando...</div>';
 
   const esc = getEscritorio();
-  const andamentos = (p.andamentos||[]).slice(0,5).map(a=>a.data+': '+a.txt).join('\n');
+  const andamentos = _lexAndamentosRecentes(p,5).map(a=>(_lexDataBR(a)||a.data||'sem data')+': '+_lexTextoAndamento(a)).join('\n');
 
   try {
     const resp = await chamarIA([{role:'user', content:
@@ -12998,7 +13055,7 @@ async function extrairDadosPdf(file){
     const psExistentes=getProcs();
     const ctxProcessos=psExistentes.map(p=>
       'ID:'+p.id+'|CNJ:'+( p.numero||'')+'|NOME:'+p.nome+'|PARTES:'+(p.partes||'')+'|ULTIMA_ATZ:'+(
-        (p.andamentos&&p.andamentos.length)?p.andamentos[0].data:'sem andamentos'
+        (p.andamentos&&p.andamentos.length)?(_lexDataBR(_lexUltimoAndamento(p))||'sem data'):'sem andamentos'
       )
     ).join('\n');
 

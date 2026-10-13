@@ -19,7 +19,7 @@ test('sincronização da carteira usa o tribunal de cada CNJ e pula casos sem n�
   ]);
   const urls=[];
   const fetchImpl=async url=>{urls.push(url);return{ok:true,status:200,json:async()=>({hits:{hits:[]}})}};
-  const result=await Datajud.syncRegistered(db,{apiKey:'public-key',fetchImpl});
+  const result=await Datajud.syncRegistered(db,{apiKey:'public-key',fetchImpl,integrityKey:'chave-de-teste-com-tamanho-suficiente-1234567890'});
   assert.equal(result.total,2);
   assert.equal(urls.length,2);
   assert.ok(urls.some(x=>x.includes('api_publica_tjgo')));

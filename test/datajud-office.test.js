@@ -25,7 +25,8 @@ test('grava movimento e reading auditável; repetição deduplica',async()=>{
   const p=db.snapshot()[0];assert.equal(p.andamentos.length,1);assert.equal(p.court_readings.length,2);assert.match(p.andamentos[0].txt,/^\[DATAJUD\] Juntada de Petição/);
 });
 test('reading persistido adulterado não revalida',async()=>{
-  const db=store([{id:'p1',numero:GO,andamentos:[]}]),payload={hits:{hits:[]}},raw=JSON.stringify(payload),fetchImpl=async()=>({ok:true,status:200,headers:{get:()=>''},text:async()=>raw});
+  // Leitura de verdade (o Datajud achou o processo); "não achou" não gera leitura — ver datajud-leitura.test.js.
+  const db=store([{id:'p1',numero:GO,andamentos:[]}]),payload={hits:{hits:[{_source:{movimentos:[{nome:'Juntada',dataHora:'2026-09-26T10:00:00Z'}]}}]}},raw=JSON.stringify(payload),fetchImpl=async()=>({ok:true,status:200,headers:{get:()=>''},text:async()=>raw});
   await Datajud.syncProcess(db,'p1',{apiKey:'public-key',fetchImpl,integrityKey:KEY});
   const r=db.snapshot()[0].court_readings[0];r.observed_at='2099-01-01T00:00:00.000Z';assert.equal(verifyReadingLogEntry(r,{integrityKey:KEY}),false);
 });
