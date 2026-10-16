@@ -34,21 +34,40 @@ html{scroll-behavior:auto}
 .capital-detail span{font-size:10px;letter-spacing:1px;font-weight:900;color:#83b9cc}
 .capital-detail strong{font-size:15px;color:#e4faff}
 @media(max-width:780px){.region-shell{padding:13px 12px 10px;margin-bottom:12px}.region-heading{align-items:start}.region-count{font-size:10px;text-align:right}.region-buttons button{min-height:46px}.capital-pills button{min-height:43px}.capital-detail{margin:-3px 0 15px}.map-panel{height:64vh;min-height:470px}.map-hint{max-width:68%;line-height:1.3}}
+
+/* Agregação regional: uma única visão por região, nunca capitais misturadas */
+.region-shell .region-mode-note{font-size:11px;color:#8db7c9;margin:7px 2px 3px}
+.region-shell .capital-pills[hidden],.capital-detail[hidden],.back-region[hidden]{display:none!important}
+.region-shell .capital-pills{overflow-x:auto}
+.back-region{display:inline-flex;gap:6px;align-items:center;padding:9px 11px;border:1px solid #4a7686;background:#143447;color:#cffaff;border-radius:8px;margin-bottom:15px;font-size:11px;font-weight:750}
+.summary-votes{padding:0 22px 17px;font-size:11px;color:#9bb4c8;display:flex;gap:7px;flex-wrap:wrap;align-items:center;line-height:1.4}
+.summary-votes strong{font-size:17px;color:#f6fbff}
+.summary-votes small{font-size:10px;color:#86a4ba}
+.section-context{font-size:10px;letter-spacing:1.2px;font-weight:900;color:#85bacd}
+.ad-banner{margin-top:16px;min-height:138px;display:flex;gap:18px;align-items:center;justify-content:center;flex-wrap:wrap;padding:21px;text-align:center;border:1px dashed #62809a;background:linear-gradient(130deg,#0b2236,#10182a);border-radius:15px}
+.ad-banner .ad-icon{font-size:32px;color:#74d7e7}
+.ad-banner .ad-title{font-size:clamp(23px,4vw,38px);font-weight:900;letter-spacing:2px;color:#e5f7ff}
+.ad-banner .ad-sub{font-size:11px;color:#99b1c6;letter-spacing:.5px;margin-top:5px}
+.ad-banner .ad-eyebrow{font-size:10px;font-weight:750;color:#9baebc;letter-spacing:2px}
+@media(max-width:780px){.summary-votes{padding:0 16px 14px}.ad-banner{min-height:110px}.ad-banner .ad-icon{font-size:26px}}
 </style></head><body>
 <div class="app"><header class="header"><a class="brand" href="#" aria-label="Página inicial da prévia"><div class="brand-icon">◈</div><div><div class="brand-title">APURAÇÃO AO VIVO<span style="color:#63d6e7">.</span></div><div class="brand-sub">INTELIGÊNCIA ELEITORAL</div></div></a><div class="header-right"><span class="nav-link">ELEIÇÕES 2026</span><span class="preview-pill"><i class="pulse"></i> DEMONSTRAÇÃO INTERATIVA</span></div></header>
 <div class="hero"><div><div class="eyebrow">CENTRAL ELEITORAL · 2026</div><h1>O BRASIL EM<br><em>TEMPO REAL.</em></h1><p class="hero-sub">Uma nova forma de acompanhar cada voto. Explore o país em 3D,<br class="wide"> estado por estado, direto da palma da sua mão.</p></div><div class="hero-meta"><span class="tag"><strong>2º TURNO</strong> · 25 OUT</span><span class="tag">PRESIDÊNCIA · BRASIL</span></div></div>
 <nav class="region-shell" aria-label="Regiões e capitais do Brasil">
  <div class="region-heading"><span class="section-label">EXPLORE POR REGIÃO</span><span class="region-count" id="regionSummary">Brasil completo · 27 capitais</span></div>
  <div class="region-buttons" id="regionButtons" role="group" aria-label="Escolher região"></div>
- <div class="capital-pills" id="capitalPills" role="group" aria-label="Escolher capital e estado"></div>
+ <div class="region-mode-note" id="regionModeNote">Selecione uma região para ver a soma dos votos. Selecione um estado para abrir seu detalhamento.</div>
+ <div class="capital-pills" id="capitalPills" role="group" aria-label="Escolher estado da região"></div>
 </nav>
-<main class="grid-main"><section class="panel race-side" aria-label="Placar simulado"><div class="panel-head"><span>PLACAR NACIONAL</span><span class="muted-small">CENÁRIO FICTÍCIO</span></div><div class="race-summary"><div><div class="section-label">VOTOS VÁLIDOS · DEMO</div><div class="race-percent blue">51,28<span style="font-size:.48em">%</span></div></div><div class="muted-small">Dados de demonstração.<br>Não representam votos reais.</div></div>
-<div class="candidate"><div class="candidate-top"><div class="candidate-left"><div class="candidate-logo a">A</div><div><div class="cand-name">CANDIDATO A</div><div class="cand-sub">Identidade ilustrativa</div></div></div><div class="cand-votes">36,8 mi</div></div><div class="progress a"><span style="width:51.28%"></span></div></div>
-<div class="candidate"><div class="candidate-top"><div class="candidate-left"><div class="candidate-logo b">B</div><div><div class="cand-name">CANDIDATO B</div><div class="cand-sub">Identidade ilustrativa</div></div></div><div class="cand-votes">35,0 mi</div></div><div class="progress b"><span style="width:48.72%"></span></div></div>
-<div class="apuration"><div><div class="section-label">APURAÇÃO SIMULADA</div><strong>77,6<span style="font-size:16px">%</span></strong></div><div class="progress a" style="width:100%"><span style="width:77.6%"></span></div></div><div class="note"><b>IMPORTANTE:</b> a votação de 25/10/2026 ainda não ocorreu. Todos os resultados desta prévia são inventados para testar o design.</div></section>
-<section class="panel map-panel" aria-label="Mapa interativo tridimensional do Brasil"><div class="map-hud"><div><div class="upper">MAPA ELEITORAL 3D</div><div class="secondary">Brasil · 5 regiões · 27 capitais</div></div><button id="mode-button" aria-label="Alternar a cor do mapa">◉ VISUALIZAR</button></div><div class="canvas-wrap" id="canvasWrap"><canvas id="brazilCanvas" role="img" aria-label="Mapa tridimensional com 27 capitais brasileiras; arraste para girar, aproxime com dois dedos, toque para escolher uma capital"></canvas></div><div class="map-bottom"><div class="map-hint"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M9 12V4a2 2 0 0 1 4 0v6l2-1a2 2 0 0 1 3 2l2 2a3 3 0 0 1 0 4l-3 4H9l-4-6c-2-3 1-5 4-3Z"/></svg><span>Arraste: girar · 2 dedos: zoom · Toque: capital</span></div><div class="map-zoom"><button type="button" class="circle-btn" id="zoomMinus" aria-label="Reduzir zoom">−</button><button type="button" class="circle-btn" id="zoomPlus" aria-label="Ampliar zoom">+</button><button type="button" class="circle-btn" id="reset" aria-label="Reiniciar mapa" style="font-size:15px">⟳</button></div></div></section>
-<section class="panel info-panel" aria-label="Detalhes estaduais simulados"><div class="panel-head"><span>RAIO-X DO ESTADO</span><span class="on-pill" style="padding:5px 9px;font-size:9px;letter-spacing:.7px">◉ SIMULAÇÃO</span></div><div class="info-grid"><div class="state-info"><div class="info-title" id="stateName">São Paulo</div><div class="state-region" id="stateRegion">Sudeste · SP</div><div class="capital-detail"><span>CAPITAL</span><strong id="capitalName">São Paulo</strong></div><div class="stat-pair"><div class="stat"><span>CANDIDATO A</span><strong class="blue" id="stateA">54,3%</strong></div><div class="stat"><span>CANDIDATO B</span><strong class="pink" id="stateB">45,7%</strong></div></div><div class="info-race"><div class="head"><span>Distribuição ilustrativa</span><span id="stateTotal">86,0% apurado*</span></div><div class="track"><div class="a" id="stateBarA" style="width:54.3%"></div><div class="b"></div></div></div><div class="uf-picker"><label for="stateSelect">ESCOLHER ESTADO E CAPITAL</label><select id="stateSelect" aria-label="Selecionar unidade federativa"></select></div></div><div class="standings"><h3>DESTAQUES REGIONAIS · DEMO</h3><div class="leader"><span class="uf">SP</span><span>São Paulo</span><span class="bar" style="width:45px"></span><span class="pct">54,3%</span></div><div class="leader"><span class="uf">MG</span><span>Minas Gerais</span><span class="bar" style="width:39px"></span><span class="pct">51,2%</span></div><div class="leader"><span class="uf">BA</span><span>Bahia</span><span class="bar" style="width:35px"></span><span class="pct">49,9%</span></div><div class="leader"><span class="uf">RJ</span><span>Rio de Janeiro</span><span class="bar" style="width:43px"></span><span class="pct">52,8%</span></div></div></div></section></main>
+<main class="grid-main"><section class="panel race-side" aria-label="Placar simulado"><div class="panel-head"><span id="raceHeading">TOTALIZAÇÃO BRASIL</span><span class="muted-small">CENÁRIO FICTÍCIO</span></div><div class="race-summary"><div><div class="section-label" id="raceCaption">CANDIDATO A · DEMO</div><div class="race-percent blue" id="racePercent">—</div></div><div class="muted-small">Dados de demonstração.<br>Não representam votos reais.</div></div>
+<div class="summary-votes"><span>VOTOS VÁLIDOS SOMADOS</span><strong id="raceValidTotal">—</strong><small>SIMULAÇÃO</small></div>
+<div class="candidate"><div class="candidate-top"><div class="candidate-left"><div class="candidate-logo a">A</div><div><div class="cand-name">CANDIDATO A</div><div class="cand-sub">Identidade ilustrativa</div></div></div><div class="cand-votes" id="raceVotesA">—</div></div><div class="progress a"><span id="raceBarA" style="width:51.28%"></span></div></div>
+<div class="candidate"><div class="candidate-top"><div class="candidate-left"><div class="candidate-logo b">B</div><div><div class="cand-name">CANDIDATO B</div><div class="cand-sub">Identidade ilustrativa</div></div></div><div class="cand-votes" id="raceVotesB">—</div></div><div class="progress b"><span id="raceBarB" style="width:48.72%"></span></div></div>
+<div class="apuration"><div><div class="section-label">APURAÇÃO SIMULADA</div><strong id="raceProgress">—</strong></div><div class="progress a" style="width:100%"><span id="raceProgressBar" style="width:0"></span></div></div><div class="note"><b>IMPORTANTE:</b> a votação de 25/10/2026 ainda não ocorreu. Todos os resultados desta prévia são inventados para testar o design.</div></section>
+<section class="panel map-panel" aria-label="Mapa interativo tridimensional do Brasil"><div class="map-hud"><div><div class="upper" id="mapModeName">MAPA ELEITORAL 3D</div><div class="secondary" id="mapModeCaption">Brasil · 5 regiões · 27 capitais</div></div><button id="mode-button" aria-label="Alternar a cor do mapa">◉ VISUALIZAR</button></div><div class="canvas-wrap" id="canvasWrap"><canvas id="brazilCanvas" role="img" aria-label="Mapa tridimensional com 27 capitais brasileiras; arraste para girar, aproxime com dois dedos, toque para escolher uma capital"></canvas></div><div class="map-bottom"><div class="map-hint"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M9 12V4a2 2 0 0 1 4 0v6l2-1a2 2 0 0 1 3 2l2 2a3 3 0 0 1 0 4l-3 4H9l-4-6c-2-3 1-5 4-3Z"/></svg><span>Arraste: girar · 2 dedos: zoom · Toque: selecionar</span></div><div class="map-zoom"><button type="button" class="circle-btn" id="zoomMinus" aria-label="Reduzir zoom">−</button><button type="button" class="circle-btn" id="zoomPlus" aria-label="Ampliar zoom">+</button><button type="button" class="circle-btn" id="reset" aria-label="Reiniciar mapa" style="font-size:15px">⟳</button></div></div></section>
+<section class="panel info-panel" aria-label="Detalhes estaduais simulados"><div class="panel-head"><span id="infoHeading">TOTALIZAÇÃO DO BRASIL</span><span class="on-pill" style="padding:5px 9px;font-size:9px;letter-spacing:.7px">◉ SIMULAÇÃO</span></div><div class="info-grid"><div class="state-info"><div class="info-title" id="stateName">Brasil</div><div class="state-region" id="stateRegion">26 estados + DF</div><button class="back-region" id="backRegion" type="button" hidden>← Voltar à totalização da região</button><div class="capital-detail" id="capitalDetail" hidden><span>CAPITAL</span><strong id="capitalName">São Paulo</strong></div><div class="stat-pair"><div class="stat"><span>CANDIDATO A</span><strong class="blue" id="stateA">—</strong><small id="stateVotesA" style="display:block;font-size:10px;color:#9dbacb;margin-top:6px">—</small></div><div class="stat"><span>CANDIDATO B</span><strong class="pink" id="stateB">—</strong><small id="stateVotesB" style="display:block;font-size:10px;color:#9dbacb;margin-top:6px">—</small></div></div><div class="info-race"><div class="head"><span>Totalização ilustrativa</span><span id="stateTotal">86,0% apurado*</span></div><div class="track"><div class="a" id="stateBarA" style="width:54.3%"></div><div class="b"></div></div></div><div class="uf-picker"><label for="stateSelect">SELECIONAR ESTADO PARA DETALHAR</label><select id="stateSelect" aria-label="Selecionar unidade federativa"></select></div></div><div class="standings"><h3>DESTAQUES REGIONAIS · DEMO</h3><div class="leader"><span class="uf">SP</span><span>São Paulo</span><span class="bar" style="width:45px"></span><span class="pct">54,3%</span></div><div class="leader"><span class="uf">MG</span><span>Minas Gerais</span><span class="bar" style="width:39px"></span><span class="pct">51,2%</span></div><div class="leader"><span class="uf">BA</span><span>Bahia</span><span class="bar" style="width:35px"></span><span class="pct">49,9%</span></div><div class="leader"><span class="uf">RJ</span><span>Rio de Janeiro</span><span class="bar" style="width:43px"></span><span class="pct">52,8%</span></div></div></div></section></main>
 <section class="bottom"><article class="panel bottom-panel"><div class="bottom-head"><span>EVOLUÇÃO DOS VOTOS · SIMULAÇÃO</span><span class="muted-small">A <span style="color:var(--blue)">■</span> &nbsp; B <span style="color:var(--pink)">■</span></span></div><div class="chart-area" id="chartArea" aria-label="Gráfico fictício da apuração"></div><span class="muted-small">Início da apuração &nbsp; · &nbsp; Amostra ilustrativa &nbsp; · &nbsp; Total</span></article><article class="panel bottom-panel"><div class="bottom-head"><span>TRANSPARÊNCIA & CONFIANÇA</span><span class="muted-small">100% INDEPENDENTE</span></div><div class="trust"><div class="shield">◇</div><div><h3>Dados públicos, apresentação clara.</h3><p>Projeto independente. Após aprovação e integração, os resultados deverão ser conferidos com fontes oficiais do TSE. Esta tela ainda não consulta resultados reais.</p></div></div></article></section>
+<section class="ad-banner" aria-label="Espaço publicitário disponível"><span class="ad-icon" aria-hidden="true">✧</span><div><div class="ad-eyebrow">ESPAÇO PUBLICITÁRIO · DISPONÍVEL</div><div class="ad-title">ANUNCIE AQUI</div><div class="ad-sub">Sua marca pode fazer parte desta experiência eleitoral interativa.</div></div></section>
 <footer class="footer"><span>© 2026 Apuração ao Vivo · Projeto independente e apartidário · <b>DEMONSTRAÇÃO PÚBLICA</b></span><span>Uma experiência 3D feita para X, web e celular · Não afiliado ao TSE</span></footer></div>
 <div class="modal-bg" id="modal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="eyebrow" style="margin-bottom:17px">PRÉVIA DO PROJETO</div><h2 id="modalTitle">Experiência cinematográfica</h2><p>Este é um protótipo funcional. Você pode girar o Brasil com o dedo ou mouse, tocar em unidades federativas, mudar o estado e aproximar o mapa. Os dados eleitorais são totalmente fictícios.</p><p style="margin-bottom:26px">Esta versão está publicada para demonstração. A conexão com a apuração oficial ainda será implementada.</p><button id="closeModal">Explorar o mapa →</button></div></div>
 <script>
@@ -61,6 +80,21 @@ const REGIONS=['Brasil','Norte','Nordeste','Centro-Oeste','Sudeste','Sul'];
 const REGION_DEFAULT={Norte:'AM',Nordeste:'BA','Centro-Oeste':'DF',Sudeste:'SP',Sul:'RS',Brasil:'SP'};
 for(const s of STATES) s.capital=CAPITAL_NAMES[s.uf];
 if(STATES.length!==27||new Set(STATES.map(s=>s.capital)).size!==27)throw Error('São necessárias 27 capitais diferentes');
+
+const DEMO_BASE={AC:610000,AL:2400000,AP:500000,AM:2700000,BA:10900000,CE:6800000,DF:2300000,ES:3000000,GO:5000000,MA:5100000,MT:2800000,MS:2200000,MG:17000000,PA:6100000,PB:3000000,PR:8500000,PE:7200000,PI:2700000,RJ:13300000,RN:2600000,RS:8500000,RO:1400000,RR:470000,SC:5700000,SP:34000000,SE:1700000,TO:1200000};
+const REGION_CENTERS={Norte:[-60,-3],Nordeste:[-41,-8.5],'Centro-Oeste':[-54,-16],Sudeste:[-44,-21.5],Sul:[-51,-28.5]};
+const ptInt=n=>new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0}).format(n);
+const pct=n=>(n*100).toFixed(2).replace('.',',')+'%';
+function demoRollup(states){
+ let a=0,b=0,base=0;
+ for(const s of states){
+  const sample=DEMO_BASE[s.uf];if(!Number.isSafeInteger(sample))throw Error('Base demonstrativa inválida: '+s.uf);
+  const count=Math.round(sample*s.total/100);
+  const aPart=Math.round(count*s.a/100);
+  a+=aPart;b+=count-aPart;base+=sample;
+ }
+ return {a,b,base,total:a+b,rate:base?(a+b)/base:0,share:a+b?a/(a+b):0};
+}
 const el=id=>document.getElementById(id);
 const select=el('stateSelect');
 function renderStateSelect(){
@@ -73,37 +107,79 @@ function renderStateSelect(){
 const stateByUf=Object.fromEntries(STATES.map(x=>[x.uf,x]));
 let regionFilter='Brasil';
 let selected=stateByUf.SP;
-function showState(s){
- selected=s;select.value=s.uf;
- el('stateName').textContent=s.name;el('stateRegion').textContent=s.region+' · '+s.uf;
- el('capitalName').textContent=s.capital;
- const a=s.uf==='SP'?54.3:s.a,b=+(100-a).toFixed(1);
- el('stateA').textContent=a.toFixed(1).replace('.',',')+'%';
- el('stateB').textContent=b.toFixed(1).replace('.',',')+'%';
- el('stateBarA').style.width=a+'%';
- el('stateTotal').textContent=s.total.toFixed(1).replace('.',',')+'% apurado*';
- updateCapitalButtons();draw();
+
+let viewMode='national';
+function setRollupVisual(states,place){
+ const r=demoRollup(states),name=place.toLocaleUpperCase('pt-BR');
+ el('raceHeading').textContent='TOTALIZAÇÃO · '+name;
+ el('racePercent').textContent=pct(r.share);
+ el('raceValidTotal').textContent=ptInt(r.total);
+ el('raceVotesA').textContent=ptInt(r.a)+' votos';
+ el('raceVotesB').textContent=ptInt(r.b)+' votos';
+ el('raceBarA').style.width=(r.share*100).toFixed(3)+'%';
+ el('raceBarB').style.width=((1-r.share)*100).toFixed(3)+'%';
+ el('raceProgress').textContent=pct(r.rate);
+ el('raceProgressBar').style.width=(r.rate*100).toFixed(2)+'%';
+ el('stateA').textContent=pct(r.share);
+ el('stateB').textContent=pct(1-r.share);
+ el('stateVotesA').textContent=ptInt(r.a)+' votos fictícios';
+ el('stateVotesB').textContent=ptInt(r.b)+' votos fictícios';
+ el('stateBarA').style.width=(r.share*100)+'%';
+ el('stateTotal').textContent=pct(r.rate)+' apurado*';
 }
-function updateCapitalButtons(){
+function showState(s){
+ selected=s;viewMode='state';hasInteracted=true;
+ el('stateName').textContent=s.name;
+ el('stateRegion').textContent=s.region+' · '+s.uf+' · '+s.capital;
+ el('capitalName').textContent=s.capital;
+ el('capitalDetail').hidden=false;
+ el('backRegion').hidden=regionFilter==='Brasil';
+ el('infoHeading').textContent='RAIO-X DO ESTADO';
+ el('mapModeName').textContent='ESTADO · '+s.uf;
+ el('mapModeCaption').textContent=s.name+' · capital '+s.capital;
+ el('regionModeNote').textContent='Estado selecionado · visão estadual; volte para consultar o total da região.';
+ select.value=s.uf;
+ setRollupVisual([s],s.name);
+ updateStateButtons();draw();
+}
+function updateStateButtons(){
  const bar=el('capitalPills');bar.replaceChildren();
- const subset=STATES.filter(s=>regionFilter==='Brasil'||s.region===regionFilter).sort((a,b)=>a.capital.localeCompare(b.capital,'pt-BR'));
+ const subset=STATES.filter(s=>regionFilter==='Brasil'||s.region===regionFilter).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
  for(const s of subset){
-  const b=document.createElement('button');b.type='button';
-  b.dataset.uf=s.uf;b.setAttribute('aria-pressed',String(s.uf===selected.uf));
-  b.setAttribute('aria-label',s.capital+', '+s.name);
+  const b=document.createElement('button');b.type='button';b.dataset.uf=s.uf;
+  b.setAttribute('aria-pressed',String(viewMode==='state'&&s.uf===selected.uf));
+  b.setAttribute('aria-label','Detalhar '+s.name+', capital '+s.capital);
   const tag=document.createElement('span');tag.textContent=s.uf;
-  b.append(tag,document.createTextNode(s.capital));
-  b.onclick=()=>{hasInteracted=true;showState(s)};
+  b.append(tag,document.createTextNode(s.name));
+  b.onclick=()=>showState(s);
   bar.appendChild(b);
  }
 }
+function setOverview(){
+ viewMode=regionFilter==='Brasil'?'national':'region';
+ const subset=STATES.filter(s=>regionFilter==='Brasil'||s.region===regionFilter);
+ const all=viewMode==='national';
+ const place=all?'Brasil':regionFilter;
+ el('stateName').textContent=place;
+ el('stateRegion').textContent=all?'Total nacional · 26 estados + DF':'Soma de '+subset.length+' UFs da região '+place;
+ el('capitalDetail').hidden=true;el('backRegion').hidden=true;
+ el('infoHeading').textContent=all?'TOTALIZAÇÃO NACIONAL':'TOTALIZAÇÃO REGIONAL';
+ el('mapModeName').textContent=all?'BRASIL · 27 CAPITAIS':'TOTAL REGIONAL · '+regionFilter.toLocaleUpperCase('pt-BR');
+ el('mapModeCaption').textContent=all?'Selecione uma das capitais do Brasil':'Mapa agrupado · nenhuma capital exibida';
+ el('regionModeNote').textContent=all?'Visão do Brasil: 27 capitais. Selecione uma região para ver os totais agregados.':'Totalização da região '+place+' · '+subset.length+' estados/UFs somados. Toque em um estado para detalhar.';
+ el('capitalPills').hidden=all;  // Brasil shows pins; per-region state buttons are below.
+ if(!all)el('capitalPills').hidden=false;
+ setRollupVisual(subset,place);
+ updateStateButtons();draw();
+}
 function activateRegion(region){
- regionFilter=region;hasInteracted=true;
- el('regionSummary').textContent=(region==='Brasil'?'Brasil completo':region)+' · '+STATES.filter(s=>region==='Brasil'||s.region===region).length+' capitais';
+ if(!REGIONS.includes(region))return;
+ regionFilter=region;hasInteracted=true;hovered=null;
+ const n=STATES.filter(s=>region==='Brasil'||s.region===region).length;
+ el('regionSummary').textContent=(region==='Brasil'?'Brasil inteiro':region)+' · '+n+(region==='Brasil'?' capitais':' UFs');
  for(const b of el('regionButtons').querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.region===region));
  renderStateSelect();
- const inRegion=region==='Brasil'||selected.region===region;
- showState(inRegion?selected:stateByUf[REGION_DEFAULT[region]]);
+ setOverview();
 }
 function initRegions(){
  for(const region of REGIONS){
@@ -112,16 +188,16 @@ function initRegions(){
   const count=STATES.filter(s=>region==='Brasil'||s.region===region).length;
   b.append(document.createTextNode(region==='Brasil'?'Todo o Brasil':region));
   const badge=document.createElement('b');badge.textContent=count;b.appendChild(badge);
-  b.onclick=()=>activateRegion(region);
-  el('regionButtons').appendChild(b);
+  b.onclick=()=>activateRegion(region);el('regionButtons').appendChild(b);
  }
  activateRegion('Brasil');
 }
-select.addEventListener('change',()=>showState(stateByUf[select.value]));
+el('backRegion').onclick=()=>{if(regionFilter!=='Brasil')activateRegion(regionFilter)};
+select.addEventListener('change',()=>{const s=stateByUf[select.value];if(s)showState(s)});
 for(let i=0;i<24;i++){const pair=document.createElement('span');pair.className='bar-wrap';const a=document.createElement('span'),b=document.createElement('span');a.className='bar-a';b.className='bar-b';let total=22+((i/23)*64);a.style.height=(total*(.49+.045*Math.sin(i*.33)))+'%';b.style.height=(total*(.51-.045*Math.sin(i*.33)))+'%';pair.append(a,b);el('chartArea').appendChild(pair)}
 const canvas=el('brazilCanvas'),wrap=el('canvasWrap');const ctx=canvas.getContext('2d',{alpha:false});
 let w=0,h=0,dpr=1,zoom=1,yaw=-.25,pitch=-.34,roll=-.08,bright=false,animFrame=0;
-let dragging=false,lastX=0,lastY=0,moved=false,hovered=null,pointsScreen=[],startX=0,startY=0,activePointer=null;
+let dragging=false,lastX=0,lastY=0,moved=false,hovered=null,pointsScreen=[],regionScreen=[],startX=0,startY=0,activePointer=null;
 let touchInProgress=false,touchLast=null,pinchDistance=0;
 function resize(){const r=wrap.getBoundingClientRect();w=Math.max(300,r.width);h=Math.max(350,r.height);dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);draw();}
 const cart=(lon,lat)=>({x:(lon+54)*.083,y:(lat+14)*.083,z:0});
@@ -142,46 +218,67 @@ for(let e of side){const {i,j}=e;ctx.beginPath();ctx.moveTo(upper[i].x,upper[i].
 polygonPath(upper);const grad=ctx.createLinearGradient(w*.25,h*.18,w*.78,h*.80);grad.addColorStop(0,bright?'#164f67':'#124963');grad.addColorStop(.44,bright?'#176779':'#155c6b');grad.addColorStop(1,bright?'#0d3b5c':'#0e3a5b');ctx.fillStyle=grad;ctx.fill();
 ctx.save();polygonPath(upper);ctx.clip();ctx.globalAlpha=.4;ctx.strokeStyle='#76d6e9';ctx.lineWidth=.7;for(let k=-25;k<26;k++){ctx.beginPath();ctx.moveTo(w*.5+k*24,-40);ctx.lineTo(w*.5+k*24+80,h+40);ctx.stroke()};for(let k=-25;k<26;k++){ctx.beginPath();ctx.moveTo(-30,h*.5+k*27);ctx.lineTo(w+30,h*.5+k*27-30);ctx.stroke()};ctx.restore();
 ctx.save();polygonPath(upper);ctx.shadowColor=bright?'#4affda':'#55cee9';ctx.shadowBlur=18;ctx.strokeStyle=bright?'#87f8da':'#77d9ee';ctx.lineWidth=2.05;ctx.stroke();ctx.restore();
-// Glowing geographic indicators, projected alongside the rotating mesh
-pointsScreen=[];const statePts=STATES.map(s=>({...project(cart(s.lon,s.lat)),state:s})).sort((a,b)=>a.z-b.z);
-for(const p of statePts){
- const active=p.state.uf===selected.uf,hot=p.state.uf===hovered,visible=regionFilter==='Brasil'||p.state.region===regionFilter;
- const radius=active?9.4:hot?8.8:7.0;
- ctx.save();ctx.globalAlpha=visible?1:.26;
- ctx.beginPath();ctx.arc(p.x,p.y,radius+8,0,Math.PI*2);
- ctx.fillStyle=active?'#f3cc7444':'#6ce5fb25';ctx.fill();
- ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);
- ctx.fillStyle=active?'#ffcd72':hot?'#e5ffff':'#86e4f7';ctx.fill();
- ctx.lineWidth=active?2.4:1.7;ctx.strokeStyle=active?'#fff0b1':'#104354';ctx.stroke();
- if(active){ctx.beginPath();ctx.arc(p.x,p.y,radius+9,0,Math.PI*2);ctx.strokeStyle='#f5d58d';ctx.lineWidth=1.5;ctx.stroke();}
- ctx.restore();pointsScreen.push(p);
-}
-// Labels are collision-aware: 27 large pins stay available; focused capital and regional labels get priority.
-const labels=statePts.filter(p=>p.state.uf===selected.uf||p.state.uf===hovered||(regionFilter!=='Brasil'&&p.state.region===regionFilter));
-labels.sort((a,b)=>Number(b.state.uf===selected.uf)-Number(a.state.uf===selected.uf)||Number(b.state.uf===hovered)-Number(a.state.uf===hovered));
-const occupied=[];
-for(const p of labels){
- const important=p.state.uf===selected.uf||p.state.uf===hovered;
- if(!important && w<480 && zoom<1.14)continue;
- const txt=p.state.capital;ctx.font=(important?'800 ':'650 ')+(important?'12px':'10px')+' system-ui';
- const tw=ctx.measureText(txt).width,boxW=tw+17,boxH=important?25:21;
- const x=p.x+boxW+20>w?p.x-boxW-12:p.x+12;
- const y=Math.max(4,Math.min(h-boxH-4,p.y-boxH-9));
- if(!important && occupied.some(o=>x<o.x+o.w+6 && x+boxW+6>o.x && y<o.y+o.h+4 && y+boxH+4>o.y))continue;
- occupied.push({x,y,w:boxW,h:boxH});
- ctx.fillStyle=important?'rgba(14,40,55,.95)':'rgba(8,28,42,.84)';
- ctx.fillRect(x,y,boxW,boxH);
- ctx.strokeStyle=important?'#e2c17c':'#386579';ctx.lineWidth=1;ctx.strokeRect(x+.5,y+.5,boxW-1,boxH-1);
- ctx.fillStyle=important?'#ffe6a8':'#b9edfb';
- ctx.fillText(txt,x+8,y+boxH*.7);
+// Capital markers in national and state modes; region mode has ONLY regional aggregates.
+pointsScreen=[];regionScreen=[];
+if(viewMode==='region'){
+ const regions=REGIONS.filter(r=>r!=='Brasil');
+ for(const name of regions){
+  const [lon,lat]=REGION_CENTERS[name],p=project(cart(lon,lat));
+  regionScreen.push({...p,region:name});
+  const active=name===regionFilter;
+  const radius=active?15:10;
+  ctx.save();ctx.globalAlpha=active?1:.48;
+  ctx.beginPath();ctx.arc(p.x,p.y,radius+11,0,Math.PI*2);ctx.fillStyle=active?'rgba(250,206,117,.24)':'rgba(98,224,235,.1)';ctx.fill();
+  ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);
+  ctx.fillStyle=active?'#ffcf7d':'#69bdc9';ctx.fill();
+  ctx.strokeStyle=active?'#fff4c2':'#2a5d68';ctx.lineWidth=2;ctx.stroke();
+  ctx.restore();
+  const title=name.toLocaleUpperCase('pt-BR'),count=STATES.filter(s=>s.region===name).length;
+  ctx.font=(active?'900 13px':'750 11px')+' system-ui';
+  const tw=ctx.measureText(title).width,bw=tw+24,bh=active?41:32;
+  const px=Math.max(5,Math.min(w-bw-5,p.x-bw/2)),py=Math.min(h-bh-6,p.y+radius+9);
+  ctx.fillStyle=active?'rgba(18,40,55,.97)':'rgba(8,27,41,.80)';ctx.fillRect(px,py,bw,bh);
+  ctx.strokeStyle=active?'#ffcf7d':'#29536c';ctx.strokeRect(px+.5,py+.5,bw-1,bh-1);
+  ctx.fillStyle=active?'#ffe5aa':'#b7dbea';ctx.fillText(title,px+12,py+17);
+  if(active){ctx.font='600 10px system-ui';ctx.fillStyle='#b3d3e2';ctx.fillText(count+' unidades federativas',px+12,py+32);}
+ }
+}else{
+ const visible= viewMode==='national'?STATES:[selected];
+ const statePts=visible.map(s=>({...project(cart(s.lon,s.lat)),state:s})).sort((a,b)=>a.z-b.z);
+ for(const p of statePts){
+  const active=p.state.uf===selected.uf,hot=p.state.uf===hovered;
+  const radius=viewMode==='state'?12:active?9.4:hot?8.8:7;
+  ctx.beginPath();ctx.arc(p.x,p.y,radius+7,0,Math.PI*2);
+  ctx.fillStyle=active?'rgba(244,199,105,.22)':'rgba(100,220,245,.12)';ctx.fill();
+  ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);
+  ctx.fillStyle=active?'#ffcf7d':'#85dff2';ctx.fill();
+  ctx.strokeStyle=active?'#fff1b7':'#215771';ctx.lineWidth=1.8;ctx.stroke();
+  pointsScreen.push(p);
+ }
+ const labels=statePts.filter(p=>viewMode==='state'||p.state.uf===selected.uf||p.state.uf===hovered);
+ for(const p of labels){
+  const txt=p.state.capital;ctx.font='800 12px system-ui';
+  const bw=ctx.measureText(txt).width+19,bh=26;
+  const x=Math.max(6,Math.min(w-bw-6,p.x+18)),y=Math.max(5,Math.min(h-bh-5,p.y-27));
+  ctx.fillStyle='rgba(8,29,43,.95)';ctx.fillRect(x,y,bw,bh);
+  ctx.strokeStyle='#c3a968';ctx.strokeRect(x+.5,y+.5,bw-1,bh-1);
+  ctx.fillStyle='#ffe2a3';ctx.fillText(txt,x+9,y+17);
+ }
 }
 ctx.restore();}
 let idle=0,hasInteracted=false,lastFrame=0;
 function animate(timestamp){if(!dragging&&!hasInteracted&&timestamp-lastFrame>45){idle+=.011;roll=-.08+Math.sin(idle*.6)*.022;yaw=-.25+Math.sin(idle*.32)*.055;draw();lastFrame=timestamp}animFrame=requestAnimationFrame(animate)}
 
 function coord(ev){const r=wrap.getBoundingClientRect();return {x:ev.clientX-r.left,y:ev.clientY-r.top}}
+
 function focusAt(p){
- const options=pointsScreen.filter(pt=>regionFilter==='Brasil'||pt.state.region===regionFilter);
+ if(viewMode==='region'){
+  let best=null,dist=38;
+  for(const item of regionScreen){const k=Math.hypot(item.x-p.x,item.y-p.y);if(k<dist){best=item.region;dist=k;}}
+  if(best)activateRegion(best);
+  return;
+ }
+ const options=pointsScreen;
  let best=null,d=27;
  for(const pt of options){const distance=Math.hypot(pt.x-p.x,pt.y-p.y);if(distance<d){best=pt.state;d=distance;}}
  if(best)showState(best);
@@ -205,11 +302,17 @@ wrap.addEventListener('pointermove',ev=>{
   moved=moved||Math.hypot(p.x-startX,p.y-startY)>7;
   rotateMap(p.x-lastX,p.y-lastY);lastX=p.x;lastY=p.y;
  }else{
+
   let nearest=null,dist=25;
-  for(const pt of pointsScreen){
-   if(regionFilter!=='Brasil'&&pt.state.region!==regionFilter)continue;
-   const k=Math.hypot(pt.x-p.x,pt.y-p.y);
-   if(k<dist){nearest=pt.state.uf;dist=k;}
+  if(viewMode==='region'){
+    for(const item of regionScreen){
+      const k=Math.hypot(item.x-p.x,item.y-p.y);if(k<dist){nearest=item.region;dist=k;}
+    }
+  }else{
+    for(const pt of pointsScreen){
+      const k=Math.hypot(pt.x-p.x,pt.y-p.y);
+      if(k<dist){nearest=pt.state.uf;dist=k;}
+    }
   }
   if(nearest!==hovered){hovered=nearest;draw();}
   wrap.style.cursor=hovered?'pointer':'grab';
@@ -265,7 +368,7 @@ wrap.addEventListener('gesturestart',ev=>ev.preventDefault(),{passive:false});
 wrap.addEventListener('gesturechange',ev=>ev.preventDefault(),{passive:false});
 el('zoomPlus').onclick=()=>{hasInteracted=true;adjustZoom(1.20)};
 el('zoomMinus').onclick=()=>{hasInteracted=true;adjustZoom(1/1.20)};
-el('reset').onclick=()=>{hasInteracted=true;zoom=1;yaw=-.25;pitch=-.34;roll=-.08;activateRegion('Brasil');showState(stateByUf.SP)};
+el('reset').onclick=()=>{hasInteracted=true;zoom=1;yaw=-.25;pitch=-.34;roll=-.08;activateRegion('Brasil')};
 el('mode-button').onclick=()=>{bright=!bright;el('mode-button').textContent=bright?'◎ MODO AURORA':'◉ VISUALIZAR';draw()};
 el('closeModal').onclick=()=>el('modal').classList.remove('show');el('modal').addEventListener('click',ev=>{if(ev.target===el('modal'))el('modal').classList.remove('show')});
 // The walkthrough is optional; the visitor can use the prototype immediately.
