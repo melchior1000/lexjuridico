@@ -185,3 +185,110 @@ test('padrão de produção: sem configuração, a varredura não volta a ser de
   await flush();await flush();
   assert.ok(timers.q.at(-1).ms>=60000,'intervalo padrão de pelo menos 60 s');
 });
+
+// ---- Revisão do PR #167 (agente 01 do ECC, casos A e C, e revisão independente) ----
+
+test('rodada que não termina no prazo conta como falha, avisa e não trava as próximas',async()=>{
+  const timers=fakeTimers(),logs=[];
+  let pendurar=true;
+  const rec=records({listFields:()=>pendurar?new Promise(()=>{}):[]});
+  const out=outbox(rec,{setTimer:timers.set,clearTimer:timers.clear,log:m=>logs.push(m),roundTimeoutMs:30000});
+  const h=out.start();
+  await flush();
+  assert.equal(out.scanState().em_andamento,true);
+  const prazo=timers.q.find(t=>t.ms===30000&&!t.cancelled);
+  assert.ok(prazo,'toda rodada tem prazo');
+  prazo.fn();await flush();await flush();
+  assert.ok(logs.some(m=>/scan erro=varredura sem resposta em 30 s próxima tentativa em 120 s/.test(m)));
+  assert.equal(out.scanState().em_andamento,false);
+  const proxima=timers.q.at(-1);assert.equal(proxima.ms,120000,'a rodada presa não impede a próxima');
+  pendurar=false;proxima.fn();await flush();await flush();
+  assert.ok(logs.some(m=>/banco respondeu de novo/.test(m)));
+  assert.equal(timers.q.at(-1).ms,60000);
+  assert.equal(out.scanState().falhas,0);
+  h.stop();
+});
+
+test('falha numa ordem não derruba a rodada nem vira espera de banco fora',async()=>{
+  const logs=[];
+  const rec=records({listFields:'banco'});
+  const out=outbox(rec,{log:m=>logs.push(m),staleMs:1});
+  for(const id of ['e1','e2'])await rec.change(PREFIX+id,()=>({id,origem:'whatsapp',contato_id:'55619888888'+id.slice(1).padStart(2,'0'),status:'enviando',atualizado_em:'2020-01-01T00:00:00.000Z'}));
+  const change=rec.change;
+  rec.change=async(key,fn)=>{if(key===PREFIX+'e1')throw new Error('Conflito ao salvar. Atualize e tente novamente.');return change(key,fn);};
+  await out.recover();
+  assert.equal((await out.read('e2')).status,'falhou','a segunda ordem é tratada na mesma rodada');
+  assert.equal((await out.read('e1')).status,'enviando');
+  assert.ok(logs.some(m=>/e1 recuperação falhou: Conflito ao salvar/.test(m)),'o registro diz qual ordem falhou');
+});
+
+test('400/404 passageiro: lista completa por um tempo e depois volta à enxuta',async()=>{
+  let agora=Date.parse('2026-10-20T12:00:00Z'),falhar=true;
+  const logs=[];
+  const rec=records({listFields:'banco'});
+  const real=rec.listFields;
+  rec.listFields=async(...a)=>{if(falhar){falhar=false;throw dbError(404);}return real(...a);};
+  const out=outbox(rec,{log:m=>logs.push(m),clock:()=>agora});
+  await rec.change(PREFIX+'ok',()=>({id:'ok',origem:'whatsapp',contato_id:'5561977777777',status:'enviado',atualizado_em:'2020-01-01T00:00:00.000Z'}));
+  await out.recover();
+  assert.equal(rec.calls.list,1);
+  assert.ok(logs.some(m=>/recusou a lista enxuta \(404\); varredura usa a lista completa e tenta a enxuta de novo em 60 min/.test(m)));
+  await out.recover();
+  assert.equal(rec.calls.list,2,'ainda dentro do prazo');
+  agora+=61*60*1000;
+  await out.recover();
+  assert.equal(rec.calls.list,2,'passada 1 h, volta à enxuta');
+  assert.equal(out.scanState().modo,'enxuta');
+});
+
+test('disparo imediato que falha tenta de novo em 5 s, sem esperar a varredura',async()=>{
+  const timers=fakeTimers(),logs=[],deliveries=[];
+  const rec=records();
+  const out=outbox(rec,{setTimer:timers.set,clearTimer:timers.clear,log:m=>logs.push(m),deliverDetailed:async x=>{deliveries.push(x);return{ok:true,state:'confirmado'}}});
+  const agoraIso=new Date().toISOString();
+  await rec.change(PREFIX+'c1',()=>({id:'c1',origem:'telegram',contato_id:'123',status:'confirmado',texto_final:'Olá',confirmado_em:agoraIso,atualizado_em:agoraIso}));
+  const read=rec.read;let falhas=1;
+  rec.read=async k=>{if(falhas&&k===PREFIX+'c1'){falhas--;throw new Error('Ler registro: banco indisponivel ou operacao recusada (503).');}return read(k);};
+  out.kick('c1');await flush();await flush();
+  const t=timers.q.at(-1);assert.equal(t.ms,5000);
+  assert.ok(logs.some(m=>/c1 erro=.*nova tentativa em 5 s/.test(m)));
+  t.fn();await flush();await flush();await flush();
+  assert.equal((await out.read('c1')).status,'enviado');
+  assert.equal(deliveries.length,1);
+});
+
+test('aprovação de mais de 24 h não sai sozinha na recuperação; a recente sai',async()=>{
+  const deliveries=[];
+  const rec=records({listFields:'banco'});
+  const out=outbox(rec,{deliverDetailed:async x=>{deliveries.push(x);return{ok:true,state:'confirmado'}}});
+  const velho=new Date(Date.now()-3*24*3600*1000).toISOString(),novo=new Date(Date.now()-60*1000).toISOString();
+  await rec.change(PREFIX+'velha',()=>({id:'velha',origem:'telegram',contato_id:'111',status:'confirmado',texto_final:'Audiência amanhã',confirmado_em:velho,atualizado_em:velho}));
+  await rec.change(PREFIX+'nova',()=>({id:'nova',origem:'telegram',contato_id:'222',status:'confirmado',texto_final:'Recebi',confirmado_em:novo,atualizado_em:novo}));
+  await out.recover();await flush();await flush();await flush();
+  const v=await out.read('velha');
+  assert.equal(v.status,'falhou');assert.match(v.last_error,/venceu sem envio/);
+  assert.equal((await out.read('nova')).status,'enviado');
+  assert.deepEqual(deliveries.map(d=>d.id),['222']);
+});
+
+test('o filtro da lista enxuta cobre exatamente os status que a recuperação trata',async()=>{
+  let pedidos=null,campos=null;
+  const rec=records({listFields:async(p,f,o)=>{if(o?.status){pedidos=o.status;campos=f;}return o?.limit===1?[{chave:PREFIX+'x',id:'x',status:'enviado'}]:[]}});
+  await outbox(rec).recover();
+  assert.deepEqual([...pedidos].sort(),['confirmado','enviando','interpretando','pendente'],'aguardando_confirmacao espera a pessoa; não é retomada');
+  assert.ok(campos.includes('confirmado_em'),'a validade da aprovação precisa da data');
+  assert.ok(!campos.includes('valor')&&!campos.includes('historico'),'a varredura periódica nunca baixa o corpo da ordem');
+});
+
+test('só o modo REST declara leitura de campo JSON; intervalo inválido não vira laço de 1 ms',async()=>{
+  const {createSupabaseRequest}=require('../lib/supabase');
+  const {createTenantPostgresRequest}=require('../lib/postgres-tenant');
+  const rest=createSupabaseRequest({url:'https://x.supabase.co',key:'k',https:{request(){throw new Error('sem rede')}},tenantId:'',tenancyRequired:false});
+  assert.equal(rest.jsonFields,true);
+  const pg=createTenantPostgresRequest({pool:{connect(){throw new Error('sem banco')}},tenantId:'3369b6cc-39dc-466f-84a7-7b65e196dbea'});
+  assert.notEqual(pg.jsonFields,true);
+  const timers=fakeTimers();
+  const out=outbox(records({listFields:'banco'}),{setTimer:timers.set,clearTimer:timers.clear,intervalMs:Number(''),maxBackoffMs:NaN});
+  out.start();await flush();await flush();
+  assert.equal(timers.q.at(-1).ms,60000);
+});
