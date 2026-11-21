@@ -1048,6 +1048,21 @@ const andamentoConversa=require('./lib/andamento-conversa').configureAndamentoCo
   log:msg=>console.warn(msg)
 });
 setInterval(()=>andamentoConversa.varrer().catch(e=>console.warn('[Andamento] varredura: '+e.message)),30*60*1000);
+// Ligações por voz ao cliente (lib/voz-ligacoes.js): a IA escreve o objetivo, a prévia e o "pode"
+// são os mesmos das mensagens; a plataforma de voz (lib/voz-retell.js) fala; o resultado volta
+// anotado no processo e ao titular. Sem as chaves da plataforma, fica desligado.
+const vozLigacoes=require('./lib/voz-ligacoes').configureVozLigacoes({
+  records:recordStore,processStore,
+  provider:require('./lib/voz-retell').createRetellProvider({env:process.env}),
+  identidade:()=>_idLex(),
+  podeReceber:numero=>whatsappAutomaticAllowed(numero),
+  iaDisponivel:()=>aiAvailable()&&process.env.LEX_AI_NO_CREDIT!=='1',
+  compor:({system,mensagem})=>runWithAiPonto('ligacao_relato',()=>ia([{role:'user',content:mensagem}],system,600,MODELO_RAPIDO)),
+  entregarAoTitular:texto=>_entregarAoTitularNaConversa(texto),
+  log:msg=>console.warn(msg)
+});
+setInterval(()=>vozLigacoes.reconciliar().catch(e=>console.warn('[Voz] reconciliação: '+e.message)),10*60*1000).unref?.();
+const vozRotas=require('./lib/voz-rotas').createVozRotas({voz:()=>vozLigacoes,authenticate:r=>validarToken(getToken(r)),log:m=>console.warn(m)});
 // Resumo da recepção e resposta a comando que vão ao titular pelo WhatsApp (lib/integration-status.js)
 // também encerram a prévia de mensagem ao cliente.
 require('./lib/integration-status').setOperatorOutboundHook((texto)=>_encerrarPreviasPorOutroAssunto(texto,'whatsapp'));
@@ -10800,6 +10815,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Ligações por voz: aviso da plataforma (público, só com a assinatura dela conferida no corpo
+  // cru) e estado das ligações (advogado ou administrador) — lib/voz-rotas.js.
+  if(url.startsWith('/api/voz/')) {
+    try{ if(await vozRotas.handle(req,res,url,CORS)) return; }
+    catch(e){ res.writeHead(_statusErroLex(e),CORS); res.end(JSON.stringify({error:e.message})); return; }
+  }
   // Negação por padrão: toda rota /api/* exige sessão válida, salvo as públicas
   // abaixo, que têm autenticação própria (senha, segredo de webhook ou conector).
   const ROTAS_PUBLICAS_LEX = new Set(['/api/login', '/api/ping', '/api/webhook-whatsapp',
