@@ -99,7 +99,8 @@ test('configuração única do agente: roteiro vem do LEX, português do Brasil,
   assert.equal(llm.general_prompt,'{{instrucoes}}');assert.equal(llm.begin_message,'{{abertura}}');assert.equal(llm.start_speaker,'agent');
   assert.match(llm.default_dynamic_variables.abertura,/assistente virtual/);
   assert.equal(ag.language,'pt-BR');assert.equal(ag.webhook_url,'https://lex.exemplo/api/voz/aviso');assert.equal(ag.response_engine.llm_id,'llm_1');
-  assert.doesNotMatch(ag.voicemail_option.action.text,/processo|audiência|perícia/i,'caixa postal sem detalhe do caso');
+  assert.doesNotMatch(ag.voicemail_option.action.text,/processo|audiência|perícia|Camargos|escritório/i,'caixa postal sem nome de escritório nem detalhe do caso');
+  assert.equal(ag.opt_in_signed_url,true);assert.equal(ag.signed_url_expiration_ms,3600000);assert.equal(ag.data_storage_retention_days,90);
   assert.ok(saida.some(t=>/RETELL_AGENT_ID=agent_9/.test(t)));
   await assert.rejects(configurar({env:{LEX_SERVIDOR_URL:'https://x'},fetchImpl}),/RETELL_API_KEY/);
   await assert.rejects(configurar({env:{RETELL_API_KEY:'k',LEX_SERVIDOR_URL:'http://x'},fetchImpl}),/https/);

@@ -26,6 +26,9 @@ const MARIA={id:'p1',nome:'Maria Silva x INSS',cliente:'Maria Silva',status:'ATI
   origem_recepcao:{origem:'whatsapp',id:'5561988887777',nome:'Maria Silva'},andamentos:[]};
 const SO_LID={id:'p2',nome:'João x Banco',cliente:'João Souza',status:'ATIVO',origem_recepcao:{origem:'whatsapp',id:'123456789012345',nome:'João'},andamentos:[]};
 const SEM_CONTATO={id:'p3',nome:'Ana x Estado',cliente:'Ana Lima',status:'ATIVO',andamentos:[]};
+const FAMILIA={id:'p4',nome:'Divórcio Carla',cliente:'Carla Souza',area:'Família',status:'ATIVO',cliente_whatsapp:'61977776666',
+  origem_recepcao:{origem:'whatsapp',id:'998877665544332',nome:'Carla'},andamentos:[]};
+const SEM_NOME={id:'p5',nome:'Processo sem cliente',status:'ATIVO',cliente_whatsapp:'61966665555',andamentos:[]};
 const OBJ='Lembrar a Maria da perícia médica de terça, 25/11, às 9h, no fórum de Unaí, e pedir que leve os exames.';
 
 function vozFalsa(over={}){
@@ -33,12 +36,13 @@ function vozFalsa(over={}){
   return{chamadas,
     configurado:()=>over.desligada!==true,
     descricaoJanela:()=>'seg–sex 9h–19h',
-    _bloqueado:async tel=>(over.bloqueados||[]).includes(tel),
+    motivoDeBloqueio:async(tel,{outros_contatos=[]}={})=>[tel,...outros_contatos].some(x=>(over.bloqueados||[]).includes(x))?'o cliente pediu para não receber (PARE)':null,
+    ligacaoDiscreta:p=>/famil/i.test(String(p?.area||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')),
     async ligar(p){chamadas.push(p);if(over.resposta)return over.resposta;return{ok:true,ligacao_id:p.id,hora:'2026-11-23T13:05:00.000Z'}},
     async ler(id){return over.registros?.[id]||null}};
 }
 function montar(over={}){
-  const rec=records(),store=carteira([MARIA,SO_LID,SEM_CONTATO]);
+  const rec=records(),store=carteira([MARIA,SO_LID,SEM_CONTATO,FAMILIA,SEM_NOME]);
   const deliveries=[];
   const outbox=createChannelCommandOutbox({records:rec,compose:async()=>{throw new Error('não usar')},
     deliverDetailed:async input=>{deliveries.push(input);return{ok:true,state:'confirmado',provider_id:'m'+deliveries.length}},
@@ -105,7 +109,7 @@ test('destino só por telefone de verdade: LID do WhatsApp e falta de contato pe
   assert.equal(lid.ok,false);assert.match(lid.erro,/telefone/i);
   const nada=await m.A.prepararLigacao({processo_id:'p3',objetivo:OBJ,...CTX});
   assert.equal(nada.ok,false);assert.match(nada.erro,/Pergunte ao titular o telefone/);
-  const informado=await m.A.prepararLigacao({processo_id:'p3',objetivo:OBJ,telefone:'(61) 3333-4444',...CTX});
+  const informado=await m.A.prepararLigacao({processo_id:'p3',objetivo:OBJ,telefone:'(61) 3333-4444',...CTX,mensagem_titular:'liga pra Ana no (61) 3333-4444'});
   assert.equal(informado.ok,true);assert.equal(informado.para.telefone,'+55 61 3333-4444');
   const previa=await m.A.previaDoTurno({conversa:'telegram:1',turno:'T1'});
   assert.match(previa,/número dito agora na conversa — confira/);
@@ -119,6 +123,8 @@ test('ligações desligadas, cliente que pediu PARE e objetivo com marcador: nad
   assert.equal(r.ok,false);assert.match(r.erro,/ainda não estão ligadas/);
   const pare=montar({bloqueados:['+5561988887777']});
   assert.match((await pare.A.prepararLigacao({processo_id:'p1',objetivo:OBJ,...CTX})).erro,/não receber/);
+  const semNome=montar();
+  assert.match((await semNome.A.prepararLigacao({processo_id:'p5',objetivo:OBJ,...CTX})).erro,/nome do cliente/);
   const m=montar();
   assert.equal((await m.A.prepararLigacao({processo_id:'p1',objetivo:'Lembrar da perícia em [DATA]',...CTX})).ok,false);
   assert.equal((await m.A.prepararLigacao({processo_id:'p1',objetivo:'oi',...CTX})).ok,false);
@@ -176,4 +182,77 @@ test('ferramentas: preparar_ligacao_cliente prepara (não liga) e ligacoes_do_es
   assert.equal(l.ok,true);assert.equal(l.ligacoes[0].processo_id,'p1');
   const semVoz=await LexTools.executar('ligacoes_do_escritorio',{},{processStore:m.store,ligacoes:null},{profile:'admin'});
   assert.equal(typeof semVoz.ok,'boolean');
+});
+
+test('PARE gravado pelo código interno do WhatsApp (LID) também barra a ligação para o telefone do cliente',async()=>{
+  const m=montar({bloqueados:['998877665544332']});
+  const r=await m.A.prepararLigacao({processo_id:'p4',objetivo:OBJ,...CTX});
+  assert.equal(r.ok,false);assert.match(r.erro,/PARE/);
+  const livre=montar();
+  const ok=await livre.A.prepararLigacao({processo_id:'p4',objetivo:OBJ,...CTX});
+  assert.equal(ok.ok,true);
+  await livre.A.previaDoTurno({conversa:'telegram:1',turno:'T1'});
+  await livre.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.deepEqual(livre.voz.chamadas[0].outros_contatos.sort(),['5561977776666','998877665544332'].sort(),'na hora de discar, confere de novo todos os contatos');
+});
+
+test('família, violência, penal ou segredo de justiça: ligação discreta, e a prévia diz isso',async()=>{
+  const m=montar();
+  const r=await m.A.prepararLigacao({processo_id:'p4',objetivo:OBJ,...CTX});
+  assert.equal(r.discreta,true);
+  const previa=await m.A.previaDoTurno({conversa:'telegram:1',turno:'T1'});
+  assert.match(previa,/Ligação discreta/);assert.match(previa,/sem dizer o nome do escritório/);
+  await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.equal(m.voz.chamadas[0].discreta,true);
+  const pedido=montar();
+  assert.equal((await pedido.A.prepararLigacao({processo_id:'p1',objetivo:OBJ,discreta:true,...CTX})).discreta,true,'o titular também pode pedir');
+});
+
+test('número que não está na mensagem do titular: aviso forte na prévia e não vira cadastro',async()=>{
+  const m=montar();
+  const r=await m.A.prepararLigacao({processo_id:'p3',objetivo:OBJ,telefone:'11977770000',...CTX,mensagem_titular:'liga pra Ana lembrando da audiência'});
+  assert.equal(r.para.fonte,'sugerido na conversa');
+  const previa=await m.A.previaDoTurno({conversa:'telegram:1',turno:'T1'});
+  assert.match(previa,/não está na sua mensagem nem no cadastro/);
+  await m.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.equal(m.store.rows.find(p=>p.id==='p3').cliente_telefone,undefined);
+  const t=montar();
+  await t.A.prepararLigacao({processo_id:'p3',objetivo:OBJ,telefone:'11977770000',...CTX,mensagem_titular:'o número da Ana é 11 97777-0000'});
+  await t.A.previaDoTurno({conversa:'telegram:1',turno:'T1'});
+  await t.A.confirmarSeFor({conversa:'telegram:1',mensagem:'pode',perfil:'admin'});
+  assert.equal(t.store.rows.find(p=>p.id==='p3').cliente_telefone,'+5511977770000','dito pelo titular: fica no cadastro');
+});
+
+test('desistir da ligação retira só a ligação; o aviso do andamento continua em aberto',async()=>{
+  const m=montar();
+  await m.A.prepararLigacao({processo_id:'p1',objetivo:OBJ,...CTX});
+  const r=await m.A.descartar({processo_id:'p1',conversa:'telegram:1',perfil:'admin',tipo:'ligacao'});
+  assert.equal(r.ok,true);assert.equal(r.ligacao_retirada,true);
+  assert.equal((await m.A.listar()).mensagens_preparadas.length,0);
+  assert.equal(await m.A.previaDoTurno({conversa:'telegram:1',turno:'T1'}),null);
+  const viaFerramenta=await LexTools.executar('descartar_mensagem_cliente',{processo_id:'p1',tipo:'ligacao'},{andamentos:m.A,processStore:m.store},{profile:'admin',conversa:'telegram:1'});
+  assert.equal(viaFerramenta.ok,true);assert.equal(viaFerramenta.ligacao_retirada,false);
+});
+
+test('reinício com a ligação ainda "discando": fica como "pode ter saído", nunca volta a esperar outro OK',async()=>{
+  const m=montar();
+  await m.A.prepararLigacao({processo_id:'p1',objetivo:OBJ,...CTX});
+  const [k]=[...m.rec.map.keys()].filter(x=>x.startsWith('lex_cliente_msg_'));
+  const r=m.rec.map.get(k);
+  m.voz.ler=async id=>id===r.id+'-1'?{status:'discando',discando_em:'2026-11-23T12:00:00.000Z'}:null;
+  m.rec.map.set(k,{...r,status:'ligando',tentativas:1,aprovado_em:'2026-11-23T12:00:00.000Z'});
+  await m.A.reconciliarEnvios();
+  const depois=m.rec.map.get(k);
+  assert.equal(depois.status,'enviado');assert.equal(depois.incerta,true);
+});
+
+test('transcrição só para advogado ou administrador; liberar ligações só com perfil de advogado',async()=>{
+  const V={listar:async q=>({ok:true,ligacoes:[{ligacao_id:'L1',...(q.com_transcricao?{transcricao:'o que a cliente disse'}:{})}]}),
+    liberarNaoLigar:async q=>({ok:true,liberados:1,q})};
+  const sec=await LexTools.executar('ligacoes_do_escritorio',{processo_id:'p1'},{ligacoes:V},{profile:'secretaria'});
+  assert.equal(sec.ligacoes[0].transcricao,undefined);
+  const adv=await LexTools.executar('ligacoes_do_escritorio',{processo_id:'p1'},{ligacoes:V},{profile:'advogado'});
+  assert.equal(adv.ligacoes[0].transcricao,'o que a cliente disse');
+  assert.equal((await LexTools.executar('liberar_ligacoes_cliente',{processo_id:'p1'},{ligacoes:V},{profile:'secretaria'})).ok,false);
+  assert.equal((await LexTools.executar('liberar_ligacoes_cliente',{processo_id:'p1'},{ligacoes:V},{profile:'admin'})).ok,true);
 });

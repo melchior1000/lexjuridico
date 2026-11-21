@@ -3735,8 +3735,11 @@ function _lexAndamentosOrdenados(p){
 }
 function _lexAndamentosRecentes(p,n){const o=_lexAndamentosOrdenados(p).map(x=>x.a);return n==null?o:o.slice(0,n)}
 // O último que já aconteceu (dia de Brasília até hoje); data futura só vale se não houver outro.
+// Anotação interna do LEX (origem "lex": ligação ao cliente, prazo baixado, número corrigido) não é
+// movimento do processo: não conta como "último andamento" nem tira o processo da lista de parados.
 function _lexUltimoAndamento(p){
-  const hoje=_LEX_FMT_DIA.format(new Date()),o=_lexAndamentosRecentes(p);
+  const hoje=_LEX_FMT_DIA.format(new Date()),todos=_lexAndamentosRecentes(p);
+  const doProcesso=todos.filter(a=>String((a&&a.origem)||'').toLowerCase()!=='lex'),o=doProcesso.length?doProcesso:todos;
   return o.find(a=>{const d=_lexDiaAndamento(a);return !!d&&d<=hoje})||o[0]||null;
 }
 function _lexDataBR(a){const d=_lexDiaAndamento(a);return d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):''}

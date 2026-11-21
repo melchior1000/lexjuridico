@@ -9,7 +9,8 @@
 // Sem LEX_VOZ_VOICE_ID, lista as vozes em português para escolher e para por aí.
 // No fim, mostra o RETELL_AGENT_ID para colocar nas variáveis do servidor.
 // Contrato conferido na documentação da Retell em 21/11/2026 (create-retell-llm, create-agent,
-// list-voices; variáveis dinâmicas valem no prompt e na mensagem de abertura).
+// list-voices; variáveis dinâmicas valem no prompt e na mensagem de abertura; opt_in_signed_url,
+// signed_url_expiration_ms e data_storage_retention_days nas páginas de URL assinada e retenção).
 const API='https://api.retellai.com';
 
 const PADRAO={
@@ -20,12 +21,15 @@ const PADRAO={
 function corpoLlm(){
   return{general_prompt:'{{instrucoes}}',begin_message:'{{abertura}}',start_speaker:'agent',default_dynamic_variables:PADRAO};
 }
-function corpoAgente({llmId,voiceId,servidor,escritorio}){
+function corpoAgente({llmId,voiceId,servidor}){
   return{response_engine:{type:'retell-llm',llm_id:llmId},voice_id:voiceId,language:'pt-BR',agent_name:'LEX — ligações ao cliente',
     webhook_url:String(servidor).replace(/\/+$/,'')+'/api/voz/aviso',webhook_events:['call_started','call_ended','call_analyzed'],
     end_call_after_silence_ms:20000,max_call_duration_ms:600000,
-    // Caixa postal: só o pedido de retorno, nunca detalhe do caso.
-    voicemail_option:{action:{type:'static_text',text:'Aqui é a assistente virtual do '+(escritorio?'escritório '+escritorio:'escritório')+'. Por favor, retorne a ligação para o escritório. Obrigada.'}}};
+    // Caixa postal: só o pedido de retorno — sem nome de escritório e sem detalhe do caso.
+    voicemail_option:{action:{type:'static_text',text:'Olá, aqui é uma assistente virtual. Por favor, retorne esta ligação. Obrigada.'}},
+    // Sigilo e LGPD: link da gravação assinado e curto (1 h); a plataforma apaga tudo em 90 dias
+    // (padrão dela é guardar para sempre). O LEX guarda só a transcrição, pelo prazo de LEX_VOZ_GUARDA_DIAS.
+    opt_in_signed_url:true,signed_url_expiration_ms:3600000,data_storage_retention_days:90};
 }
 function vozesEmPortugues(lista){
   return(Array.isArray(lista)?lista:[]).filter(v=>/portug|brazil|brasil|pt-br/i.test([v.accent,v.voice_name].join(' ')));
@@ -51,7 +55,7 @@ async function configurar({env=process.env,fetchImpl=globalThis.fetch,saida=cons
   }
   const llm=await pedir('POST','/create-retell-llm',corpoLlm());
   if(!llm?.llm_id)throw new Error('A Retell não devolveu o llm_id.');
-  const agente=await pedir('POST','/create-agent',corpoAgente({llmId:llm.llm_id,voiceId,servidor,escritorio:String(env.ESCRITORIO_NOME||'').trim()}));
+  const agente=await pedir('POST','/create-agent',corpoAgente({llmId:llm.llm_id,voiceId,servidor}));
   if(!agente?.agent_id)throw new Error('A Retell não devolveu o agent_id.');
   saida('Pronto. Coloque nas variáveis do servidor do LEX:');
   saida('  RETELL_AGENT_ID='+agente.agent_id);

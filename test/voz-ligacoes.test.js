@@ -4,7 +4,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
-const {createVozLigacoes,telefoneParaLigar,telefoneLegivel}=require('../lib/voz-ligacoes');
+const {createVozLigacoes,telefoneParaLigar,telefoneLegivel,pediuParaNaoLigar}=require('../lib/voz-ligacoes');
 const {createRetellProvider}=require('../lib/voz-retell');
 
 function records(){
@@ -96,7 +96,8 @@ test('liga dentro do horário, com abertura que se identifica como assistente vi
   assert.match(abertura,/gravada/);assert.match(abertura,/Maria\?/);assert.doesNotMatch(abertura,/perícia|INSS/,'abertura não revela nada do caso antes de saber quem atendeu');
   assert.match(instrucoes,/Lembrar a Maria da perícia/);
   assert.match(instrucoes,/não substitui as funções do advogado/i,'aviso legal entra em todo prompt');
-  assert.match(instrucoes,/confirme que está falando com Maria/i);
+  assert.match(instrucoes,/NOME COMPLETO/);assert.match(instrucoes,/bater com Maria Silva/);assert.match(instrucoes,/Um "sim" ou só o primeiro nome não bastam/);
+  assert.doesNotMatch(instrucoes.split('Objetivo, definido')[0],/Lembrar a Maria/,'o objetivo só aparece depois das regras de confirmação');
   assert.match(instrucoes,/caixa postal/i);assert.match(instrucoes,/não quer receber ligações/i);
   assert.match(instrucoes,/nunca dê opinião jurídica|não dê opinião jurídica/i);
   const reg=(await m.rec.read('lex_voz_ligacao_L1')).value;
@@ -135,6 +136,7 @@ test('teto diário de ligações',async()=>{
   assert.equal((await m.V.ligar(PEDIDO)).ok,true);
   const r=await m.V.ligar({...PEDIDO,id:'L2'});
   assert.equal(r.ok,false);assert.equal(r.codigo,'teto_diario');assert.equal(m.pedidos.length,1);
+  assert.match(r.motivo,/me peça de novo amanhã/);assert.doesNotMatch(r.motivo,/amanhã eu ligo/,'nada promete ligação que ninguém agenda');
 });
 
 test('recusa da plataforma não vira sucesso; queda de rede repete com a mesma chave e, sem resposta, fica incerta',async()=>{
@@ -275,4 +277,130 @@ test('corrida: o aviso de fim chega antes de a discagem terminar de gravar — n
   assert.equal(reg.status,'encerrada','não volta para "em andamento"');assert.equal(reg.call_id,'call_1');
   await m.V.reconciliar();
   assert.equal((await m.rec.read('lex_voz_ligacao_L1')).value.status,'relatada');
+});
+
+test('número estrangeiro não vira brasileiro; 0055 serve',()=>{
+  assert.equal(telefoneParaLigar('+34 912 345 678'),null);
+  assert.equal(telefoneParaLigar('+49 30 123456'),null);
+  assert.equal(telefoneParaLigar('0049 30 1234567'),null);
+  assert.equal(telefoneParaLigar('0055 61 98888-7777'),'+5561988887777');
+});
+
+test('horário no relógio do cliente (fuso pelo DDD) e sem feriado nacional',async()=>{
+  const cedo=Date.parse('2026-11-23T12:30:00Z'); // 9h30 em Brasília = 7h30 no Acre
+  const acre=montar({agora:cedo});
+  assert.equal((await acre.V.ligar({...PEDIDO,telefone:'68999998888'})).codigo,'fora_do_horario');
+  assert.equal((await montar({agora:cedo}).V.ligar(PEDIDO)).ok,true,'em Brasília já pode');
+  const natal=montar({agora:Date.parse('2026-12-25T15:00:00Z')}); // sexta, 12h
+  assert.equal((await natal.V.ligar(PEDIDO)).codigo,'fora_do_horario');
+});
+
+test('PARE em outro contato do processo (inclusive LID) e "não ligar" marcado no processo barram; o titular pode liberar',async()=>{
+  const lid=montar({pare:['998877665544332']});
+  const r=await lid.V.ligar({...PEDIDO,outros_contatos:['998877665544332']});
+  assert.equal(r.codigo,'nao_ligar');assert.equal(lid.pedidos.length,0);
+  const m=montar();
+  await m.V.marcarNaoLigar('+5561911112222','pediu na ligação X','p1');
+  const outroNumero=await m.V.ligar(PEDIDO);
+  assert.equal(outroNumero.codigo,'nao_ligar','o pedido vale para o cliente do processo, não só para o número');
+  const lib=await m.V.liberarNaoLigar({processo_id:'p1',telefone:'+5561911112222'});
+  assert.equal(lib.ok,true);assert.equal(lib.liberados,2);
+  assert.equal((await m.V.ligar(PEDIDO)).ok,true);
+  assert.equal((await m.V.liberarNaoLigar({})).ok,false);
+});
+
+test('sem nome do cliente não disca (a assistente precisa conferir o nome completo)',async()=>{
+  const m=montar();
+  assert.equal((await m.V.ligar({...PEDIDO,cliente:''})).codigo,'sem_nome');assert.equal(m.pedidos.length,0);
+});
+
+test('ligação discreta: abertura sem escritório; caixa postal nunca diz o escritório',async()=>{
+  const m=montar();
+  await m.V.ligar({...PEDIDO,discreta:true});
+  const {abertura,instrucoes}=m.pedidos[0].retell_llm_dynamic_variables;
+  assert.doesNotMatch(abertura,/Camargos|escritório|Wanderson/);assert.match(abertura,/assistente virtual/);assert.match(abertura,/gravada/);
+  assert.match(instrucoes,/DISCRETA/);
+  assert.match(instrucoes,/caixa postal, deixe só este recado, sem nome de escritório/);
+  assert.equal(m.V.ligacaoDiscreta({area:'Família'}),true);assert.equal(m.V.ligacaoDiscreta({assunto:'Violência doméstica'}),true);
+  assert.equal(m.V.ligacaoDiscreta({segredo_justica:true}),true);assert.equal(m.V.ligacaoDiscreta({area:'Previdenciário'}),false);
+});
+
+test('aviso de fim durante a discagem nunca regride: sem resposta ou recusa depois não apagam o que aconteceu',async()=>{
+  for(const respostas of [[{lanca:'ECONNRESET'},{lanca:'ECONNRESET'}],[{status:409,body:{error_message:'conflict'}}],[{lanca:'ECONNRESET'},{status:409,body:{}}]]){
+    let m=null;
+    m=montar({respostas,duranteDiscagem:async()=>{if(m.pedidos.length===1)await avisar(m,FIM)}});
+    await m.V.ligar(PEDIDO);
+    await m.V.reconciliar();
+    assert.equal((await m.rec.read('lex_voz_ligacao_L1')).value.status,'relatada',JSON.stringify(respostas));
+    assert.equal(m.entregas.length,1);assert.doesNotMatch(m.entregas.join('\n'),/Não recebi o resultado/);
+  }
+});
+
+test('primeira tentativa sem resposta e a segunda recusada: "pode ter saído", nunca "não saiu"',async()=>{
+  const m=montar({respostas:[{lanca:'ECONNRESET'},{status:409,body:{error_message:'duplicate'}}]});
+  const r=await m.V.ligar(PEDIDO);
+  assert.equal(r.ok,null);assert.equal((await m.rec.read('lex_voz_ligacao_L1')).value.status,'incerta');
+});
+
+test('"não me ligue": só pedido explícito do cliente conta; frase educada e descrição não',async()=>{
+  for(const t of ['Não me liga mais','não quero mais receber ligações','Por favor não liguem mais pra mim','Não quero que vocês me liguem',
+    'Não precisa me ligar mais','Não liga mais pra esse número','para de me ligar','Olha, tira meu número','Não me liguem.'])
+    assert.equal(pediuParaNaoLigar('User: '+t),true,t);
+  for(const t of ['Não precisa ligar de novo, eu vou sim.','Não precisa ligar, a minha filha confirma.','Vou sim, levo os exames.',
+    'Ele não me liga mais desde o divórcio.','Me liga amanhã que eu confirmo.','Não liguei antes porque estava trabalhando.'])
+    assert.equal(pediuParaNaoLigar('User: '+t),false,t);
+  assert.equal(pediuParaNaoLigar('Agent: não me ligue mais? tudo bem'),false,'fala da assistente não conta');
+});
+
+test('log de falha da IA não leva trecho da fala do cliente',async()=>{
+  const logs=[];
+  const m=montar({resumoIa:'{"resumo": Maria contou que mora na rua X 123}'});
+  const V=require('../lib/voz-ligacoes').createVozLigacoes({records:m.rec,processStore:m.store,provider:m.provider,env:ENV,now:()=>m.agora,
+    identidade:()=>({titular:'W'}),podeReceber:async()=>true,compor:async()=>'{"resumo": Maria contou que mora na rua X 123}',iaDisponivel:()=>true,
+    entregarAoTitular:async()=>[{ok:true}],log:t=>logs.push(t)});
+  await V.ligar(PEDIDO);await avisar(m,FIM);await V.concluir('L1');
+  assert.ok(logs.length>0);assert.doesNotMatch(logs.join(' '),/Maria|rua X/);
+});
+
+test('guarda: a transcrição sai depois do prazo; o resumo fica',async()=>{
+  const m=montar({env:{LEX_VOZ_GUARDA_DIAS:'30'}});
+  await m.V.ligar(PEDIDO);await avisar(m,FIM);await m.V.concluir('L1');
+  m.avancar(31*86400000);
+  assert.equal(await m.V.limparTranscricoes(),1);
+  const reg=(await m.rec.read('lex_voz_ligacao_L1')).value;
+  assert.equal(reg.transcricao,null);assert.ok(reg.transcricao_apagada_em);assert.ok(reg.relato.resumo);
+  const l=await m.V.listar({processo_id:'p1'});
+  assert.equal(l.ligacoes[0].transcricao,'(apagada pelo prazo de guarda)');
+});
+
+test('reconciliação usa a lista enxuta do banco (sem baixar transcrições) quando ele oferece',async()=>{
+  const m=montar();await m.V.ligar(PEDIDO);
+  const pedidosLista=[];const original=m.rec.list;
+  m.rec.listFields=async(prefixo,campos,opcoes)=>{pedidosLista.push({prefixo,campos,opcoes});
+    return (await original(prefixo)).filter(x=>opcoes.status.includes(x.status)).map(x=>Object.fromEntries(campos.map(c=>[c,x[c]??null])))};
+  let completas=0;m.rec.list=async(...a)=>{completas++;return original(...a)};
+  const V=require('../lib/voz-ligacoes').createVozLigacoes({records:m.rec,processStore:m.store,provider:m.provider,env:ENV,now:()=>m.agora+3*3600*1000,
+    podeReceber:async()=>true,entregarAoTitular:async()=>[{ok:true}],log:()=>{}});
+  await V.reconciliar();
+  assert.equal(pedidosLista[0].prefixo,'lex_voz_ligacao_');assert.ok(!pedidosLista[0].campos.includes('transcricao'));
+  assert.deepEqual(pedidosLista[0].opcoes.status,['discando','em_andamento','incerta','encerrada']);
+  assert.equal((await m.rec.read('lex_voz_ligacao_L1')).value.status,'sem_retorno');
+  assert.ok(completas<=1,'a lista completa só aparece na limpeza diária, não a cada rodada');
+});
+
+test('anotação da ligação no processo não esconde processo parado no tribunal',()=>{
+  const {computeOfficeInsights}=require('../lib/office-insights');
+  const p={id:'p1',nome:'X',status:'ATIVO',andamentos:[{data:'2026-11-23',txt:'[LEX] Ligação ao cliente',origem:'lex',ligacao_id:'L1'},{data:'2026-06-01',txt:'[DJEN] Juntada',origem:'djen'}]};
+  const r=computeOfficeInsights({processes:[p],now:new Date('2026-11-23T13:00:00Z')});
+  assert.ok(r.alertas.some(a=>a.tipo==='processo_parado'&&a.processo_id==='p1'));
+});
+
+test('tela: anotação do LEX não conta como último andamento (nem para "parado"); sem movimento do processo, mostra a anotação',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+  const src=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+  const ini=src.indexOf('// LEX: andamentos — o mais novo pela data real'),fim=src.indexOf('// LEX: fim dos andamentos',ini);
+  const c=vm.createContext({Intl,Date});vm.runInContext(src.slice(ini,fim),c);
+  const p={andamentos:[{data:'2026-11-20',txt:'[LEX] Ligação ao cliente',origem:'lex'},{data:'2026-06-01',txt:'[DJEN] Juntada',origem:'djen'}]};
+  assert.equal(c._lexUltimoAndamento(p).txt,'[DJEN] Juntada');
+  assert.equal(c._lexUltimoAndamento({andamentos:[{data:'2026-11-20',txt:'[LEX] Ligação',origem:'lex'}]}).txt,'[LEX] Ligação');
 });
