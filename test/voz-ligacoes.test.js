@@ -30,8 +30,11 @@ function montar(over={}){
   let agora=over.agora??Date.parse('2026-11-23T13:00:00Z'); // segunda, 10h em Brasília
   const pedidos=[],entregas=[],composicoes=[],pare=new Set(over.pare||[]);
   const respostas=over.respostas||[];
+  const consultas=[];
   const fetchImpl=async(url,opts)=>{
+    if(opts.method==='GET'){consultas.push(url);const c=over.getCall;return{status:c?200:404,ok:!!c,text:async()=>JSON.stringify(c||{})}}
     pedidos.push(JSON.parse(opts.body));
+    if(typeof over.duranteDiscagem==='function')await over.duranteDiscagem();
     const r=respostas.length?respostas.shift():{status:201,body:{call_id:'call_'+pedidos.length,call_status:'registered'}};
     if(r.lanca)throw new Error(r.lanca);
     return{status:r.status,ok:r.status<300,text:async()=>JSON.stringify(r.body||{})};
@@ -44,7 +47,7 @@ function montar(over={}){
     iaDisponivel:()=>!over.semIa,
     compor:async({system,mensagem})=>{composicoes.push({system,mensagem});if(over.iaFalha)throw new Error('ia fora');return over.resumoIa||JSON.stringify({resumo:'Maria confirmou que vai à perícia de terça às 9h e vai levar os exames.',combinado:'Levar exames e documento com foto.',pediu_para_nao_ligar:false,pendencias:''})},
     entregarAoTitular:async texto=>{entregas.push(texto);return over.entregaFalha?.ativa?[{ok:false}]:[{conversa:'telegram:1',ok:true}]}});
-  return{V,rec,store,pedidos,entregas,composicoes,pare,provider,avancar(ms){agora+=ms},get agora(){return agora}};
+  return{V,rec,store,pedidos,consultas,entregas,composicoes,pare,provider,avancar(ms){agora+=ms},get agora(){return agora}};
 }
 const PEDIDO={id:'L1',processo_id:'p1',processo:'Maria Silva x INSS',cliente:'Maria Silva',telefone:'+5561988887777',
   objetivo:'Lembrar a Maria da perícia médica de terça, 25/11, às 9h, no fórum de Unaí, e pedir que leve os exames.',aprovado_por:'admin',conversa:'telegram:1'};
@@ -239,4 +242,37 @@ test('lista para a conversa: o que aconteceu e, com processo, a transcrição',a
   assert.equal(geral.ligacoes[0].transcricao,undefined,'lista geral não carrega transcrição');
   const doProcesso=await m.V.listar({processo_id:'p1'});
   assert.match(doProcesso.ligacoes[0].transcricao,/levo os exames/);
+});
+
+test('aviso perdido: passados 15 min o LEX pergunta à plataforma e relata; o aviso atrasado depois não repete nada',async()=>{
+  const m=montar({getCall:{...FIM.call}});
+  await m.V.ligar(PEDIDO);
+  m.avancar(5*60*1000);await m.V.reconciliar();
+  assert.equal(m.consultas.length,0,'antes de 15 min, espera o aviso');
+  m.avancar(11*60*1000);await m.V.reconciliar();
+  assert.equal(m.consultas[0],'https://api.retellai.com/v2/get-call/call_1');
+  assert.equal((await m.rec.read('lex_voz_ligacao_L1')).value.status,'relatada');
+  assert.equal(m.entregas.length,1);
+  const atrasado=await avisar(m,FIM);
+  assert.equal(atrasado.processar,null);
+  await m.V.reconciliar();
+  assert.equal(m.entregas.length,1,'nada em dobro');
+  assert.equal(m.store.rows[0].andamentos.filter(a=>a.ligacao_id==='L1').length,1);
+  const emCurso=montar({getCall:{call_id:'call_1',call_status:'ongoing',metadata:{ligacao_id:'L1'}}});
+  await emCurso.V.ligar(PEDIDO);emCurso.avancar(20*60*1000);await emCurso.V.reconciliar();
+  assert.equal((await emCurso.rec.read('lex_voz_ligacao_L1')).value.status,'em_andamento','ainda em curso: continua esperando');
+  const outra=montar({getCall:{...FIM.call,metadata:{ligacao_id:'OUTRA'}}});
+  await outra.V.ligar(PEDIDO);outra.avancar(20*60*1000);await outra.V.reconciliar();
+  assert.equal((await outra.rec.read('lex_voz_ligacao_L1')).value.status,'em_andamento','resposta de outra ligação não vale');
+});
+
+test('corrida: o aviso de fim chega antes de a discagem terminar de gravar — nada se perde nem regride',async()=>{
+  let m=null;
+  m=montar({duranteDiscagem:async()=>{await avisar(m,FIM)}});
+  const r=await m.V.ligar(PEDIDO);
+  assert.equal(r.ok,true);
+  const reg=(await m.rec.read('lex_voz_ligacao_L1')).value;
+  assert.equal(reg.status,'encerrada','não volta para "em andamento"');assert.equal(reg.call_id,'call_1');
+  await m.V.reconciliar();
+  assert.equal((await m.rec.read('lex_voz_ligacao_L1')).value.status,'relatada');
 });
